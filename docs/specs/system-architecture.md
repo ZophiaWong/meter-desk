@@ -1,0 +1,87 @@
+# MeterDesk System Architecture
+
+## Architecture Goals
+
+MeterDesk should be a full-stack product with clear boundaries between UI, backend APIs, agent orchestration, mock billing systems, and durable audit state.
+
+The architecture should favor simple, explicit interfaces over broad abstractions. V1 should be easy to understand, seed, demo, test, and evaluate.
+
+## Planned Stack
+
+- **Next.js**: frontend application and product UI.
+- **FastAPI**: backend API, agent run orchestration, approval handling, eval execution, and mock system access.
+- **Postgres**: durable state for tickets, mock billing data, approvals, agent runs, tool traces, mock mutations, and eval results.
+- **OpenAI-compatible LLM interface**: provider-agnostic boundary with one live provider in v1.
+
+## Boundary Rules
+
+- Next.js owns presentation, client-side interaction, and API consumption.
+- FastAPI owns business workflows, data validation, agent orchestration, tool execution, approval rules, and eval execution.
+- Postgres owns durable state and audit history.
+- Mock external systems are internal modules or seeded tables, not real provider integrations.
+- Agent tools access data through backend-controlled interfaces, not directly from frontend components.
+- Customer reply drafts are generated and stored as drafts only; sending is not implemented in v1.
+
+## Core Data Flow
+
+The Duplicate Charge golden path should follow this flow:
+
+1. The frontend opens a ticket and requests current ticket context from FastAPI.
+2. FastAPI reads ticket, account, invoice, charge, credit, and policy data from Postgres-backed mock systems.
+3. The operator starts an agent run.
+4. The agent uses permission-scoped backend tools.
+5. Each tool call writes a trace envelope with input summary, output summary, permission metadata, and evidence references.
+6. The agent returns a recommendation, internal resolution draft, and customer reply draft.
+7. If the recommendation includes a refund or credit, FastAPI creates an approval request.
+8. A human approval decision updates approval state.
+9. Approved actions create mock mutations and audit records.
+10. Eval runs reuse stored cases and inspect both final outcome and trace behavior.
+
+## Minimal Domain Glossary
+
+- **Ticket**: a support case for a billing dispute.
+- **Customer Account**: the billing identity connected to tickets, subscriptions, invoices, usage, credits, and prior adjustments.
+- **Invoice**: a billing document with line items, status, totals, and related charges.
+- **Charge or Payment**: a payment attempt or captured amount associated with an invoice or account.
+- **Usage Record**: metered usage data used to explain billed amounts.
+- **Credit Ledger Entry**: granted credits, consumed credits, remaining balances, and prior adjustments.
+- **Policy Rule**: a versioned refund, credit, cancellation, or usage policy used to justify a recommendation.
+- **Agent Run**: one investigation attempt by the agent for a ticket.
+- **Tool Trace**: a structured record of a tool call, permission level, inputs, outputs, evidence, and errors.
+- **Approval Request**: a human decision gate for high-risk refund or credit actions.
+- **Mock Mutation**: a simulated refund or credit action created only after approval.
+- **Eval Case**: an offline scenario with expected outcome, required evidence, and grading criteria.
+- **Eval Result**: recorded scores, failures, and trace links for an eval run.
+
+## API Expectations
+
+V1 APIs should be resource-oriented and boring:
+
+- ticket list and detail APIs for the workbench.
+- agent run APIs for starting and inspecting investigations.
+- approval APIs for queue, approve, and reject actions.
+- eval APIs for listing cases, running cases, and reading results.
+- mock data APIs only where the UI needs direct read access.
+
+Do not design a public external API in v1. Internal API shape should serve the app and remain easy to change while the product is still forming.
+
+## Mock External Systems
+
+Mock systems should be realistic enough to support credible investigation:
+
+- invoices and charges should include dates, amounts, statuses, and identifiers.
+- usage records should explain billed usage and spikes.
+- credit ledger entries should show granted, consumed, and remaining credit.
+- policy rules should have stable identifiers and versions.
+- mock mutations should be idempotent enough to avoid duplicate simulated refunds or credits.
+
+Mock systems must not call real Stripe, payment, support, messaging, or accounting APIs in v1.
+
+## Deferred Architecture Work
+
+- Detailed database schema.
+- Detailed tool schemas.
+- Detailed UI component architecture.
+- Real MCP server implementation.
+- Real provider integrations.
+- Deployment and production monitoring.
