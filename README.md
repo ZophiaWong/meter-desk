@@ -48,7 +48,55 @@ Start with these documents before implementation:
 
 ## Local Setup
 
-The app has not been scaffolded yet. Once implementation begins, this section should include the exact commands for installing dependencies, starting Next.js, starting FastAPI, running Postgres, seeding mock data, and executing evals.
+### Prerequisites
+
+- Node.js and npm.
+- Python 3.12.
+- `uv` for Python dependency management.
+- Docker with Compose support for local Postgres.
+
+### First Run
+
+```bash
+cp .env.example .env
+make install
+make db-up
+make dev
+```
+
+The default local services are:
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000`
+- Postgres: `localhost:5432`
+
+The M0 frontend renders a minimal MeterDesk shell and reads API/database status from FastAPI.
+
+### Development Commands
+
+```bash
+make install
+make db-up
+make dev
+make dev-api
+make dev-web
+make health
+make test
+make lint
+make seed
+make db-down
+```
+
+`make seed` is an M0 smoke check: it verifies the backend can reach Postgres and intentionally writes no business data. Scenario seed data is deferred to M2.
+
+### Health Checks
+
+```bash
+curl --fail http://localhost:8000/health
+curl --fail http://localhost:8000/health/db
+```
+
+`/health` verifies FastAPI liveness. `/health/db` verifies the backend can execute a simple Postgres query.
 
 ## Demo Walkthrough
 
