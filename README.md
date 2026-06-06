@@ -98,6 +98,8 @@ curl --fail http://localhost:8000/health/db
 
 `/health` verifies FastAPI liveness. `/health/db` verifies the backend can execute a simple Postgres query.
 
+If `/health/db` returns 503 while Postgres appears healthy in Docker, see [WSL2 Docker Desktop Postgres troubleshooting](docs/troubleshooting/wsl-docker-postgres-health-db.md).
+
 ## Demo Walkthrough
 
 The intended demo will center on the Duplicate Charge golden path:
