@@ -1,6 +1,8 @@
-import type { ServiceStatus, SystemStatus } from "@/lib/status";
+import { duplicateChargeScenario } from "@/data/m1-scenario";
+import type { SystemStatus } from "@/lib/status";
+import Link from "next/link";
 
-const navItems = ["Ticket Workbench", "Approval Queue", "Eval Lab"];
+import { TicketWorkbench } from "./workbench";
 
 type MeterDeskShellProps = {
   status: SystemStatus;
@@ -9,88 +11,55 @@ type MeterDeskShellProps = {
 export function MeterDeskShell({ status }: MeterDeskShellProps) {
   return (
     <main className="min-h-screen bg-[#f7f8fb] text-meter-ink">
-      <section className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8">
-        <header className="flex flex-col gap-6 border-b border-meter-line pb-6 md:flex-row md:items-end md:justify-between">
+      <section className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-5 py-6 lg:px-8">
+        <header className="flex flex-col gap-5 border-b border-meter-line pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-medium uppercase tracking-[0.12em] text-meter-blue">
               Governed billing support
             </p>
-            <h1 className="mt-3 text-4xl font-semibold leading-tight md:text-5xl">MeterDesk</h1>
+            <h1 className="mt-2 text-4xl font-semibold leading-tight">MeterDesk</h1>
           </div>
 
           <nav aria-label="Primary" className="flex flex-wrap gap-2">
-            {navItems.map((item) => (
-              <button
-                aria-disabled="true"
-                className="h-10 rounded-md border border-meter-line bg-white px-4 text-sm font-medium text-slate-500"
-                disabled
-                key={item}
-                type="button"
+            {duplicateChargeScenario.nav.map((item) => (
+              <Link
+                className="inline-flex h-10 items-center rounded-md border border-meter-line bg-white px-4 text-sm font-medium text-meter-ink hover:border-meter-blue"
+                href={item.href}
+                key={item.href}
               >
-                {item}
-              </button>
+                {item.label}
+              </Link>
             ))}
           </nav>
         </header>
 
-        <div className="grid flex-1 gap-6 py-8 lg:grid-cols-[1.35fr_0.65fr]">
-          <section className="p-1">
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">System status</h2>
-              </div>
-              <p className="text-sm text-slate-500">
-                {status.checkedAt ? formatCheckedAt(status.checkedAt) : "Not checked"}
-              </p>
-            </div>
-
-            <div className="mt-8 grid gap-4 md:grid-cols-2">
-              <StatusPanel status={status.api} />
-              <StatusPanel status={status.database} />
-            </div>
-          </section>
-
-          <aside className="rounded-lg border border-meter-line bg-[#fbfcfe] p-6">
-            <h2 className="text-base font-semibold">Stack</h2>
-            <dl className="mt-6 space-y-5 text-sm">
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-slate-500">Frontend</dt>
-                <dd className="font-medium">Next.js</dd>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-slate-500">Backend</dt>
-                <dd className="font-medium">FastAPI</dd>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-slate-500">Database</dt>
-                <dd className="font-medium">Postgres</dd>
-              </div>
-            </dl>
-          </aside>
-        </div>
+        <StatusStrip status={status} />
+        <TicketWorkbench scenario={duplicateChargeScenario} />
       </section>
     </main>
   );
 }
 
-function StatusPanel({ status }: { status: ServiceStatus }) {
-  const isOk = status.state === "ok";
-  const indicatorClass = isOk ? "bg-meter-mint" : "bg-meter-amber";
-  const stateLabel = isOk ? "Reachable" : "Unavailable";
+function StatusStrip({ status }: { status: SystemStatus }) {
+  return (
+    <div className="mt-4 flex flex-col gap-2 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap gap-2">
+        <ServiceBadge label="API" state={status.api.state} />
+        <ServiceBadge label="Postgres" state={status.database.state} />
+      </div>
+      <span>{status.checkedAt ? `Checked ${formatCheckedAt(status.checkedAt)}` : "Not checked"}</span>
+    </div>
+  );
+}
+
+function ServiceBadge({ label, state }: { label: string; state: "ok" | "down" }) {
+  const isOk = state === "ok";
 
   return (
-    <div className="min-h-36 rounded-md border border-meter-line bg-[#fdfefe] p-5">
-      <div className="flex items-center justify-between gap-4">
-        <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-slate-500">
-          {status.label}
-        </h3>
-        <span className="inline-flex items-center gap-2 text-sm font-medium">
-          <span className={`h-2.5 w-2.5 rounded-full ${indicatorClass}`} />
-          {stateLabel}
-        </span>
-      </div>
-      <p className="mt-8 text-lg font-semibold">{status.detail}</p>
-    </div>
+    <span className="inline-flex items-center gap-2 rounded-full border border-meter-line bg-white px-3 py-1 font-medium">
+      <span className={`h-2 w-2 rounded-full ${isOk ? "bg-meter-mint" : "bg-meter-amber"}`} />
+      {label} {isOk ? "reachable" : "unavailable"}
+    </span>
   );
 }
 
