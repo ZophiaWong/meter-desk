@@ -45,6 +45,7 @@ Start with these documents before implementation:
 - [Agent Governance](docs/specs/agent-governance.md) - tool governance, approval gates, trace rules, and policy citation requirements
 - [Eval Strategy](docs/specs/eval-strategy.md) - offline eval cases, grading dimensions, and Eval Lab expectations
 - [Implementation Roadmap](docs/specs/implementation-roadmap.md) - milestone sequence for building the v1 system
+- [M2 Backend Domain + Mock Billing](docs/specs/m2-backend-domain-mock-billing.md) - durable mock billing data, read APIs, seed behavior, and DB checks
 
 ## Local Setup
 
@@ -70,7 +71,7 @@ The default local services are:
 - Backend API: `http://localhost:8000`
 - Postgres: `localhost:5432`
 
-The M0 frontend renders a minimal MeterDesk shell and reads API/database status from FastAPI.
+The frontend reads API/database status plus M2 mock billing domain resources from FastAPI.
 
 ### Development Commands
 
@@ -82,12 +83,15 @@ make dev-api
 make dev-web
 make health
 make test
+make test-db
 make lint
 make seed
 make db-down
 ```
 
-`make seed` is an M0 smoke check: it verifies the backend can reach Postgres and intentionally writes no business data. Scenario seed data is deferred to M2.
+`make seed` runs migrations and resets the M2 demo-owned mock billing rows. It preserves unrelated local domain rows and rebuilds the Duplicate Charge, Usage Spike, Credit/Refund Dispute, trace, approval, mock mutation, and eval fixtures.
+
+`make test-db` starts local Postgres, runs migrations, seeds demo data, and verifies key M2 read APIs against the real database. The default `make test` remains fast and does not require Docker/Postgres.
 
 ### Health Checks
 
