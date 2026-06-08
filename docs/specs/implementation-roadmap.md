@@ -90,6 +90,8 @@ Create a clickable Duplicate Charge workbench that demonstrates the intended pro
 
 ## M2: Backend Domain + Mock Billing
 
+Focused implementation spec: `docs/specs/m2-backend-domain-mock-billing.md`.
+
 ### Goal
 
 Replace static workbench data with durable mock domain data and resource APIs.

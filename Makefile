@@ -15,7 +15,7 @@ API_BASE_URL ?= http://localhost:$(API_PORT)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down test test-api test-web lint lint-api lint-web seed health
+.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down db-migrate test test-api test-web test-db lint lint-api lint-web seed health
 
 help:
 	@printf "MeterDesk M0 commands:\n"
@@ -24,8 +24,9 @@ help:
 	@printf "  make dev       Start Postgres, FastAPI, and Next.js\n"
 	@printf "  make health    Check API and database health endpoints\n"
 	@printf "  make test      Run API and Web tests\n"
+	@printf "  make test-db   Run Postgres-backed M2 migration/seed/API checks\n"
 	@printf "  make lint      Run API and Web lint/type checks\n"
-	@printf "  make seed      Run DB smoke seed check\n"
+	@printf "  make seed      Reset and load M2 demo mock billing data\n"
 
 install: install-api install-web
 
@@ -40,6 +41,9 @@ db-up:
 
 db-down:
 	$(COMPOSE) down
+
+db-migrate:
+	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run alembic upgrade head
 
 dev: db-up
 	@printf "Starting MeterDesk API on :$(API_PORT) and Web on :$(WEB_PORT)\n"
@@ -64,6 +68,9 @@ test-api:
 test-web:
 	cd $(WEB_DIR) && npm test
 
+test-db: db-up seed
+	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run python -m meterdesk_api.db_integration_check
+
 lint: lint-api lint-web
 
 lint-api:
@@ -74,7 +81,7 @@ lint-web:
 	cd $(WEB_DIR) && npm run lint
 	cd $(WEB_DIR) && npm run typecheck
 
-seed:
+seed: db-migrate
 	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run python -m meterdesk_api.seed
 
 health:

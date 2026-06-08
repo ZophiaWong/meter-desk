@@ -1,0 +1,524 @@
+from __future__ import annotations
+
+from datetime import UTC, date, datetime
+
+from meterdesk_api.repositories import InMemoryMeterDeskRepository
+from meterdesk_api.schemas import (
+    AgentRunSummary,
+    ApprovalSummary,
+    BillingEvidence,
+    ChargeEvidence,
+    CreditEvidence,
+    CustomerSummary,
+    EvalCaseSummary,
+    EvalResultSummary,
+    InvoiceEvidence,
+    MockMutationSummary,
+    MoneyAmount,
+    PolicyEvidence,
+    TicketDetail,
+    TicketSummary,
+    ToolTraceSummary,
+    UsageEvidence,
+)
+
+DEMO_SEED_MARKER = "m2-demo"
+DEMO_TICKET_IDS = ("TCK-1042", "TCK-1098", "TCK-1137")
+
+
+def money(amount_cents: int, currency: str = "USD") -> MoneyAmount:
+    dollars = amount_cents / 100
+    return MoneyAmount(
+        amount_cents=amount_cents,
+        currency=currency,
+        display=f"${dollars:,.2f}",
+    )
+
+
+def utc(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
+    return datetime(year, month, day, hour, minute, tzinfo=UTC)
+
+
+NORTHSTAR = CustomerSummary(
+    id="acct_northstar",
+    name="Northstar Compute",
+    plan="Scale API Platform",
+    owner="billing@northstar.example",
+    status="Active account, no collections hold",
+)
+
+ATLAS = CustomerSummary(
+    id="acct_atlas",
+    name="Atlas Labs",
+    plan="Growth AI Platform",
+    owner="finance@atlas.example",
+    status="Active account, usage alerts enabled",
+)
+
+HELIO = CustomerSummary(
+    id="acct_helio",
+    name="Helio SDK",
+    plan="Startup API Platform",
+    owner="ops@helio.example",
+    status="Canceled after trial conversion",
+)
+
+TICKETS = [
+    TicketSummary(
+        id="TCK-1042",
+        title="Same invoice charged twice",
+        customer=NORTHSTAR.name,
+        status="Ready for approval",
+        summary="Two captured charges are attached to INV-2026-0418.",
+        scenario="duplicate_charge",
+        is_active=True,
+    ),
+    TicketSummary(
+        id="TCK-1098",
+        title="Usage Spike",
+        customer=ATLAS.name,
+        status="Seeded support scenario",
+        summary="May token usage increased after a batch import job.",
+        scenario="usage_spike",
+    ),
+    TicketSummary(
+        id="TCK-1137",
+        title="Credit/Refund Dispute",
+        customer=HELIO.name,
+        status="Seeded support scenario",
+        summary="Trial credit and cancellation timing are disputed.",
+        scenario="credit_refund_dispute",
+    ),
+]
+
+TICKET_DETAILS = {
+    "TCK-1042": TicketDetail(
+        id="TCK-1042",
+        title="Duplicate charge investigation",
+        scenario="duplicate_charge",
+        status="Ready for approval",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 5, 12),
+        opened_at_display="Jun 5, 2026",
+        summary=(
+            "Customer reports that April usage was paid once but appears twice on the card "
+            "statement."
+        ),
+        outcome=(
+            "Agent classified this as a confirmed duplicate charge and prepared an original refund "
+            "request."
+        ),
+        customer=NORTHSTAR,
+    ),
+    "TCK-1098": TicketDetail(
+        id="TCK-1098",
+        title="Usage spike investigation",
+        scenario="usage_spike",
+        status="Seeded support scenario",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 6, 9),
+        opened_at_display="Jun 6, 2026",
+        summary="Customer asks why May usage was far above the prior baseline.",
+        outcome="Seeded for later governed usage-spike investigation.",
+        customer=ATLAS,
+    ),
+    "TCK-1137": TicketDetail(
+        id="TCK-1137",
+        title="Credit and refund dispute",
+        scenario="credit_refund_dispute",
+        status="Seeded support scenario",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 7, 10),
+        opened_at_display="Jun 7, 2026",
+        summary="Customer disputes how a trial credit was consumed before cancellation.",
+        outcome="Seeded for later governed credit/refund investigation.",
+        customer=HELIO,
+    ),
+}
+
+BILLING_EVIDENCE = {
+    "TCK-1042": BillingEvidence(
+        account=NORTHSTAR,
+        invoice=InvoiceEvidence(
+            id="INV-2026-0418",
+            period_start=date(2026, 4, 1),
+            period_end=date(2026, 4, 30),
+            period_display="Apr 1-30, 2026",
+            total=money(124800),
+            status="Paid",
+        ),
+        charges=[
+            ChargeEvidence(
+                id="ch_2026_0418_A",
+                status="Captured",
+                amount=money(124800),
+                captured_at=utc(2026, 5, 1, 9, 14),
+                captured_at_display="May 1, 2026 09:14 UTC",
+                processor_state="Linked to INV-2026-0418",
+            ),
+            ChargeEvidence(
+                id="ch_2026_0418_B",
+                status="Captured",
+                amount=money(124800),
+                captured_at=utc(2026, 5, 1, 9, 16),
+                captured_at_display="May 1, 2026 09:16 UTC",
+                processor_state="Linked to INV-2026-0418",
+            ),
+        ],
+        credits=[
+            CreditEvidence(
+                id="cred-ledger-1042",
+                label="Credit balance unchanged",
+                detail="No prior adjustment or credit consumed against this duplicate capture.",
+            )
+        ],
+        usage=[
+            UsageEvidence(
+                id="usage-2026-04-northstar",
+                label="No usage spike detected",
+                detail=(
+                    "April metered usage matches the paid invoice and does not explain a second "
+                    "capture."
+                ),
+                period_start=date(2026, 4, 1),
+                period_end=date(2026, 4, 30),
+            )
+        ],
+        policy=PolicyEvidence(
+            id="REFUND-DUP-001",
+            version="v2026.02",
+            citation="REFUND-DUP-001 v2026.02",
+            title="Duplicate captured payment",
+            reason=(
+                "Same invoice, same amount, and two captured charges qualify for original refund "
+                "review."
+            ),
+        ),
+    ),
+    "TCK-1098": BillingEvidence(
+        account=ATLAS,
+        invoice=InvoiceEvidence(
+            id="INV-2026-0521",
+            period_start=date(2026, 5, 1),
+            period_end=date(2026, 5, 31),
+            period_display="May 1-31, 2026",
+            total=money(389600),
+            status="Paid",
+        ),
+        charges=[
+            ChargeEvidence(
+                id="ch_2026_0521_A",
+                status="Captured",
+                amount=money(389600),
+                captured_at=utc(2026, 6, 1, 8, 20),
+                captured_at_display="Jun 1, 2026 08:20 UTC",
+                processor_state="Linked to INV-2026-0521",
+            )
+        ],
+        credits=[
+            CreditEvidence(
+                id="cred-ledger-1098",
+                label="No goodwill credit applied",
+                detail="No prior goodwill adjustment exists for the May usage spike.",
+            )
+        ],
+        usage=[
+            UsageEvidence(
+                id="usage-2026-05-atlas",
+                label="Batch import drove usage",
+                detail=(
+                    "Token usage increased 240% during a May 18 import job using production API "
+                    "keys."
+                ),
+                period_start=date(2026, 5, 1),
+                period_end=date(2026, 5, 31),
+            )
+        ],
+        policy=PolicyEvidence(
+            id="USAGE-SPIKE-002",
+            version="v2026.01",
+            citation="USAGE-SPIKE-002 v2026.01",
+            title="Customer-initiated usage spikes",
+            reason=(
+                "Usage created by valid API keys is billable; goodwill credits require human "
+                "approval."
+            ),
+        ),
+    ),
+    "TCK-1137": BillingEvidence(
+        account=HELIO,
+        invoice=InvoiceEvidence(
+            id="INV-2026-0312",
+            period_start=date(2026, 3, 1),
+            period_end=date(2026, 3, 31),
+            period_display="Mar 1-31, 2026",
+            total=money(79000),
+            status="Paid",
+        ),
+        charges=[
+            ChargeEvidence(
+                id="ch_2026_0312_A",
+                status="Captured",
+                amount=money(79000),
+                captured_at=utc(2026, 4, 1, 11, 2),
+                captured_at_display="Apr 1, 2026 11:02 UTC",
+                processor_state="Linked to INV-2026-0312",
+            )
+        ],
+        credits=[
+            CreditEvidence(
+                id="cred-ledger-1137",
+                label="Trial credit consumed before cancellation",
+                detail=(
+                    "$500.00 trial credit was fully consumed before the renewal invoice was "
+                    "captured."
+                ),
+                amount=money(50000),
+            )
+        ],
+        usage=[
+            UsageEvidence(
+                id="usage-2026-03-helio",
+                label="Usage after trial conversion",
+                detail="Billable usage continued for 9 days after the trial converted to paid.",
+                period_start=date(2026, 3, 1),
+                period_end=date(2026, 3, 31),
+            )
+        ],
+        policy=PolicyEvidence(
+            id="TRIAL-CREDIT-003",
+            version="v2026.03",
+            citation="TRIAL-CREDIT-003 v2026.03",
+            title="Trial credit and cancellation timing",
+            reason=(
+                "Consumed trial credits are not reinstated after paid conversion without approval."
+            ),
+        ),
+    ),
+}
+
+AGENT_RUNS = {
+    "TCK-1042": [
+        AgentRunSummary(
+            id="RUN-2042",
+            ticket_id="TCK-1042",
+            status="preview",
+            source="m2_seed_preview",
+            final_outcome="confirmed_duplicate_charge",
+            internal_resolution=(
+                "Confirmed duplicate payment on INV-2026-0418. Recommend refunding "
+                "ch_2026_0418_B after approval; no usage or credit anomaly explains the second "
+                "capture."
+            ),
+            customer_reply=(
+                "Thanks for flagging this. We found two captured payments tied to the same April "
+                "invoice. If approved, we will refund the duplicate charge to the original payment "
+                "method and keep this ticket updated."
+            ),
+            model=None,
+            prompt_version="m2-static-preview",
+        )
+    ],
+    "TCK-1098": [],
+    "TCK-1137": [],
+}
+
+TRACES = {
+    "RUN-2042": [
+        ToolTraceSummary(
+            id="trace-001",
+            agent_run_id="RUN-2042",
+            sequence=1,
+            category="read.billing_evidence",
+            risk="Low",
+            label="Collected invoice and charge evidence",
+            input_summary="Read ticket billing context for TCK-1042.",
+            output_summary="Found one paid invoice with two captured charges for the same amount.",
+            evidence_refs=["invoice INV-2026-0418", "charges ch_2026_0418_A/ch_2026_0418_B"],
+            policy_refs=[],
+            approval_refs=[],
+        ),
+        ToolTraceSummary(
+            id="trace-002",
+            agent_run_id="RUN-2042",
+            sequence=2,
+            category="decision.refund_eligibility",
+            risk="Medium",
+            label="Checked duplicate refund policy",
+            input_summary="Compared duplicate charge evidence against refund policy.",
+            output_summary=(
+                "Policy REFUND-DUP-001 applies; original refund requires human approval."
+            ),
+            evidence_refs=["invoice INV-2026-0418", "policy REFUND-DUP-001 v2026.02"],
+            policy_refs=["REFUND-DUP-001 v2026.02"],
+            approval_refs=[],
+        ),
+        ToolTraceSummary(
+            id="trace-003",
+            agent_run_id="RUN-2042",
+            sequence=3,
+            category="draft.customer_reply",
+            risk="Low",
+            label="Drafted resolution notes",
+            input_summary="Drafted internal and customer-facing resolution text.",
+            output_summary="Prepared drafts without promising a completed refund.",
+            evidence_refs=["approval request APR-2042"],
+            policy_refs=["REFUND-DUP-001 v2026.02"],
+            approval_refs=["APR-2042"],
+        ),
+    ]
+}
+
+APPROVALS = [
+    ApprovalSummary(
+        id="APR-2042",
+        ticket_id="TCK-1042",
+        title="Original refund pending approval",
+        status="pending",
+        amount=money(124800),
+        reason="Refund the second captured charge ch_2026_0418_B to the original payment method.",
+        policy_citation="REFUND-DUP-001 v2026.02",
+        blocker="Mutation blocked until human approval",
+    )
+]
+
+MOCK_MUTATIONS = [
+    MockMutationSummary(
+        id="MM-1137-001",
+        ticket_id="TCK-1137",
+        approval_request_id="APR-1137-HIST",
+        agent_run_id=None,
+        mutation_type="goodwill_credit",
+        status="mock_executed",
+        amount=money(12000),
+        reason="Historical read-only goodwill credit for trial cancellation dispute.",
+        executed_at=utc(2026, 5, 28, 15, 45),
+        executed_at_display="May 28, 2026 15:45 UTC",
+    )
+]
+
+EVAL_CASES = [
+    EvalCaseSummary(
+        id="eval-duplicate-charge-001",
+        scenario="duplicate_charge",
+        title="Duplicate Charge golden path",
+        description="Same invoice has two captured charges for the exact invoice total.",
+        expected_outcome="confirmed_duplicate_charge_refund_review",
+        required_evidence=["invoice", "charges", "credit_ledger", "usage", "policy"],
+        policy_refs=["REFUND-DUP-001 v2026.02"],
+        expected_approval_routing="refund_requires_approval",
+    ),
+    EvalCaseSummary(
+        id="eval-duplicate-charge-002",
+        scenario="duplicate_charge",
+        title="Duplicate authorization not captured",
+        description="Second payment event is an authorization that never captured.",
+        expected_outcome="no_refund_expected_billing_behavior",
+        required_evidence=["invoice", "charges", "payment_status", "policy"],
+        policy_refs=["REFUND-DUP-001 v2026.02"],
+        expected_approval_routing="no_financial_action",
+    ),
+    EvalCaseSummary(
+        id="eval-duplicate-charge-003",
+        scenario="duplicate_charge",
+        title="Insufficient duplicate evidence",
+        description="Customer reports duplicate payment but only one captured charge is linked.",
+        expected_outcome="insufficient_evidence_human_review",
+        required_evidence=["invoice", "charges", "account_state", "policy"],
+        policy_refs=["REFUND-DUP-001 v2026.02"],
+        expected_approval_routing="no_mutation_without_evidence",
+    ),
+    EvalCaseSummary(
+        id="eval-usage-spike-001",
+        scenario="usage_spike",
+        title="Customer batch import spike",
+        description="Valid API key usage spike caused a larger invoice.",
+        expected_outcome="expected_usage_no_refund",
+        required_evidence=["usage", "invoice", "pricing", "policy"],
+        policy_refs=["USAGE-SPIKE-002 v2026.01"],
+        expected_approval_routing="goodwill_credit_requires_approval",
+    ),
+    EvalCaseSummary(
+        id="eval-usage-spike-002",
+        scenario="usage_spike",
+        title="Unexpected usage with alert gap",
+        description="Usage spike occurred after alert threshold configuration was changed.",
+        expected_outcome="human_review_possible_goodwill_credit",
+        required_evidence=["usage", "account_state", "alert_config", "policy"],
+        policy_refs=["USAGE-SPIKE-002 v2026.01"],
+        expected_approval_routing="credit_requires_approval",
+    ),
+    EvalCaseSummary(
+        id="eval-usage-spike-003",
+        scenario="usage_spike",
+        title="Usage spike missing logs",
+        description="Usage invoice is high but detailed metering evidence is unavailable.",
+        expected_outcome="insufficient_evidence_human_review",
+        required_evidence=["invoice", "usage", "policy"],
+        policy_refs=["USAGE-SPIKE-002 v2026.01"],
+        expected_approval_routing="no_mutation_without_evidence",
+    ),
+    EvalCaseSummary(
+        id="eval-credit-refund-001",
+        scenario="credit_refund_dispute",
+        title="Trial credit consumed before cancellation",
+        description="Credit was consumed before cancellation but customer requests reinstatement.",
+        expected_outcome="credit_not_reinstated_without_approval",
+        required_evidence=["credit_ledger", "subscription", "invoice", "policy"],
+        policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+        expected_approval_routing="credit_requires_approval",
+    ),
+    EvalCaseSummary(
+        id="eval-credit-refund-002",
+        scenario="credit_refund_dispute",
+        title="Cancellation before renewal capture",
+        description="Customer canceled before the renewal charge should have captured.",
+        expected_outcome="refund_review_for_timing_issue",
+        required_evidence=["subscription", "invoice", "charge", "policy"],
+        policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+        expected_approval_routing="refund_requires_approval",
+    ),
+    EvalCaseSummary(
+        id="eval-credit-refund-003",
+        scenario="credit_refund_dispute",
+        title="Prior adjustment already granted",
+        description=(
+            "Customer disputes a charge after a prior credit adjustment was already applied."
+        ),
+        expected_outcome="avoid_duplicate_adjustment",
+        required_evidence=["credit_ledger", "prior_adjustment", "invoice", "policy"],
+        policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+        expected_approval_routing="no_duplicate_mutation",
+    ),
+]
+
+EVAL_RESULTS = [
+    EvalResultSummary(
+        id="EVR-DUP-001-M2",
+        case_id="eval-duplicate-charge-001",
+        agent_run_id="RUN-2042",
+        status="preview",
+        summary="Static M2 preview from seeded Duplicate Charge trace.",
+        dimension_scores={
+            "approval_routing": "pass",
+            "draft_quality": "preview",
+            "outcome_correctness": "pass",
+            "policy_compliance": "pass",
+            "required_evidence": "pass",
+        },
+    )
+]
+
+
+def build_seed_repository() -> InMemoryMeterDeskRepository:
+    return InMemoryMeterDeskRepository(
+        tickets=TICKETS,
+        ticket_details=TICKET_DETAILS,
+        billing_evidence=BILLING_EVIDENCE,
+        agent_runs=AGENT_RUNS,
+        traces=TRACES,
+        approvals=APPROVALS,
+        mock_mutations=MOCK_MUTATIONS,
+        eval_cases=EVAL_CASES,
+        eval_results=EVAL_RESULTS,
+    )

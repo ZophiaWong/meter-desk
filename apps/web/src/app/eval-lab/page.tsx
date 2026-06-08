@@ -1,5 +1,5 @@
 import { EvalLab } from "@/components/eval-lab";
 
-export default function EvalLabPage() {
-  return <EvalLab />;
+export default async function EvalLabPage() {
+  return EvalLab();
 }

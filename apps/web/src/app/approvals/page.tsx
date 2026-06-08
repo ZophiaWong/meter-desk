@@ -1,5 +1,5 @@
 import { ApprovalQueue } from "@/components/approval-queue";
 
-export default function ApprovalsPage() {
-  return <ApprovalQueue />;
+export default async function ApprovalsPage() {
+  return ApprovalQueue();
 }

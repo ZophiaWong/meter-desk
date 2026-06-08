@@ -1,14 +1,16 @@
-import { duplicateChargeScenario } from "@/data/m1-scenario";
 import type { SystemStatus } from "@/lib/status";
+import { NAV_ITEMS, type WorkbenchScenario } from "@/lib/meterdesk-view";
 import Link from "next/link";
 
 import { TicketWorkbench } from "./workbench";
 
 type MeterDeskShellProps = {
+  dataError?: string;
+  scenario?: WorkbenchScenario;
   status: SystemStatus;
 };
 
-export function MeterDeskShell({ status }: MeterDeskShellProps) {
+export function MeterDeskShell({ dataError, scenario, status }: MeterDeskShellProps) {
   return (
     <main className="min-h-screen bg-[#f7f8fb] text-meter-ink">
       <section className="mx-auto flex min-h-screen w-full max-w-[1440px] flex-col px-5 py-6 lg:px-8">
@@ -21,7 +23,7 @@ export function MeterDeskShell({ status }: MeterDeskShellProps) {
           </div>
 
           <nav aria-label="Primary" className="flex flex-wrap gap-2">
-            {duplicateChargeScenario.nav.map((item) => (
+            {NAV_ITEMS.map((item) => (
               <Link
                 className="inline-flex h-10 items-center rounded-md border border-meter-line bg-white px-4 text-sm font-medium text-meter-ink hover:border-meter-blue"
                 href={item.href}
@@ -34,9 +36,23 @@ export function MeterDeskShell({ status }: MeterDeskShellProps) {
         </header>
 
         <StatusStrip status={status} />
-        <TicketWorkbench scenario={duplicateChargeScenario} />
+        {scenario ? <TicketWorkbench scenario={scenario} /> : <DataErrorPanel message={dataError} />}
       </section>
     </main>
+  );
+}
+
+function DataErrorPanel({ message }: { message?: string }) {
+  return (
+    <section className="mt-6 rounded-md border border-meter-amber bg-[#fffaf0] p-5">
+      <h2 className="text-xl font-semibold">MeterDesk data unavailable</h2>
+      <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-700">
+        {message ?? "FastAPI domain data unavailable"}
+      </p>
+      <p className="mt-3 text-sm font-medium text-meter-amber">
+        M2 does not fall back to static demo data when backend resources are unavailable.
+      </p>
+    </section>
   );
 }
 

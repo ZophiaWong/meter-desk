@@ -1,4 +1,4 @@
-import type { WorkbenchScenario } from "@/data/m1-scenario";
+import type { WorkbenchScenario } from "@/lib/meterdesk-view";
 import type { ReactNode } from "react";
 
 type TicketWorkbenchProps = {
@@ -12,7 +12,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase text-slate-500">Tickets</h2>
           <span className="rounded-full bg-[#e9f2fb] px-2.5 py-1 text-xs font-medium text-meter-blue">
-            M1 static
+            M2 API
           </span>
         </div>
         <div className="mt-4 space-y-3">
