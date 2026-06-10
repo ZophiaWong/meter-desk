@@ -128,9 +128,10 @@ class AgentRun(SeededRow, Base):
     ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     source: Mapped[str] = mapped_column(String(80), nullable=False)
-    final_outcome: Mapped[str] = mapped_column(String(120), nullable=False)
-    internal_resolution: Mapped[str] = mapped_column(Text, nullable=False)
-    customer_reply: Mapped[str] = mapped_column(Text, nullable=False)
+    final_outcome: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    internal_resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    customer_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_state: Mapped[str | None] = mapped_column(Text, nullable=True)
     model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -172,9 +173,12 @@ class ApprovalRequest(SeededRow, Base):
     blocker: Mapped[str] = mapped_column(String(160), nullable=False)
     policy_citation: Mapped[str] = mapped_column(String(120), nullable=False)
     evidence_refs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    action_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decision: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class MockMutation(SeededRow, Base):
@@ -192,6 +196,7 @@ class MockMutation(SeededRow, Base):
     amount_display: Mapped[str] = mapped_column(String(32), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    action_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     executed_at_display: Mapped[str] = mapped_column(String(80), nullable=False)
 

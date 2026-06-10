@@ -1,4 +1,9 @@
 import type { WorkbenchScenario } from "@/lib/meterdesk-view";
+import {
+  approveRequestAction,
+  rejectRequestAction,
+  startDefaultAgentRunAction,
+} from "@/lib/meterdesk-actions";
 import type { ReactNode } from "react";
 
 type TicketWorkbenchProps = {
@@ -12,7 +17,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase text-slate-500">Tickets</h2>
           <span className="rounded-full bg-[#e9f2fb] px-2.5 py-1 text-xs font-medium text-meter-blue">
-            M2 API
+            M3 API
           </span>
         </div>
         <div className="mt-4 space-y-3">
@@ -118,7 +123,15 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
 
         <section className="mt-5 rounded-md border border-meter-line bg-[#fbfcfe] p-4">
           <h2 className="text-lg font-semibold">Internal resolution</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-700">{scenario.drafts.internalResolution}</p>
+          {scenario.drafts ? (
+            <p className="mt-3 text-sm leading-6 text-slate-700">
+              {scenario.drafts.internalResolution}
+            </p>
+          ) : (
+            <div className="mt-3 flex flex-col gap-3 text-sm leading-6 text-slate-700">
+              <p>No internal resolution yet</p>
+            </div>
+          )}
           <p className="mt-3 text-sm font-medium text-meter-blue">{scenario.ticket.outcome}</p>
         </section>
       </section>
@@ -131,7 +144,9 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         <h2 id="governance-heading" className="text-lg font-semibold">
           Governance and trace
         </h2>
+        <RunStateCard scenario={scenario} />
         <ApprovalCard scenario={scenario} />
+        <MutationResultList scenario={scenario} />
         <TraceTimeline traces={scenario.traces} />
         <DraftReply scenario={scenario} />
       </section>
@@ -158,6 +173,18 @@ function KeyValue({ label, value }: { label: string; value: string }) {
 }
 
 function ApprovalCard({ scenario }: TicketWorkbenchProps) {
+  if (!scenario.approval) {
+    return (
+      <section className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4">
+        <p className="text-xs font-semibold uppercase text-slate-500">No approval request</p>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Financial action approval appears after a governed agent run proposes a refund or credit.
+        </p>
+      </section>
+    );
+  }
+  const isPending = scenario.approval.status.toLowerCase() === "pending";
+
   return (
     <section className="mt-4 rounded-md border border-meter-amber bg-[#fffaf0] p-4">
       <div className="flex items-start justify-between gap-3">
@@ -171,20 +198,84 @@ function ApprovalCard({ scenario }: TicketWorkbenchProps) {
       <p className="mt-3 text-sm font-medium text-meter-amber">{scenario.approval.blocker}</p>
       <p className="mt-2 text-xs text-slate-500">Policy: {scenario.approval.policyCitation}</p>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          className="h-10 rounded-md border border-meter-line bg-white text-sm font-semibold text-slate-400"
-          disabled
-          type="button"
-        >
-          Approve
-        </button>
-        <button
-          className="h-10 rounded-md border border-meter-line bg-white text-sm font-semibold text-slate-400"
-          disabled
-          type="button"
-        >
-          Reject
-        </button>
+        <form action={approveRequestAction}>
+          <input name="approvalId" type="hidden" value={scenario.approval.id} />
+          <button
+            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:text-slate-400"
+            disabled={!isPending}
+            type="submit"
+          >
+            Approve
+          </button>
+        </form>
+        <form action={rejectRequestAction}>
+          <input name="approvalId" type="hidden" value={scenario.approval.id} />
+          <button
+            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:text-slate-400"
+            disabled={!isPending}
+            type="submit"
+          >
+            Reject
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function RunStateCard({ scenario }: TicketWorkbenchProps) {
+  return (
+    <section className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase text-slate-500">Agent run</p>
+          <h3 className="mt-2 text-base font-semibold">
+            {scenario.run ? scenario.run.status : "No agent run yet"}
+          </h3>
+        </div>
+        {scenario.run?.model ? (
+          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
+            {scenario.run.model}
+          </span>
+        ) : null}
+      </div>
+      {scenario.run?.errorState ? (
+        <p className="mt-3 text-sm font-medium text-meter-amber">{scenario.run.errorState}</p>
+      ) : null}
+      {!scenario.run ? (
+        <form action={startDefaultAgentRunAction} className="mt-4">
+          <button
+            className="h-10 rounded-md bg-meter-blue px-4 text-sm font-semibold text-white"
+            type="submit"
+          >
+            Run investigation
+          </button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
+
+function MutationResultList({ scenario }: TicketWorkbenchProps) {
+  if (scenario.mutations.length === 0) {
+    return null;
+  }
+  return (
+    <section className="mt-4 rounded-md border border-meter-mint bg-[#f0fdf8] p-4">
+      <h3 className="text-sm font-semibold uppercase text-slate-500">Mock mutation</h3>
+      <div className="mt-3 space-y-3">
+        {scenario.mutations.map((mutation) => (
+          <article className="text-sm leading-6 text-slate-700" key={mutation.id}>
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-semibold">{mutation.id}</p>
+              <span className="font-semibold text-meter-mint">{mutation.amount}</span>
+            </div>
+            <p>{mutation.reason}</p>
+            <p className="text-xs text-slate-500">
+              {mutation.status} on {mutation.executedAt}
+            </p>
+          </article>
+        ))}
       </div>
     </section>
   );
@@ -193,7 +284,12 @@ function ApprovalCard({ scenario }: TicketWorkbenchProps) {
 function TraceTimeline({ traces }: { traces: WorkbenchScenario["traces"] }) {
   return (
     <section className="mt-5">
-      <h3 className="text-sm font-semibold uppercase text-slate-500">Static trace timeline</h3>
+      <h3 className="text-sm font-semibold uppercase text-slate-500">Trace timeline</h3>
+      {traces.length === 0 ? (
+        <p className="mt-3 rounded-md border border-meter-line bg-[#fbfcfe] p-3 text-sm text-slate-600">
+          No trace entries yet
+        </p>
+      ) : null}
       <ol className="mt-3 space-y-3">
         {traces.map((trace) => (
           <li className="rounded-md border border-meter-line bg-[#fbfcfe] p-3" key={trace.id}>
@@ -214,6 +310,15 @@ function TraceTimeline({ traces }: { traces: WorkbenchScenario["traces"] }) {
 }
 
 function DraftReply({ scenario }: TicketWorkbenchProps) {
+  if (!scenario.drafts) {
+    return (
+      <section className="mt-5 rounded-md border border-meter-line bg-[#f8fafc] p-4">
+        <h3 className="text-sm font-semibold uppercase text-slate-500">Customer reply</h3>
+        <p className="mt-3 text-sm leading-6 text-slate-600">No draft yet</p>
+      </section>
+    );
+  }
+
   return (
     <section className="mt-5 rounded-md border border-meter-line bg-[#f8fafc] p-4">
       <div className="flex items-center justify-between gap-3">

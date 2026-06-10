@@ -1,8 +1,16 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
 
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from meterdesk_api.agent.approvals import ApprovalDecisionError, ApprovalDecisionService
+from meterdesk_api.agent.orchestrator import AgentLoopError, AgentRunOrchestrator
+from meterdesk_api.agent.provider import AgentResolutionProvider
+from meterdesk_api.agent.runtime import get_agent_provider
 from meterdesk_api.repositories import get_repository
 from meterdesk_api.schemas import (
     AgentRunSummary,
+    ApprovalDecisionRequest,
+    ApprovalDecisionResponse,
     ApprovalSummary,
     BillingEvidence,
     EvalCaseSummary,
@@ -13,8 +21,9 @@ from meterdesk_api.schemas import (
     ToolTraceSummary,
 )
 
-router = APIRouter(tags=["m2 resources"])
+router = APIRouter(tags=["m3 resources"])
 REPOSITORY_DEPENDENCY = Depends(get_repository)
+PROVIDER_DEPENDENCY = Depends(get_agent_provider)
 
 
 @router.get("/tickets", response_model=list[TicketSummary])
@@ -57,6 +66,26 @@ async def list_agent_runs(
     return runs
 
 
+@router.post(
+    "/tickets/{ticket_id}/agent-runs",
+    response_model=AgentRunSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+async def start_agent_run(
+    ticket_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+    provider: AgentResolutionProvider = PROVIDER_DEPENDENCY,
+) -> AgentRunSummary:
+    orchestrator = AgentRunOrchestrator(repository=repository, provider=provider)
+    try:
+        run = await orchestrator.run_duplicate_charge(ticket_id)
+    except AgentLoopError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    if run is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return run
+
+
 @router.get("/agent-runs/{agent_run_id}/traces", response_model=list[ToolTraceSummary])
 async def list_traces(
     agent_run_id: str,
@@ -70,16 +99,54 @@ async def list_traces(
 
 @router.get("/approvals", response_model=list[ApprovalSummary])
 async def list_approvals(
+    status: Literal["pending", "approved", "rejected", "all"] = "pending",
+    ticket_id: str | None = None,
     repository=REPOSITORY_DEPENDENCY,
 ) -> list[ApprovalSummary]:
-    return await repository.list_approvals(status="pending")
+    status_filter = None if status == "all" else status
+    return await repository.list_approvals(status=status_filter, ticket_id=ticket_id)
+
+
+@router.post("/approvals/{approval_id}/approve", response_model=ApprovalDecisionResponse)
+async def approve_request(
+    approval_id: str,
+    decision: ApprovalDecisionRequest,
+    repository=REPOSITORY_DEPENDENCY,
+) -> ApprovalDecisionResponse:
+    service = ApprovalDecisionService(repository)
+    try:
+        return await service.approve(
+            approval_id,
+            decided_by=decision.decided_by,
+            decision_note=decision.decision_note,
+        )
+    except ApprovalDecisionError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+
+@router.post("/approvals/{approval_id}/reject", response_model=ApprovalDecisionResponse)
+async def reject_request(
+    approval_id: str,
+    decision: ApprovalDecisionRequest,
+    repository=REPOSITORY_DEPENDENCY,
+) -> ApprovalDecisionResponse:
+    service = ApprovalDecisionService(repository)
+    try:
+        return await service.reject(
+            approval_id,
+            decided_by=decision.decided_by,
+            decision_note=decision.decision_note,
+        )
+    except ApprovalDecisionError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
 
 
 @router.get("/mock-mutations", response_model=list[MockMutationSummary])
 async def list_mock_mutations(
+    ticket_id: str | None = None,
     repository=REPOSITORY_DEPENDENCY,
 ) -> list[MockMutationSummary]:
-    return await repository.list_mock_mutations()
+    return await repository.list_mock_mutations(ticket_id=ticket_id)
 
 
 @router.get("/eval-cases", response_model=list[EvalCaseSummary])

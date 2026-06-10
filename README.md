@@ -46,6 +46,7 @@ Start with these documents before implementation:
 - [Eval Strategy](docs/specs/eval-strategy.md) - offline eval cases, grading dimensions, and Eval Lab expectations
 - [Implementation Roadmap](docs/specs/implementation-roadmap.md) - milestone sequence for building the v1 system
 - [M2 Backend Domain + Mock Billing](docs/specs/m2-backend-domain-mock-billing.md) - durable mock billing data, read APIs, seed behavior, and DB checks
+- [M3 Governed Agent Loop](docs/specs/m3-governed-agent-loop.md) - constrained agent orchestration, provider boundary, approval writes, and mock mutation execution
 
 ## Local Setup
 
@@ -71,7 +72,7 @@ The default local services are:
 - Backend API: `http://localhost:8000`
 - Postgres: `localhost:5432`
 
-The frontend reads API/database status plus M2 mock billing domain resources from FastAPI.
+The frontend reads API/database status plus M3 governed agent loop resources from FastAPI.
 
 ### Development Commands
 
@@ -89,9 +90,11 @@ make seed
 make db-down
 ```
 
-`make seed` runs migrations and resets the M2 demo-owned mock billing rows. It preserves unrelated local domain rows and rebuilds the Duplicate Charge, Usage Spike, Credit/Refund Dispute, trace, approval, mock mutation, and eval fixtures.
+`make seed` runs migrations and resets the demo-owned mock billing rows. It preserves unrelated local domain rows, rebuilds the Duplicate Charge, Usage Spike, Credit/Refund Dispute, historical mock mutation, and eval case fixtures, and leaves the Duplicate Charge ticket ready for a live governed agent run.
 
-`make test-db` starts local Postgres, runs migrations, seeds demo data, and verifies key M2 read APIs against the real database. The default `make test` remains fast and does not require Docker/Postgres.
+`make test-db` starts local Postgres, runs migrations, seeds demo data, and verifies key M3 seed and run-preflight APIs against the real database. The default `make test` remains fast and does not require Docker/Postgres.
+
+To run the M3 agent loop locally, configure `OPENAI_API_KEY` and `OPENAI_MODEL` in `.env`. `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1` and can point at another OpenAI-compatible endpoint.
 
 ### Health Checks
 

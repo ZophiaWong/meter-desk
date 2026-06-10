@@ -24,9 +24,9 @@ help:
 	@printf "  make dev       Start Postgres, FastAPI, and Next.js\n"
 	@printf "  make health    Check API and database health endpoints\n"
 	@printf "  make test      Run API and Web tests\n"
-	@printf "  make test-db   Run Postgres-backed M2 migration/seed/API checks\n"
+	@printf "  make test-db   Run Postgres-backed M3 migration/seed/API checks\n"
 	@printf "  make lint      Run API and Web lint/type checks\n"
-	@printf "  make seed      Reset and load M2 demo mock billing data\n"
+	@printf "  make seed      Reset and load M3 demo mock billing data\n"
 
 install: install-api install-web
 

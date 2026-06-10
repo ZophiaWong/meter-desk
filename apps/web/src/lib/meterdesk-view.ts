@@ -1,9 +1,10 @@
 import {
   getAgentRuns,
-  getApprovals,
+  getApprovalsByStatus,
   getBillingEvidence,
   getEvalCases,
   getEvalResults,
+  getMockMutations,
   getTicket,
   getTickets,
   getToolTraces,
@@ -81,6 +82,22 @@ export type ApprovalRequest = {
   policyCitation: string;
 };
 
+export type AgentRunView = {
+  id: string;
+  status: string;
+  model: string | null;
+  promptVersion: string | null;
+  errorState: string | null;
+};
+
+export type MockMutationView = {
+  id: string;
+  amount: string;
+  status: string;
+  reason: string;
+  executedAt: string;
+};
+
 export type DraftOutputs = {
   internalResolution: string;
   customerReply: string;
@@ -99,9 +116,11 @@ export type WorkbenchScenario = {
     outcome: string;
   };
   evidence: BillingEvidence;
+  run: AgentRunView | null;
   traces: TraceEntry[];
-  approval: ApprovalRequest;
-  drafts: DraftOutputs;
+  approval: ApprovalRequest | null;
+  mutations: MockMutationView[];
+  drafts: DraftOutputs | null;
 };
 
 export type ApprovalQueueItem = {
@@ -115,6 +134,8 @@ export type ApprovalQueueItem = {
   blocker: string;
   policyCitation: string;
 };
+
+export type ApprovalQueueStatus = "pending" | "approved" | "rejected" | "all";
 
 export type EvalCaseView = {
   id: string;
@@ -138,20 +159,17 @@ export const NAV_ITEMS: ServiceSurface[] = [
 const DEFAULT_TICKET_ID = "TCK-1042";
 
 export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> {
-  const [tickets, ticket, evidence, runs, approvals] = await Promise.all([
+  const [tickets, ticket, evidence, runs, approvals, mutations] = await Promise.all([
     getTickets(),
     getTicket(DEFAULT_TICKET_ID),
     getBillingEvidence(DEFAULT_TICKET_ID),
     getAgentRuns(DEFAULT_TICKET_ID),
-    getApprovals(),
+    getApprovalsByStatus("all", DEFAULT_TICKET_ID),
+    getMockMutations(DEFAULT_TICKET_ID),
   ]);
-  const run = runs[0];
+  const run = runs.at(-1) ?? null;
   const traces = run ? await getToolTraces(run.id) : [];
-  const approval = approvals.find((item) => item.ticket_id === DEFAULT_TICKET_ID) ?? approvals[0];
-
-  if (!run || !approval) {
-    throw new Error("Seeded Duplicate Charge run or approval is missing");
-  }
+  const approval = approvals.at(-1) ?? null;
 
   return {
     nav: NAV_ITEMS,
@@ -199,6 +217,15 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
         reason: evidence.policy.reason,
       },
     },
+    run: run
+      ? {
+          id: run.id,
+          status: titleCase(run.status),
+          model: run.model,
+          promptVersion: run.prompt_version,
+          errorState: run.error_state,
+        }
+      : null,
     traces: traces.map((trace) => ({
       id: trace.id,
       category: trace.category,
@@ -207,16 +234,28 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
       output: trace.output_summary,
       evidence: `Evidence: ${trace.evidence_refs.join(", ")}`,
     })),
-    approval: mapApproval(approval),
-    drafts: {
-      internalResolution: run.internal_resolution,
-      customerReply: run.customer_reply,
-    },
+    approval: approval ? mapApproval(approval) : null,
+    mutations: mutations.map((mutation) => ({
+      id: mutation.id,
+      amount: mutation.amount.display,
+      status: titleCase(mutation.status.replace("_", " ")),
+      reason: mutation.reason,
+      executedAt: mutation.executed_at_display,
+    })),
+    drafts:
+      run?.internal_resolution && run.customer_reply
+        ? {
+            internalResolution: run.internal_resolution,
+            customerReply: run.customer_reply,
+          }
+        : null,
   };
 }
 
-export async function getApprovalQueueItems(): Promise<ApprovalQueueItem[]> {
-  const [approvals, tickets] = await Promise.all([getApprovals(), getTickets()]);
+export async function getApprovalQueueItems(
+  status: ApprovalQueueStatus = "pending",
+): Promise<ApprovalQueueItem[]> {
+  const [approvals, tickets] = await Promise.all([getApprovalsByStatus(status), getTickets()]);
   const ticketById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
 
   return approvals.map((approval) => ({
@@ -227,7 +266,7 @@ export async function getApprovalQueueItems(): Promise<ApprovalQueueItem[]> {
     amount: approval.amount.display,
     status: titleCase(approval.status),
     reason: approval.reason,
-    blocker: "Read-only in M2",
+    blocker: approval.blocker,
     policyCitation: approval.policy_citation,
   }));
 }
@@ -272,7 +311,7 @@ function mapApproval(approval: ApprovalResource): ApprovalRequest {
     amount: approval.amount.display,
     status: titleCase(approval.status),
     reason: approval.reason,
-    blocker: "Read-only in M2 - mutation blocked until M3 approval execution",
+    blocker: approval.blocker,
     policyCitation: approval.policy_citation,
   };
 }

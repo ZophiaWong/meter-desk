@@ -16,8 +16,8 @@ export async function EvalLab() {
           </Link>
           <h1 className="mt-4 text-3xl font-semibold">Eval Lab</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            M2 reads the seeded offline eval case catalog from FastAPI. Only the Duplicate Charge
-            golden path has a static preview result before M4 graders exist.
+            M3 reads the seeded offline eval case catalog from FastAPI. Eval results remain empty
+            until the M4 graders run real cases.
           </p>
 
           <div className="mt-6 space-y-6">

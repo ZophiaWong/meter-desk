@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
+from datetime import UTC, datetime
 from typing import Protocol
+from uuid import uuid4
 
 from fastapi import Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meterdesk_api.db import get_session
@@ -15,6 +17,7 @@ from meterdesk_api.schemas import (
     EvalCaseSummary,
     EvalResultSummary,
     MockMutationSummary,
+    MoneyAmount,
     TicketDetail,
     TicketSummary,
     ToolTraceSummary,
@@ -34,13 +37,103 @@ class MeterDeskRepository(Protocol):
 
     async def list_traces(self, agent_run_id: str) -> list[ToolTraceSummary] | None: ...
 
-    async def list_approvals(self, status: str | None = None) -> list[ApprovalSummary]: ...
+    async def list_approvals(
+        self,
+        status: str | None = None,
+        ticket_id: str | None = None,
+    ) -> list[ApprovalSummary]: ...
 
-    async def list_mock_mutations(self) -> list[MockMutationSummary]: ...
+    async def list_mock_mutations(
+        self,
+        ticket_id: str | None = None,
+    ) -> list[MockMutationSummary]: ...
 
     async def list_eval_cases(self) -> list[EvalCaseSummary]: ...
 
     async def list_eval_results(self) -> list[EvalResultSummary]: ...
+
+    async def get_pending_financial_approval(
+        self,
+        ticket_id: str,
+        action_type: str,
+    ) -> ApprovalSummary | None: ...
+
+    async def list_executed_action_metadata(self, ticket_id: str) -> list[dict[str, object]]: ...
+
+    async def create_agent_run(
+        self,
+        *,
+        ticket_id: str,
+        source: str,
+        model: str,
+        prompt_version: str,
+    ) -> AgentRunSummary: ...
+
+    async def complete_agent_run(
+        self,
+        *,
+        agent_run_id: str,
+        final_outcome: str,
+        internal_resolution: str,
+        customer_reply: str,
+    ) -> AgentRunSummary: ...
+
+    async def fail_agent_run(self, agent_run_id: str, error_state: str) -> AgentRunSummary: ...
+
+    async def add_tool_trace(
+        self,
+        *,
+        agent_run_id: str,
+        category: str,
+        risk: str,
+        label: str,
+        input_summary: str,
+        output_summary: str,
+        evidence_refs: list[str],
+        policy_refs: list[str],
+        approval_refs: list[str],
+        error_state: str | None = None,
+    ) -> ToolTraceSummary: ...
+
+    async def create_approval_request(
+        self,
+        *,
+        ticket_id: str,
+        agent_run_id: str,
+        title: str,
+        action_type: str,
+        amount_cents: int,
+        amount_display: str,
+        currency: str,
+        reason: str,
+        blocker: str,
+        policy_citation: str,
+        evidence_refs: list[str],
+        action_metadata: dict[str, object],
+    ) -> ApprovalSummary: ...
+
+    async def get_approval(self, approval_id: str) -> ApprovalSummary | None: ...
+
+    async def get_mock_mutation_by_approval(
+        self,
+        approval_id: str,
+    ) -> MockMutationSummary | None: ...
+
+    async def approve_request(
+        self,
+        *,
+        approval_id: str,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> tuple[ApprovalSummary, MockMutationSummary]: ...
+
+    async def reject_request(
+        self,
+        *,
+        approval_id: str,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> ApprovalSummary: ...
 
 
 class InMemoryMeterDeskRepository:
@@ -86,19 +179,274 @@ class InMemoryMeterDeskRepository:
             return None
         return self._traces[agent_run_id]
 
-    async def list_approvals(self, status: str | None = None) -> list[ApprovalSummary]:
-        if status is None:
-            return self._approvals
-        return [approval for approval in self._approvals if approval.status == status]
+    async def list_approvals(
+        self,
+        status: str | None = None,
+        ticket_id: str | None = None,
+    ) -> list[ApprovalSummary]:
+        approvals = self._approvals
+        if status is not None:
+            approvals = [approval for approval in approvals if approval.status == status]
+        if ticket_id is not None:
+            approvals = [approval for approval in approvals if approval.ticket_id == ticket_id]
+        return approvals
 
-    async def list_mock_mutations(self) -> list[MockMutationSummary]:
-        return self._mock_mutations
+    async def list_mock_mutations(self, ticket_id: str | None = None) -> list[MockMutationSummary]:
+        if ticket_id is None:
+            return self._mock_mutations
+        return [mutation for mutation in self._mock_mutations if mutation.ticket_id == ticket_id]
 
     async def list_eval_cases(self) -> list[EvalCaseSummary]:
         return self._eval_cases
 
     async def list_eval_results(self) -> list[EvalResultSummary]:
         return self._eval_results
+
+    async def get_pending_financial_approval(
+        self,
+        ticket_id: str,
+        action_type: str,
+    ) -> ApprovalSummary | None:
+        for approval in self._approvals:
+            if (
+                approval.ticket_id == ticket_id
+                and approval.action_type == action_type
+                and approval.status == "pending"
+            ):
+                return approval
+        return None
+
+    async def list_executed_action_metadata(self, ticket_id: str) -> list[dict[str, object]]:
+        return [
+            mutation.action_metadata
+            for mutation in self._mock_mutations
+            if mutation.ticket_id == ticket_id and mutation.status == "mock_executed"
+        ]
+
+    async def create_agent_run(
+        self,
+        *,
+        ticket_id: str,
+        source: str,
+        model: str,
+        prompt_version: str,
+    ) -> AgentRunSummary:
+        run = AgentRunSummary(
+            id=_new_id("RUN"),
+            ticket_id=ticket_id,
+            status="running",
+            source=source,
+            model=model,
+            prompt_version=prompt_version,
+        )
+        self._agent_runs.setdefault(ticket_id, []).append(run)
+        self._traces[run.id] = []
+        return run
+
+    async def complete_agent_run(
+        self,
+        *,
+        agent_run_id: str,
+        final_outcome: str,
+        internal_resolution: str,
+        customer_reply: str,
+    ) -> AgentRunSummary:
+        run = self._find_run(agent_run_id)
+        completed = run.model_copy(
+            update={
+                "status": "completed",
+                "final_outcome": final_outcome,
+                "internal_resolution": internal_resolution,
+                "customer_reply": customer_reply,
+                "error_state": None,
+            }
+        )
+        self._replace_run(completed)
+        return completed
+
+    async def fail_agent_run(self, agent_run_id: str, error_state: str) -> AgentRunSummary:
+        run = self._find_run(agent_run_id)
+        failed = run.model_copy(update={"status": "failed", "error_state": error_state})
+        self._replace_run(failed)
+        return failed
+
+    async def add_tool_trace(
+        self,
+        *,
+        agent_run_id: str,
+        category: str,
+        risk: str,
+        label: str,
+        input_summary: str,
+        output_summary: str,
+        evidence_refs: list[str],
+        policy_refs: list[str],
+        approval_refs: list[str],
+        error_state: str | None = None,
+    ) -> ToolTraceSummary:
+        traces = self._traces.setdefault(agent_run_id, [])
+        trace = ToolTraceSummary(
+            id=_new_id("trace"),
+            agent_run_id=agent_run_id,
+            sequence=len(traces) + 1,
+            category=category,
+            risk=risk,
+            label=label,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            evidence_refs=evidence_refs,
+            policy_refs=policy_refs,
+            approval_refs=approval_refs,
+            error_state=error_state,
+        )
+        traces.append(trace)
+        return trace
+
+    async def create_approval_request(
+        self,
+        *,
+        ticket_id: str,
+        agent_run_id: str,
+        title: str,
+        action_type: str,
+        amount_cents: int,
+        amount_display: str,
+        currency: str,
+        reason: str,
+        blocker: str,
+        policy_citation: str,
+        evidence_refs: list[str],
+        action_metadata: dict[str, object],
+    ) -> ApprovalSummary:
+        approval = ApprovalSummary(
+            id=_new_id("APR"),
+            ticket_id=ticket_id,
+            agent_run_id=agent_run_id,
+            title=title,
+            status="pending",
+            action_type=action_type,
+            amount=MoneyAmount(
+                amount_cents=amount_cents,
+                currency=currency,
+                display=amount_display,
+            ),
+            reason=reason,
+            policy_citation=policy_citation,
+            blocker=blocker,
+            evidence_refs=evidence_refs,
+            action_metadata=action_metadata,
+        )
+        self._approvals.append(approval)
+        return approval
+
+    async def get_approval(self, approval_id: str) -> ApprovalSummary | None:
+        return next((approval for approval in self._approvals if approval.id == approval_id), None)
+
+    async def get_mock_mutation_by_approval(
+        self,
+        approval_id: str,
+    ) -> MockMutationSummary | None:
+        return next(
+            (
+                mutation
+                for mutation in self._mock_mutations
+                if mutation.approval_request_id == approval_id
+            ),
+            None,
+        )
+
+    async def approve_request(
+        self,
+        *,
+        approval_id: str,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> tuple[ApprovalSummary, MockMutationSummary]:
+        approval = (await self.get_approval(approval_id)).model_copy(
+            update={
+                "status": "approved",
+                "decision": "approved",
+                "decided_at": _now(),
+                "decided_by": decided_by,
+                "decision_note": decision_note,
+                "blocker": "Approved; mock mutation executed",
+            }
+        )
+        self._replace_approval(approval)
+
+        existing = await self.get_mock_mutation_by_approval(approval_id)
+        if existing is not None:
+            return approval, existing
+
+        mutation = MockMutationSummary(
+            id=_new_id("MM"),
+            ticket_id=approval.ticket_id,
+            approval_request_id=approval.id,
+            agent_run_id=approval.agent_run_id,
+            mutation_type=approval.action_type,
+            status="mock_executed",
+            amount=approval.amount,
+            reason=approval.reason,
+            action_metadata=approval.action_metadata,
+            executed_at=_now(),
+            executed_at_display=_format_display_time(_now()),
+        )
+        self._mock_mutations.append(mutation)
+        if approval.agent_run_id is not None:
+            await self.add_tool_trace(
+                agent_run_id=approval.agent_run_id,
+                category="mutation.mock_refund",
+                risk="High",
+                label="Executed approved mock financial mutation",
+                input_summary=f"Executed approved request {approval.id}.",
+                output_summary=f"Created mock mutation {mutation.id}.",
+                evidence_refs=approval.evidence_refs,
+                policy_refs=[approval.policy_citation],
+                approval_refs=[approval.id],
+            )
+        return approval, mutation
+
+    async def reject_request(
+        self,
+        *,
+        approval_id: str,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> ApprovalSummary:
+        approval = (await self.get_approval(approval_id)).model_copy(
+            update={
+                "status": "rejected",
+                "decision": "rejected",
+                "decided_at": _now(),
+                "decided_by": decided_by,
+                "decision_note": decision_note,
+                "blocker": "Rejected by human reviewer; no mock mutation executed",
+            }
+        )
+        self._replace_approval(approval)
+        return approval
+
+    def _find_run(self, agent_run_id: str) -> AgentRunSummary:
+        for runs in self._agent_runs.values():
+            for run in runs:
+                if run.id == agent_run_id:
+                    return run
+        raise KeyError(agent_run_id)
+
+    def _replace_run(self, replacement: AgentRunSummary) -> None:
+        runs = self._agent_runs[replacement.ticket_id]
+        for index, run in enumerate(runs):
+            if run.id == replacement.id:
+                runs[index] = replacement
+                return
+        raise KeyError(replacement.id)
+
+    def _replace_approval(self, replacement: ApprovalSummary) -> None:
+        for index, approval in enumerate(self._approvals):
+            if approval.id == replacement.id:
+                self._approvals[index] = replacement
+                return
+        raise KeyError(replacement.id)
 
 
 class SqlAlchemyMeterDeskRepository:
@@ -316,6 +664,7 @@ class SqlAlchemyMeterDeskRepository:
                 final_outcome=run.final_outcome,
                 internal_resolution=run.internal_resolution,
                 customer_reply=run.customer_reply,
+                error_state=run.error_state,
                 model=run.model,
                 prompt_version=run.prompt_version,
             )
@@ -353,58 +702,314 @@ class SqlAlchemyMeterDeskRepository:
             for trace in traces
         ]
 
-    async def list_approvals(self, status: str | None = None) -> list[ApprovalSummary]:
+    async def list_approvals(
+        self,
+        status: str | None = None,
+        ticket_id: str | None = None,
+    ) -> list[ApprovalSummary]:
         from meterdesk_api.models import ApprovalRequest
-        from meterdesk_api.schemas import MoneyAmount
 
         statement = select(ApprovalRequest).order_by(ApprovalRequest.created_at)
         if status is not None:
             statement = statement.where(ApprovalRequest.status == status)
+        if ticket_id is not None:
+            statement = statement.where(ApprovalRequest.ticket_id == ticket_id)
         approvals = (await self._session.execute(statement)).scalars()
-        return [
-            ApprovalSummary(
-                id=approval.id,
-                ticket_id=approval.ticket_id,
-                title=approval.title,
-                status=approval.status,
-                amount=MoneyAmount(
-                    amount_cents=approval.amount_cents,
-                    currency=approval.currency,
-                    display=approval.amount_display,
-                ),
-                reason=approval.reason,
-                policy_citation=approval.policy_citation,
-                blocker=approval.blocker,
-            )
-            for approval in approvals
-        ]
+        return [_approval_to_summary(approval) for approval in approvals]
 
-    async def list_mock_mutations(self) -> list[MockMutationSummary]:
+    async def list_mock_mutations(self, ticket_id: str | None = None) -> list[MockMutationSummary]:
         from meterdesk_api.models import MockMutation
-        from meterdesk_api.schemas import MoneyAmount
+
+        statement = select(MockMutation).order_by(MockMutation.executed_at)
+        if ticket_id is not None:
+            statement = statement.where(MockMutation.ticket_id == ticket_id)
+        mutations = (await self._session.execute(statement)).scalars()
+        return [_mutation_to_summary(mutation) for mutation in mutations]
+
+    async def get_pending_financial_approval(
+        self,
+        ticket_id: str,
+        action_type: str,
+    ) -> ApprovalSummary | None:
+        from meterdesk_api.models import ApprovalRequest
+
+        approval = (
+            await self._session.execute(
+                select(ApprovalRequest)
+                .where(ApprovalRequest.ticket_id == ticket_id)
+                .where(ApprovalRequest.action_type == action_type)
+                .where(ApprovalRequest.status == "pending")
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return _approval_to_summary(approval) if approval is not None else None
+
+    async def list_executed_action_metadata(self, ticket_id: str) -> list[dict[str, object]]:
+        from meterdesk_api.models import MockMutation
 
         mutations = (
-            await self._session.execute(select(MockMutation).order_by(MockMutation.executed_at))
-        ).scalars()
-        return [
-            MockMutationSummary(
-                id=mutation.id,
-                ticket_id=mutation.ticket_id,
-                approval_request_id=mutation.approval_request_id,
-                agent_run_id=mutation.agent_run_id,
-                mutation_type=mutation.mutation_type,
-                status=mutation.status,
-                amount=MoneyAmount(
-                    amount_cents=mutation.amount_cents,
-                    currency=mutation.currency,
-                    display=mutation.amount_display,
-                ),
-                reason=mutation.reason,
-                executed_at=mutation.executed_at,
-                executed_at_display=mutation.executed_at_display,
+            await self._session.execute(
+                select(MockMutation)
+                .where(MockMutation.ticket_id == ticket_id)
+                .where(MockMutation.status == "mock_executed")
+                .order_by(MockMutation.executed_at)
             )
-            for mutation in mutations
-        ]
+        ).scalars()
+        return [mutation.action_metadata for mutation in mutations]
+
+    async def create_agent_run(
+        self,
+        *,
+        ticket_id: str,
+        source: str,
+        model: str,
+        prompt_version: str,
+    ) -> AgentRunSummary:
+        from meterdesk_api.models import AgentRun
+
+        now = _now()
+        run = AgentRun(
+            id=_new_id("RUN"),
+            ticket_id=ticket_id,
+            status="running",
+            source=source,
+            final_outcome=None,
+            internal_resolution=None,
+            customer_reply=None,
+            error_state=None,
+            model=model,
+            prompt_version=prompt_version,
+            started_at=now,
+            completed_at=None,
+            seed_marker=None,
+        )
+        self._session.add(run)
+        await self._session.commit()
+        return _run_to_summary(run)
+
+    async def complete_agent_run(
+        self,
+        *,
+        agent_run_id: str,
+        final_outcome: str,
+        internal_resolution: str,
+        customer_reply: str,
+    ) -> AgentRunSummary:
+        from meterdesk_api.models import AgentRun
+
+        run = await self._session.get(AgentRun, agent_run_id)
+        run.status = "completed"
+        run.final_outcome = final_outcome
+        run.internal_resolution = internal_resolution
+        run.customer_reply = customer_reply
+        run.error_state = None
+        run.completed_at = _now()
+        await self._session.commit()
+        return _run_to_summary(run)
+
+    async def fail_agent_run(self, agent_run_id: str, error_state: str) -> AgentRunSummary:
+        from meterdesk_api.models import AgentRun
+
+        run = await self._session.get(AgentRun, agent_run_id)
+        run.status = "failed"
+        run.error_state = error_state
+        run.completed_at = _now()
+        await self._session.commit()
+        return _run_to_summary(run)
+
+    async def add_tool_trace(
+        self,
+        *,
+        agent_run_id: str,
+        category: str,
+        risk: str,
+        label: str,
+        input_summary: str,
+        output_summary: str,
+        evidence_refs: list[str],
+        policy_refs: list[str],
+        approval_refs: list[str],
+        error_state: str | None = None,
+    ) -> ToolTraceSummary:
+        from meterdesk_api.models import ToolTrace
+
+        sequence = (
+            await self._session.execute(
+                select(func.coalesce(func.max(ToolTrace.sequence), 0)).where(
+                    ToolTrace.agent_run_id == agent_run_id
+                )
+            )
+        ).scalar_one()
+        trace = ToolTrace(
+            id=_new_id("trace"),
+            agent_run_id=agent_run_id,
+            sequence=sequence + 1,
+            category=category,
+            risk=risk,
+            label=label,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            evidence_refs=evidence_refs,
+            policy_refs=policy_refs,
+            approval_refs=approval_refs,
+            error_state=error_state,
+            seed_marker=None,
+        )
+        self._session.add(trace)
+        await self._session.commit()
+        return _trace_to_summary(trace)
+
+    async def create_approval_request(
+        self,
+        *,
+        ticket_id: str,
+        agent_run_id: str,
+        title: str,
+        action_type: str,
+        amount_cents: int,
+        amount_display: str,
+        currency: str,
+        reason: str,
+        blocker: str,
+        policy_citation: str,
+        evidence_refs: list[str],
+        action_metadata: dict[str, object],
+    ) -> ApprovalSummary:
+        from meterdesk_api.models import ApprovalRequest
+
+        approval = ApprovalRequest(
+            id=_new_id("APR"),
+            ticket_id=ticket_id,
+            agent_run_id=agent_run_id,
+            title=title,
+            status="pending",
+            action_type=action_type,
+            amount_cents=amount_cents,
+            amount_display=amount_display,
+            currency=currency,
+            reason=reason,
+            blocker=blocker,
+            policy_citation=policy_citation,
+            evidence_refs=evidence_refs,
+            action_metadata=action_metadata,
+            created_at=_now(),
+            decided_at=None,
+            decision=None,
+            decided_by=None,
+            decision_note=None,
+            seed_marker=None,
+        )
+        self._session.add(approval)
+        await self._session.commit()
+        return _approval_to_summary(approval)
+
+    async def get_approval(self, approval_id: str) -> ApprovalSummary | None:
+        from meterdesk_api.models import ApprovalRequest
+
+        approval = await self._session.get(ApprovalRequest, approval_id)
+        return _approval_to_summary(approval) if approval is not None else None
+
+    async def get_mock_mutation_by_approval(
+        self,
+        approval_id: str,
+    ) -> MockMutationSummary | None:
+        from meterdesk_api.models import MockMutation
+
+        mutation = (
+            await self._session.execute(
+                select(MockMutation).where(MockMutation.approval_request_id == approval_id).limit(1)
+            )
+        ).scalar_one_or_none()
+        return _mutation_to_summary(mutation) if mutation is not None else None
+
+    async def approve_request(
+        self,
+        *,
+        approval_id: str,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> tuple[ApprovalSummary, MockMutationSummary]:
+        from meterdesk_api.models import ApprovalRequest, MockMutation, ToolTrace
+
+        approval = await self._session.get(ApprovalRequest, approval_id)
+        approval.status = "approved"
+        approval.decision = "approved"
+        approval.decided_at = _now()
+        approval.decided_by = decided_by
+        approval.decision_note = decision_note
+        approval.blocker = "Approved; mock mutation executed"
+
+        mutation = (
+            await self._session.execute(
+                select(MockMutation).where(MockMutation.approval_request_id == approval.id).limit(1)
+            )
+        ).scalar_one_or_none()
+        if mutation is None:
+            now = _now()
+            mutation = MockMutation(
+                id=_new_id("MM"),
+                ticket_id=approval.ticket_id,
+                approval_request_id=approval.id,
+                agent_run_id=approval.agent_run_id,
+                mutation_type=approval.action_type,
+                status="mock_executed",
+                amount_cents=approval.amount_cents,
+                amount_display=approval.amount_display,
+                currency=approval.currency,
+                reason=approval.reason,
+                action_metadata=approval.action_metadata,
+                executed_at=now,
+                executed_at_display=_format_display_time(now),
+                seed_marker=None,
+            )
+            self._session.add(mutation)
+            if approval.agent_run_id is not None:
+                sequence = (
+                    await self._session.execute(
+                        select(func.coalesce(func.max(ToolTrace.sequence), 0)).where(
+                            ToolTrace.agent_run_id == approval.agent_run_id
+                        )
+                    )
+                ).scalar_one()
+                self._session.add(
+                    ToolTrace(
+                        id=_new_id("trace"),
+                        agent_run_id=approval.agent_run_id,
+                        sequence=sequence + 1,
+                        category="mutation.mock_refund",
+                        risk="High",
+                        label="Executed approved mock financial mutation",
+                        input_summary=f"Executed approved request {approval.id}.",
+                        output_summary=f"Created mock mutation {mutation.id}.",
+                        evidence_refs=approval.evidence_refs,
+                        policy_refs=[approval.policy_citation],
+                        approval_refs=[approval.id],
+                        error_state=None,
+                        seed_marker=None,
+                    )
+                )
+
+        await self._session.commit()
+        return _approval_to_summary(approval), _mutation_to_summary(mutation)
+
+    async def reject_request(
+        self,
+        *,
+        approval_id: str,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> ApprovalSummary:
+        from meterdesk_api.models import ApprovalRequest
+
+        approval = await self._session.get(ApprovalRequest, approval_id)
+        approval.status = "rejected"
+        approval.decision = "rejected"
+        approval.decided_at = _now()
+        approval.decided_by = decided_by
+        approval.decision_note = decision_note
+        approval.blocker = "Rejected by human reviewer; no mock mutation executed"
+        await self._session.commit()
+        return _approval_to_summary(approval)
 
     async def list_eval_cases(self) -> list[EvalCaseSummary]:
         from meterdesk_api.models import EvalCase
@@ -447,3 +1052,92 @@ async def get_repository(
     session: AsyncSession = SESSION_DEPENDENCY,
 ) -> AsyncIterator[MeterDeskRepository]:
     yield SqlAlchemyMeterDeskRepository(session)
+
+
+def _new_id(prefix: str) -> str:
+    return f"{prefix}-{uuid4().hex[:12]}"
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
+
+
+def _format_display_time(value: datetime) -> str:
+    return value.strftime("%b %-d, %Y %H:%M UTC")
+
+
+def _run_to_summary(run) -> AgentRunSummary:
+    return AgentRunSummary(
+        id=run.id,
+        ticket_id=run.ticket_id,
+        status=run.status,
+        source=run.source,
+        final_outcome=run.final_outcome,
+        internal_resolution=run.internal_resolution,
+        customer_reply=run.customer_reply,
+        error_state=run.error_state,
+        model=run.model,
+        prompt_version=run.prompt_version,
+    )
+
+
+def _trace_to_summary(trace) -> ToolTraceSummary:
+    return ToolTraceSummary(
+        id=trace.id,
+        agent_run_id=trace.agent_run_id,
+        sequence=trace.sequence,
+        category=trace.category,
+        risk=trace.risk,
+        label=trace.label,
+        input_summary=trace.input_summary,
+        output_summary=trace.output_summary,
+        evidence_refs=trace.evidence_refs,
+        policy_refs=trace.policy_refs,
+        approval_refs=trace.approval_refs,
+        error_state=trace.error_state,
+    )
+
+
+def _approval_to_summary(approval) -> ApprovalSummary:
+    return ApprovalSummary(
+        id=approval.id,
+        ticket_id=approval.ticket_id,
+        agent_run_id=approval.agent_run_id,
+        title=approval.title,
+        status=approval.status,
+        action_type=approval.action_type,
+        amount=MoneyAmount(
+            amount_cents=approval.amount_cents,
+            currency=approval.currency,
+            display=approval.amount_display,
+        ),
+        reason=approval.reason,
+        policy_citation=approval.policy_citation,
+        blocker=approval.blocker,
+        evidence_refs=approval.evidence_refs,
+        action_metadata=approval.action_metadata,
+        decided_at=approval.decided_at,
+        decision=approval.decision,
+        decided_by=approval.decided_by,
+        decision_note=approval.decision_note,
+    )
+
+
+def _mutation_to_summary(mutation) -> MockMutationSummary:
+    return MockMutationSummary(
+        id=mutation.id,
+        ticket_id=mutation.ticket_id,
+        approval_request_id=mutation.approval_request_id,
+        agent_run_id=mutation.agent_run_id,
+        mutation_type=mutation.mutation_type,
+        status=mutation.status,
+        amount=MoneyAmount(
+            amount_cents=mutation.amount_cents,
+            currency=mutation.currency,
+            display=mutation.amount_display,
+        ),
+        reason=mutation.reason,
+        action_metadata=mutation.action_metadata,
+        executed_at=mutation.executed_at,
+        executed_at_display=mutation.executed_at_display,
+    )

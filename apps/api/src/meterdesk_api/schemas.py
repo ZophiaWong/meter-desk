@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 Scenario = Literal["duplicate_charge", "usage_spike", "credit_refund_dispute"]
 RiskLevel = Literal["Low", "Medium", "High"]
@@ -101,9 +101,10 @@ class AgentRunSummary(BaseModel):
     ticket_id: str
     status: str
     source: str
-    final_outcome: str
-    internal_resolution: str
-    customer_reply: str
+    final_outcome: str | None = None
+    internal_resolution: str | None = None
+    customer_reply: str | None = None
+    error_state: str | None = None
     model: str | None = None
     prompt_version: str | None = None
 
@@ -126,12 +127,20 @@ class ToolTraceSummary(BaseModel):
 class ApprovalSummary(BaseModel):
     id: str
     ticket_id: str
+    agent_run_id: str | None = None
     title: str
     status: str
+    action_type: str
     amount: MoneyAmount
     reason: str
     policy_citation: str
     blocker: str
+    evidence_refs: list[str] = Field(default_factory=list)
+    action_metadata: dict[str, Any] = Field(default_factory=dict)
+    decided_at: datetime | None = None
+    decision: str | None = None
+    decided_by: str | None = None
+    decision_note: str | None = None
 
 
 class MockMutationSummary(BaseModel):
@@ -143,6 +152,7 @@ class MockMutationSummary(BaseModel):
     status: str
     amount: MoneyAmount
     reason: str
+    action_metadata: dict[str, Any] = Field(default_factory=dict)
     executed_at: datetime
     executed_at_display: str
 
@@ -165,6 +175,16 @@ class EvalResultSummary(BaseModel):
     status: str
     summary: str
     dimension_scores: dict[str, str]
+
+
+class ApprovalDecisionRequest(BaseModel):
+    decided_by: str = "Demo Operator"
+    decision_note: str | None = None
+
+
+class ApprovalDecisionResponse(BaseModel):
+    approval: ApprovalSummary
+    mock_mutation: MockMutationSummary | None = None
 
 
 class OrmModel(BaseModel):

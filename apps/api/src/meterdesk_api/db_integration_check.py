@@ -13,20 +13,24 @@ async def run_db_integration_check() -> None:
         tickets = await client.get("/tickets")
         evidence = await client.get("/tickets/TCK-1042/billing-evidence")
         approvals = await client.get("/approvals")
+        runs = await client.get("/tickets/TCK-1042/agent-runs")
         eval_cases = await client.get("/eval-cases")
-        write = await client.post("/approvals/APR-2042/approve")
+        write = await client.post("/tickets/TCK-1042/agent-runs")
 
     assert tickets.status_code == 200
     assert [ticket["id"] for ticket in tickets.json()] == ["TCK-1042", "TCK-1098", "TCK-1137"]
     assert evidence.status_code == 200
     assert evidence.json()["invoice"]["id"] == "INV-2026-0418"
     assert approvals.status_code == 200
-    assert approvals.json()[0]["id"] == "APR-2042"
+    assert approvals.json() == []
+    assert runs.status_code == 200
+    assert runs.json() == []
     assert eval_cases.status_code == 200
     assert len(eval_cases.json()) == 9
-    assert write.status_code == 404
+    assert write.status_code == 503
+    assert write.json()["detail"] == "OpenAI-compatible provider is not configured"
 
-    print("MeterDesk M2 DB integration check passed.")
+    print("MeterDesk M3 DB integration check passed.")
 
 
 def main() -> None:

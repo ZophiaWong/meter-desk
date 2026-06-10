@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import pytest
+from fastapi import HTTPException
+from httpx import ASGITransport, AsyncClient
+
+from meterdesk_api.agent.provider import (
+    AgentDraftOutput,
+    AgentProviderError,
+    AgentProviderInput,
+    AgentResolutionProvider,
+)
+from meterdesk_api.agent.runtime import get_agent_provider
+from meterdesk_api.main import app
+from meterdesk_api.repositories import get_repository
+from meterdesk_api.seed_data import build_seed_repository
+
+
+class FakeProvider(AgentResolutionProvider):
+    model = "fake-m3-model"
+
+    def __init__(self, outputs: list[AgentDraftOutput | Exception] | None = None) -> None:
+        self.outputs = outputs
+        self.calls: list[AgentProviderInput] = []
+
+    async def create_resolution(self, provider_input: AgentProviderInput) -> AgentDraftOutput:
+        self.calls.append(provider_input)
+        output = self.outputs.pop(0) if self.outputs is not None else self._default_output()
+        if isinstance(output, Exception):
+            raise output
+        return output
+
+    def _default_output(self) -> AgentDraftOutput:
+        return AgentDraftOutput(
+            outcome="confirmed_duplicate_charge",
+            recommendation="Refund the duplicate captured charge after approval.",
+            internal_resolution=(
+                "Confirmed duplicate payment on INV-2026-0418. Recommend refunding "
+                "ch_2026_0418_B after human approval."
+            ),
+            customer_reply=(
+                "Thanks for flagging this. We found two captured payments tied to the same "
+                "April invoice. We are sending the duplicate charge for approval and will "
+                "keep you updated."
+            ),
+        )
+
+
+@pytest.fixture(autouse=True)
+def m3_dependency_overrides():
+    repository = build_seed_repository()
+    provider = FakeProvider()
+
+    async def repository_override():
+        return repository
+
+    async def provider_override():
+        return provider
+
+    app.dependency_overrides[get_repository] = repository_override
+    app.dependency_overrides[get_agent_provider] = provider_override
+    try:
+        yield repository, provider
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_start_agent_run_creates_traces_provider_output_and_pending_approval() -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        start_response = await client.post("/tickets/TCK-1042/agent-runs")
+        approvals_response = await client.get("/approvals?ticket_id=TCK-1042&status=all")
+        run = start_response.json()
+        trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
+
+    assert start_response.status_code == 201
+    assert run["ticket_id"] == "TCK-1042"
+    assert run["status"] == "completed"
+    assert run["model"] == "fake-m3-model"
+    assert run["prompt_version"] == "m3-duplicate-charge-v1"
+    assert run["final_outcome"] == "confirmed_duplicate_charge"
+    assert run["customer_reply"]
+    assert "will refund" not in run["customer_reply"].lower()
+
+    assert trace_response.status_code == 200
+    assert [trace["category"] for trace in trace_response.json()] == [
+        "read.billing_evidence",
+        "read.prior_financial_actions",
+        "decision.refund_eligibility",
+        "draft.resolution",
+        "approval.create_request",
+    ]
+
+    assert approvals_response.status_code == 200
+    approvals = approvals_response.json()
+    assert len(approvals) == 1
+    assert approvals[0]["status"] == "pending"
+    assert approvals[0]["agent_run_id"] == run["id"]
+    assert approvals[0]["action_metadata"]["target_charge_id"] == "ch_2026_0418_B"
+
+
+@pytest.mark.asyncio
+async def test_start_agent_run_is_blocked_while_approval_is_pending() -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        first = await client.post("/tickets/TCK-1042/agent-runs")
+        second = await client.post("/tickets/TCK-1042/agent-runs")
+
+    assert first.status_code == 201
+    assert second.status_code == 409
+    assert second.json()["detail"] == "Pending financial approval already exists for this ticket"
+
+
+@pytest.mark.asyncio
+async def test_provider_validation_failure_retries_once_then_persists_failed_run() -> None:
+    provider = FakeProvider(
+        outputs=[
+            AgentProviderError("invalid structured output"),
+            AgentProviderError("invalid structured output"),
+        ]
+    )
+
+    async def provider_override():
+        return provider
+
+    app.dependency_overrides[get_agent_provider] = provider_override
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post("/tickets/TCK-1042/agent-runs")
+        approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
+
+    assert response.status_code == 201
+    run = response.json()
+    assert run["status"] == "failed"
+    assert run["error_state"] == "Provider failed after retry: invalid structured output"
+    assert run["internal_resolution"] is None
+    assert approvals.json() == []
+    assert len(provider.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_missing_provider_config_returns_503_without_creating_run() -> None:
+    async def missing_provider_override():
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI-compatible provider is not configured",
+        )
+
+    app.dependency_overrides[get_agent_provider] = missing_provider_override
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post("/tickets/TCK-1042/agent-runs")
+        runs = await client.get("/tickets/TCK-1042/agent-runs")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "OpenAI-compatible provider is not configured"
+    assert runs.json() == []
+
+
+@pytest.mark.asyncio
+async def test_unsupported_scenario_has_no_side_effects() -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post("/tickets/TCK-1098/agent-runs")
+        runs = await client.get("/tickets/TCK-1098/agent-runs")
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "M3 agent loop only supports Duplicate Charge tickets"
+    assert runs.json() == []
+
+
+@pytest.mark.asyncio
+async def test_reject_does_not_create_mutation_and_allows_rerun() -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        await client.post("/tickets/TCK-1042/agent-runs")
+        approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
+        approval_id = approvals.json()[0]["id"]
+
+        reject = await client.post(
+            f"/approvals/{approval_id}/reject",
+            json={"decided_by": "Demo Operator", "decision_note": "Needs finance review."},
+        )
+        mutations = await client.get("/mock-mutations?ticket_id=TCK-1042")
+        rerun = await client.post("/tickets/TCK-1042/agent-runs")
+
+    assert reject.status_code == 200
+    assert reject.json()["approval"]["status"] == "rejected"
+    assert reject.json()["approval"]["decided_by"] == "Demo Operator"
+    assert mutations.json() == []
+    assert rerun.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_approve_executes_one_mock_mutation_and_is_idempotent() -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        run_response = await client.post("/tickets/TCK-1042/agent-runs")
+        approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
+        approval_id = approvals.json()[0]["id"]
+
+        first = await client.post(
+            f"/approvals/{approval_id}/approve",
+            json={"decided_by": "Demo Operator", "decision_note": "Approved for demo."},
+        )
+        second = await client.post(
+            f"/approvals/{approval_id}/approve",
+            json={"decided_by": "Demo Operator"},
+        )
+        opposite = await client.post(
+            f"/approvals/{approval_id}/reject",
+            json={"decided_by": "Demo Operator"},
+        )
+        mutations = await client.get("/mock-mutations?ticket_id=TCK-1042")
+        trace_response = await client.get(f"/agent-runs/{run_response.json()['id']}/traces")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["mock_mutation"]["id"] == second.json()["mock_mutation"]["id"]
+    assert first.json()["approval"]["status"] == "approved"
+    assert opposite.status_code == 409
+    assert len(mutations.json()) == 1
+    assert mutations.json()[0]["approval_request_id"] == approval_id
+
+    assert trace_response.status_code == 200
+    assert trace_response.json()[-1]["category"] == "mutation.mock_refund"
+    assert trace_response.json()[-1]["risk"] == "High"

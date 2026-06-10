@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ApprovalsPage from "./approvals/page";
@@ -24,10 +24,22 @@ const approvals = [
     ticket_id: "TCK-1042",
     title: "Original refund pending approval",
     status: "pending",
+    action_type: "original_refund",
+    agent_run_id: "RUN-2042",
     amount: { amount_cents: 124800, currency: "USD", display: "$1,248.00" },
     reason: "Refund the second captured charge ch_2026_0418_B to the original payment method.",
     policy_citation: "REFUND-DUP-001 v2026.02",
     blocker: "Mutation blocked until human approval",
+    evidence_refs: ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+    action_metadata: {
+      action_type: "original_refund",
+      invoice_id: "INV-2026-0418",
+      target_charge_id: "ch_2026_0418_B",
+    },
+    decided_at: null,
+    decision: null,
+    decided_by: null,
+    decision_note: null,
   },
 ];
 
@@ -56,22 +68,7 @@ const evalCases = [
   expected_approval_routing: "approval expectation",
 }));
 
-const evalResults = [
-  {
-    id: "EVR-DUP-001-M2",
-    case_id: "eval-duplicate-charge-001",
-    agent_run_id: "RUN-2042",
-    status: "preview",
-    summary: "Static M2 preview from seeded Duplicate Charge trace.",
-    dimension_scores: {
-      approval_routing: "pass",
-      draft_quality: "preview",
-      outcome_correctness: "pass",
-      policy_compliance: "pass",
-      required_evidence: "pass",
-    },
-  },
-];
+const evalResults: unknown[] = [];
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -97,7 +94,7 @@ function mockApi(payloads: Record<string, unknown>) {
   );
 }
 
-describe("M2 API-backed routes", () => {
+describe("M3 API-backed routes", () => {
   it("renders pending approval queue entries from FastAPI resources", async () => {
     mockApi({
       "/approvals": approvals,
@@ -111,12 +108,12 @@ describe("M2 API-backed routes", () => {
     expect(screen.getByText("TCK-1042")).toBeInTheDocument();
     expect(screen.getByText("Northstar Compute")).toBeInTheDocument();
     expect(screen.getByText("$1,248.00")).toBeInTheDocument();
-    expect(screen.getByText("Read-only in M2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
+    expect(screen.getByText("Mutation blocked until human approval")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
   });
 
-  it("renders all nine eval cases with only the Duplicate Charge preview result", async () => {
+  it("renders all nine eval cases with no preview result before M4 runs", async () => {
     mockApi({
       "/eval-cases": evalCases,
       "/eval-results": evalResults,
@@ -126,10 +123,6 @@ describe("M2 API-backed routes", () => {
 
     expect(screen.getByRole("heading", { name: "Eval Lab" })).toBeInTheDocument();
     expect(screen.getAllByRole("article")).toHaveLength(9);
-    expect(screen.getByText("Static M2 preview from seeded Duplicate Charge trace.")).toBeInTheDocument();
-
-    const firstCase = screen.getByRole("article", { name: "eval-duplicate-charge-001" });
-    expect(within(firstCase).getByText("preview")).toBeInTheDocument();
-    expect(screen.getAllByText("No run yet")).toHaveLength(8);
+    expect(screen.getAllByText("No run yet")).toHaveLength(9);
   });
 });

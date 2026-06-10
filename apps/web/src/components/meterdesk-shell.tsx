@@ -50,7 +50,7 @@ function DataErrorPanel({ message }: { message?: string }) {
         {message ?? "FastAPI domain data unavailable"}
       </p>
       <p className="mt-3 text-sm font-medium text-meter-amber">
-        M2 does not fall back to static demo data when backend resources are unavailable.
+        M3 does not fall back to static demo data when backend resources are unavailable.
       </p>
     </section>
   );

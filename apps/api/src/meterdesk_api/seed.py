@@ -1,6 +1,6 @@
 import asyncio
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from meterdesk_api.db import create_engine
@@ -25,6 +25,7 @@ from meterdesk_api.seed_data import (
     APPROVALS,
     BILLING_EVIDENCE,
     DEMO_SEED_MARKER,
+    DEMO_TICKET_IDS,
     EVAL_CASES,
     EVAL_RESULTS,
     MOCK_MUTATIONS,
@@ -59,6 +60,25 @@ async def seed_demo_data() -> None:
     try:
         async with session_factory() as session:
             async with session.begin():
+                demo_agent_run_ids = select(AgentRun.id).where(
+                    AgentRun.ticket_id.in_(DEMO_TICKET_IDS)
+                )
+                await session.execute(
+                    delete(EvalResult).where(EvalResult.agent_run_id.in_(demo_agent_run_ids))
+                )
+                await session.execute(
+                    delete(MockMutation).where(MockMutation.ticket_id.in_(DEMO_TICKET_IDS))
+                )
+                await session.execute(
+                    delete(ToolTrace).where(ToolTrace.agent_run_id.in_(demo_agent_run_ids))
+                )
+                await session.execute(
+                    delete(ApprovalRequest).where(ApprovalRequest.ticket_id.in_(DEMO_TICKET_IDS))
+                )
+                await session.execute(
+                    delete(AgentRun).where(AgentRun.ticket_id.in_(DEMO_TICKET_IDS))
+                )
+
                 for model in DELETE_ORDER:
                     await session.execute(
                         delete(model).where(model.seed_marker == DEMO_SEED_MARKER)
@@ -203,6 +223,7 @@ async def seed_demo_data() -> None:
                         final_outcome=run.final_outcome,
                         internal_resolution=run.internal_resolution,
                         customer_reply=run.customer_reply,
+                        error_state=run.error_state,
                         model=run.model,
                         prompt_version=run.prompt_version,
                         started_at=utc(2026, 6, 5, 12, 5),
@@ -238,7 +259,7 @@ async def seed_demo_data() -> None:
                     ApprovalRequest(
                         id=approval.id,
                         ticket_id=approval.ticket_id,
-                        agent_run_id="RUN-2042" if approval.ticket_id == "TCK-1042" else None,
+                        agent_run_id=approval.agent_run_id,
                         title=approval.title,
                         status=approval.status,
                         action_type="original_refund",
@@ -249,7 +270,10 @@ async def seed_demo_data() -> None:
                         blocker=approval.blocker,
                         policy_citation=approval.policy_citation,
                         evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+                        action_metadata=approval.action_metadata,
                         created_at=utc(2026, 6, 5, 12, 6),
+                        decided_by=approval.decided_by,
+                        decision_note=approval.decision_note,
                         seed_marker=DEMO_SEED_MARKER,
                     )
                     for approval in APPROVALS
@@ -273,9 +297,15 @@ async def seed_demo_data() -> None:
                         blocker="Approved historical mock mutation",
                         policy_citation="TRIAL-CREDIT-003 v2026.03",
                         evidence_refs=["credit ledger cred-ledger-1137"],
+                        action_metadata={
+                            "action_type": "goodwill_credit",
+                            "credit_ledger_entry_id": "cred-ledger-1137",
+                        },
                         created_at=utc(2026, 5, 28, 15, 40),
                         decided_at=utc(2026, 5, 28, 15, 44),
                         decision="approved",
+                        decided_by="Demo Operator",
+                        decision_note="Historical seeded approval.",
                         seed_marker=DEMO_SEED_MARKER,
                     )
                 )
@@ -293,6 +323,7 @@ async def seed_demo_data() -> None:
                         amount_display=mutation.amount.display,
                         currency=mutation.amount.currency,
                         reason=mutation.reason,
+                        action_metadata=mutation.action_metadata,
                         executed_at=mutation.executed_at,
                         executed_at_display=mutation.executed_at_display,
                         seed_marker=DEMO_SEED_MARKER,
@@ -340,7 +371,7 @@ async def seed_demo_data() -> None:
     finally:
         await engine.dispose()
 
-    print("MeterDesk M2 demo seed complete: demo-owned rows reset and rebuilt.")
+    print("MeterDesk M3 demo seed complete: demo-owned rows reset and rebuilt.")
 
 
 def main() -> None:

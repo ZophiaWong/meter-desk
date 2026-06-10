@@ -23,7 +23,7 @@ const scenario: WorkbenchScenario = {
       id: "TCK-1042",
       title: "Same invoice charged twice",
       customer: "Northstar Compute",
-      status: "Ready for approval",
+      status: "Open - ready for agent run",
       summary: "Two captured charges are attached to INV-2026-0418.",
       isActive: true,
     },
@@ -43,7 +43,7 @@ const scenario: WorkbenchScenario = {
     severity: "Billing dispute",
     openedAt: "Jun 5, 2026",
     summary: "Customer reports that April usage was paid once but appears twice.",
-    outcome: "Agent classified this as a confirmed duplicate charge.",
+    outcome: "M3 starts with billing evidence only.",
   },
   evidence: {
     account: {
@@ -88,34 +88,15 @@ const scenario: WorkbenchScenario = {
       reason: "Same invoice, same amount, and two captured charges qualify.",
     },
   },
-  traces: [
-    {
-      id: "trace-001",
-      category: "read.billing_evidence",
-      risk: "Low",
-      label: "Collected invoice and charge evidence",
-      output: "Found one paid invoice with two captured charges.",
-      evidence: "Evidence: invoice INV-2026-0418, charges ch_2026_0418_A/ch_2026_0418_B",
-    },
-  ],
-  approval: {
-    id: "APR-2042",
-    title: "Original refund pending approval",
-    ticketId: "TCK-1042",
-    amount: "$1,248.00",
-    status: "Pending",
-    reason: "Refund the second captured charge ch_2026_0418_B to the original payment method.",
-    blocker: "Read-only in M2 - mutation blocked until M3 approval execution",
-    policyCitation: "REFUND-DUP-001 v2026.02",
-  },
-  drafts: {
-    internalResolution: "Confirmed duplicate payment on INV-2026-0418.",
-    customerReply: "If approved, we will refund the duplicate charge.",
-  },
+  run: null,
+  traces: [],
+  approval: null,
+  mutations: [],
+  drafts: null,
 };
 
 describe("MeterDeskShell", () => {
-  it("renders M2 API-backed workbench data and service status", () => {
+  it("renders M3 API-backed workbench data and empty run state", () => {
     render(<MeterDeskShell scenario={scenario} status={reachableStatus} />);
 
     expect(screen.getByRole("link", { name: "Ticket Workbench" })).toHaveAttribute("href", "/");
@@ -126,7 +107,9 @@ describe("MeterDeskShell", () => {
     expect(screen.getByRole("link", { name: "Eval Lab" })).toHaveAttribute("href", "/eval-lab");
     expect(screen.getByText("API reachable")).toBeInTheDocument();
     expect(screen.getByText("Postgres reachable")).toBeInTheDocument();
-    expect(screen.getByText("M2 API")).toBeInTheDocument();
+    expect(screen.getByText("M3 API")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
+    expect(screen.getByText("No agent run yet")).toBeInTheDocument();
 
     const evidence = screen.getByRole("region", { name: "Billing evidence" });
     expect(within(evidence).getByText("Northstar Compute")).toBeInTheDocument();
@@ -134,6 +117,53 @@ describe("MeterDeskShell", () => {
     expect(within(evidence).getByText("ch_2026_0418_A")).toBeInTheDocument();
     expect(within(evidence).getByText("ch_2026_0418_B")).toBeInTheDocument();
     expect(within(evidence).getByText("REFUND-DUP-001 v2026.02")).toBeInTheDocument();
+  });
+
+  it("renders draft-only output and active approval controls after a run", () => {
+    render(
+      <MeterDeskShell
+        scenario={{
+          ...scenario,
+          run: {
+            id: "RUN-2042",
+            status: "completed",
+            model: "fake-m3-model",
+            promptVersion: "m3-duplicate-charge-v1",
+            errorState: null,
+          },
+          traces: [
+            {
+              id: "trace-001",
+              category: "approval.create_request",
+              risk: "Medium",
+              label: "Created approval request",
+              output: "Approval request APR-2042 is pending.",
+              evidence: "Evidence: invoice INV-2026-0418, charge ch_2026_0418_B",
+            },
+          ],
+          approval: {
+            id: "APR-2042",
+            title: "Original refund pending approval",
+            ticketId: "TCK-1042",
+            amount: "$1,248.00",
+            status: "Pending",
+            reason: "Refund the second captured charge ch_2026_0418_B to the original payment method.",
+            blocker: "Mutation blocked until human approval",
+            policyCitation: "REFUND-DUP-001 v2026.02",
+          },
+          drafts: {
+            internalResolution: "Confirmed duplicate payment on INV-2026-0418.",
+            customerReply: "We are sending the duplicate charge for approval.",
+          },
+        }}
+        status={reachableStatus}
+      />,
+    );
+
+    expect(screen.getByText("Confirmed duplicate payment on INV-2026-0418.")).toBeInTheDocument();
+    expect(screen.getByText("Draft only - not sent")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
   });
 
   it("shows an explicit backend error instead of falling back to static data", () => {

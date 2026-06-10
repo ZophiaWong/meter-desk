@@ -120,6 +120,8 @@ Replace static workbench data with durable mock domain data and resource APIs.
 
 ## M3: Governed Agent Loop
 
+Focused implementation spec: `docs/specs/m3-governed-agent-loop.md`.
+
 ### Goal
 
 Implement the first real agent-governed investigation loop for the Duplicate Charge golden path.
