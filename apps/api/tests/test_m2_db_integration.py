@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from meterdesk_api.db import create_engine
 from meterdesk_api.main import app
 from meterdesk_api.repositories import SqlAlchemyMeterDeskRepository
+from meterdesk_api.schemas import EvalResultSummary
 from meterdesk_api.seed import seed_demo_data
 
 pytestmark = pytest.mark.skipif(
@@ -121,3 +122,40 @@ async def test_seed_resets_m3_runtime_rows_for_demo_tickets() -> None:
     assert pending_approvals.json() == []
     assert mutations.status_code == 200
     assert mutations.json() == []
+
+
+@pytest.mark.asyncio
+async def test_reset_eval_fixture_state_removes_postgres_results_linked_to_fixture_runs() -> None:
+    await seed_demo_data()
+    engine = create_engine()
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        async with session_factory() as session:
+            repository = SqlAlchemyMeterDeskRepository(session)
+            run = await repository.create_agent_run(
+                ticket_id="EVAL-TCK-DUP-001",
+                source="db-test",
+                model="fake-eval-model",
+                prompt_version="m4-eval-v1",
+            )
+            await repository.replace_eval_result(
+                EvalResultSummary(
+                    id="EVR-db-test",
+                    case_id="eval-duplicate-charge-001",
+                    agent_run_id=run.id,
+                    status="passed",
+                    summary="Previous eval result.",
+                    dimension_scores={},
+                    details={},
+                )
+            )
+
+            await repository.reset_eval_fixture_state("EVAL-TCK-DUP-001")
+
+            runs = await repository.list_agent_runs("EVAL-TCK-DUP-001")
+            results = await repository.list_eval_results()
+            assert runs == []
+            assert results == []
+    finally:
+        await engine.dispose()

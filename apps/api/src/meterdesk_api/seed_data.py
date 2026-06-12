@@ -23,6 +23,11 @@ from meterdesk_api.schemas import (
 
 DEMO_SEED_MARKER = "m2-demo"
 DEMO_TICKET_IDS = ("TCK-1042", "TCK-1098", "TCK-1137")
+EVAL_FIXTURE_TICKET_IDS = (
+    "EVAL-TCK-DUP-001",
+    "EVAL-TCK-DUP-002",
+    "EVAL-TCK-DUP-003",
+)
 
 
 def money(amount_cents: int, currency: str = "USD") -> MoneyAmount:
@@ -132,6 +137,45 @@ TICKET_DETAILS = {
         summary="Customer disputes how a trial credit was consumed before cancellation.",
         outcome="Seeded for later governed credit/refund investigation.",
         customer=HELIO,
+    ),
+}
+
+EVAL_TICKET_DETAILS = {
+    "EVAL-TCK-DUP-001": TicketDetail(
+        id="EVAL-TCK-DUP-001",
+        title="Eval fixture: duplicate captured charge",
+        scenario="duplicate_charge",
+        status="Eval fixture",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 8, 9),
+        opened_at_display="Jun 8, 2026",
+        summary="Eval fixture with two captured payments tied to one paid invoice.",
+        outcome="Expected to require approval for an original refund.",
+        customer=NORTHSTAR,
+    ),
+    "EVAL-TCK-DUP-002": TicketDetail(
+        id="EVAL-TCK-DUP-002",
+        title="Eval fixture: authorization not captured",
+        scenario="duplicate_charge",
+        status="Eval fixture",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 8, 10),
+        opened_at_display="Jun 8, 2026",
+        summary="Eval fixture with one captured payment and one uncaptured authorization.",
+        outcome="Expected billing behavior; no refund or credit action.",
+        customer=NORTHSTAR,
+    ),
+    "EVAL-TCK-DUP-003": TicketDetail(
+        id="EVAL-TCK-DUP-003",
+        title="Eval fixture: insufficient duplicate evidence",
+        scenario="duplicate_charge",
+        status="Eval fixture",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 8, 11),
+        opened_at_display="Jun 8, 2026",
+        summary="Eval fixture with only one captured payment linked to the invoice.",
+        outcome="Expected human review because duplicate evidence is incomplete.",
+        customer=NORTHSTAR,
     ),
 }
 
@@ -296,6 +340,107 @@ BILLING_EVIDENCE = {
     ),
 }
 
+EVAL_BILLING_EVIDENCE = {
+    "EVAL-TCK-DUP-001": BILLING_EVIDENCE["TCK-1042"].model_copy(
+        update={
+            "invoice": BILLING_EVIDENCE["TCK-1042"].invoice.model_copy(
+                update={"id": "INV-EVAL-DUP-001"}
+            ),
+            "charges": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .charges[0]
+                .model_copy(
+                    update={
+                        "id": "ch_eval_dup_001_A",
+                        "processor_state": "Linked to INV-EVAL-DUP-001",
+                    }
+                ),
+                BILLING_EVIDENCE["TCK-1042"]
+                .charges[1]
+                .model_copy(
+                    update={
+                        "id": "ch_eval_dup_001_B",
+                        "processor_state": "Linked to INV-EVAL-DUP-001",
+                    }
+                ),
+            ],
+            "credits": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .credits[0]
+                .model_copy(update={"id": "cred-ledger-eval-dup-001"})
+            ],
+            "usage": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .usage[0]
+                .model_copy(update={"id": "usage-eval-dup-001"})
+            ],
+        }
+    ),
+    "EVAL-TCK-DUP-002": BILLING_EVIDENCE["TCK-1042"].model_copy(
+        update={
+            "invoice": BILLING_EVIDENCE["TCK-1042"].invoice.model_copy(
+                update={"id": "INV-EVAL-DUP-002"}
+            ),
+            "charges": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .charges[0]
+                .model_copy(
+                    update={
+                        "id": "ch_eval_dup_002_A",
+                        "processor_state": "Linked to INV-EVAL-DUP-002",
+                    }
+                ),
+                BILLING_EVIDENCE["TCK-1042"]
+                .charges[1]
+                .model_copy(
+                    update={
+                        "id": "auth_eval_dup_002_B",
+                        "status": "Authorized",
+                        "processor_state": "Authorization only; not captured",
+                    }
+                ),
+            ],
+            "credits": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .credits[0]
+                .model_copy(update={"id": "cred-ledger-eval-dup-002"})
+            ],
+            "usage": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .usage[0]
+                .model_copy(update={"id": "usage-eval-dup-002"})
+            ],
+        }
+    ),
+    "EVAL-TCK-DUP-003": BILLING_EVIDENCE["TCK-1042"].model_copy(
+        update={
+            "invoice": BILLING_EVIDENCE["TCK-1042"].invoice.model_copy(
+                update={"id": "INV-EVAL-DUP-003"}
+            ),
+            "charges": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .charges[0]
+                .model_copy(
+                    update={
+                        "id": "ch_eval_dup_003_A",
+                        "processor_state": "Linked to INV-EVAL-DUP-003",
+                    }
+                )
+            ],
+            "credits": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .credits[0]
+                .model_copy(update={"id": "cred-ledger-eval-dup-003"})
+            ],
+            "usage": [
+                BILLING_EVIDENCE["TCK-1042"]
+                .usage[0]
+                .model_copy(update={"id": "usage-eval-dup-003"})
+            ],
+        }
+    ),
+}
+
 AGENT_RUNS = {"TCK-1042": [], "TCK-1098": [], "TCK-1137": []}
 
 TRACES: dict[str, list[ToolTraceSummary]] = {}
@@ -327,10 +472,11 @@ EVAL_CASES = [
         scenario="duplicate_charge",
         title="Duplicate Charge golden path",
         description="Same invoice has two captured charges for the exact invoice total.",
-        expected_outcome="confirmed_duplicate_charge_refund_review",
+        expected_outcome="confirmed_duplicate_charge",
         required_evidence=["invoice", "charges", "credit_ledger", "usage", "policy"],
         policy_refs=["REFUND-DUP-001 v2026.02"],
         expected_approval_routing="refund_requires_approval",
+        fixture_ticket_id="EVAL-TCK-DUP-001",
     ),
     EvalCaseSummary(
         id="eval-duplicate-charge-002",
@@ -341,6 +487,7 @@ EVAL_CASES = [
         required_evidence=["invoice", "charges", "payment_status", "policy"],
         policy_refs=["REFUND-DUP-001 v2026.02"],
         expected_approval_routing="no_financial_action",
+        fixture_ticket_id="EVAL-TCK-DUP-002",
     ),
     EvalCaseSummary(
         id="eval-duplicate-charge-003",
@@ -351,6 +498,7 @@ EVAL_CASES = [
         required_evidence=["invoice", "charges", "account_state", "policy"],
         policy_refs=["REFUND-DUP-001 v2026.02"],
         expected_approval_routing="no_mutation_without_evidence",
+        fixture_ticket_id="EVAL-TCK-DUP-003",
     ),
     EvalCaseSummary(
         id="eval-usage-spike-001",
@@ -422,8 +570,8 @@ EVAL_RESULTS: list[EvalResultSummary] = []
 def build_seed_repository() -> InMemoryMeterDeskRepository:
     return InMemoryMeterDeskRepository(
         tickets=TICKETS,
-        ticket_details=TICKET_DETAILS,
-        billing_evidence=BILLING_EVIDENCE,
+        ticket_details={**TICKET_DETAILS, **EVAL_TICKET_DETAILS},
+        billing_evidence={**BILLING_EVIDENCE, **EVAL_BILLING_EVIDENCE},
         agent_runs=AGENT_RUNS,
         traces=TRACES,
         approvals=APPROVALS,

@@ -6,7 +6,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from fastapi import Depends
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meterdesk_api.db import get_session
@@ -51,6 +51,12 @@ class MeterDeskRepository(Protocol):
     async def list_eval_cases(self) -> list[EvalCaseSummary]: ...
 
     async def list_eval_results(self) -> list[EvalResultSummary]: ...
+
+    async def get_eval_case(self, case_id: str) -> EvalCaseSummary | None: ...
+
+    async def replace_eval_result(self, result: EvalResultSummary) -> EvalResultSummary: ...
+
+    async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None: ...
 
     async def get_pending_financial_approval(
         self,
@@ -201,6 +207,31 @@ class InMemoryMeterDeskRepository:
 
     async def list_eval_results(self) -> list[EvalResultSummary]:
         return self._eval_results
+
+    async def get_eval_case(self, case_id: str) -> EvalCaseSummary | None:
+        return next((case for case in self._eval_cases if case.id == case_id), None)
+
+    async def replace_eval_result(self, result: EvalResultSummary) -> EvalResultSummary:
+        self._eval_results = [
+            existing for existing in self._eval_results if existing.case_id != result.case_id
+        ]
+        self._eval_results.append(result)
+        return result
+
+    async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None:
+        runs = self._agent_runs.pop(fixture_ticket_id, [])
+        run_ids = {run.id for run in runs}
+        self._eval_results = [
+            result for result in self._eval_results if result.agent_run_id not in run_ids
+        ]
+        for run_id in run_ids:
+            self._traces.pop(run_id, None)
+        self._approvals = [
+            approval for approval in self._approvals if approval.ticket_id != fixture_ticket_id
+        ]
+        self._mock_mutations = [
+            mutation for mutation in self._mock_mutations if mutation.ticket_id != fixture_ticket_id
+        ]
 
     async def get_pending_financial_approval(
         self,
@@ -454,11 +485,18 @@ class SqlAlchemyMeterDeskRepository:
         self._session = session
 
     async def list_tickets(self) -> list[TicketSummary]:
-        from meterdesk_api.models import CustomerAccount, Ticket
+        from meterdesk_api.models import CustomerAccount, EvalCase, Ticket
 
         result = await self._session.execute(
             select(Ticket, CustomerAccount)
             .join(CustomerAccount, Ticket.customer_account_id == CustomerAccount.id)
+            .where(
+                ~Ticket.id.in_(
+                    select(EvalCase.fixture_ticket_id).where(
+                        EvalCase.fixture_ticket_id.is_not(None)
+                    )
+                )
+            )
             .order_by(Ticket.sort_order)
         )
         return [
@@ -1025,6 +1063,7 @@ class SqlAlchemyMeterDeskRepository:
                 required_evidence=case.required_evidence,
                 policy_refs=case.policy_refs,
                 expected_approval_routing=case.expected_approval_routing,
+                fixture_ticket_id=case.fixture_ticket_id,
             )
             for case in cases
         ]
@@ -1043,9 +1082,73 @@ class SqlAlchemyMeterDeskRepository:
                 status=result.status,
                 summary=result.summary,
                 dimension_scores=result.dimension_scores,
+                details=result.details,
             )
             for result in results
         ]
+
+    async def get_eval_case(self, case_id: str) -> EvalCaseSummary | None:
+        from meterdesk_api.models import EvalCase
+
+        case = await self._session.get(EvalCase, case_id)
+        if case is None:
+            return None
+        return EvalCaseSummary(
+            id=case.id,
+            scenario=case.scenario,
+            title=case.title,
+            description=case.description,
+            expected_outcome=case.expected_outcome,
+            required_evidence=case.required_evidence,
+            policy_refs=case.policy_refs,
+            expected_approval_routing=case.expected_approval_routing,
+            fixture_ticket_id=case.fixture_ticket_id,
+        )
+
+    async def replace_eval_result(self, result: EvalResultSummary) -> EvalResultSummary:
+        from meterdesk_api.models import EvalResult
+
+        await self._session.execute(delete(EvalResult).where(EvalResult.case_id == result.case_id))
+        self._session.add(
+            EvalResult(
+                id=result.id,
+                case_id=result.case_id,
+                agent_run_id=result.agent_run_id,
+                status=result.status,
+                summary=result.summary,
+                dimension_scores=result.dimension_scores,
+                details=result.details,
+                created_at=_now(),
+                seed_marker=None,
+            )
+        )
+        await self._session.commit()
+        return result
+
+    async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None:
+        from meterdesk_api.models import (
+            AgentRun,
+            ApprovalRequest,
+            EvalResult,
+            MockMutation,
+            ToolTrace,
+        )
+
+        agent_run_ids = select(AgentRun.id).where(AgentRun.ticket_id == fixture_ticket_id)
+        await self._session.execute(
+            delete(EvalResult).where(EvalResult.agent_run_id.in_(agent_run_ids))
+        )
+        await self._session.execute(
+            delete(MockMutation).where(MockMutation.ticket_id == fixture_ticket_id)
+        )
+        await self._session.execute(
+            delete(ToolTrace).where(ToolTrace.agent_run_id.in_(agent_run_ids))
+        )
+        await self._session.execute(
+            delete(ApprovalRequest).where(ApprovalRequest.ticket_id == fixture_ticket_id)
+        )
+        await self._session.execute(delete(AgentRun).where(AgentRun.ticket_id == fixture_ticket_id))
+        await self._session.commit()
 
 
 async def get_repository(

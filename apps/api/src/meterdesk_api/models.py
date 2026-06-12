@@ -212,6 +212,7 @@ class EvalCase(SeededRow, Base):
     required_evidence: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     policy_refs: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     expected_approval_routing: Mapped[str] = mapped_column(String(160), nullable=False)
+    fixture_ticket_id: Mapped[str | None] = mapped_column(ForeignKey("tickets.id"), nullable=True)
     grading_criteria: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
@@ -224,4 +225,5 @@ class EvalResult(SeededRow, Base):
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     dimension_scores: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

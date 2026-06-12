@@ -148,6 +148,14 @@ export type EvalCaseView = {
   approvalRouting: string;
   resultStatus: string;
   resultSummary: string | null;
+  dimensions: string[];
+  failedChecks: string | null;
+  missingEvidence: string | null;
+  blockedReason: string | null;
+  traceRefs: string | null;
+  judgeNotes: string | null;
+  model: string | null;
+  promptVersion: string | null;
 };
 
 export const NAV_ITEMS: ServiceSurface[] = [
@@ -286,8 +294,20 @@ export async function getEvalCaseViews(): Promise<EvalCaseView[]> {
       requiredEvidence: evalCase.required_evidence.join(", "),
       policyRefs: evalCase.policy_refs.join(", "),
       approvalRouting: evalCase.expected_approval_routing,
-      resultStatus: result?.status ?? "No run yet",
+      resultStatus: result ? titleCase(result.status) : "No run yet",
       resultSummary: result?.summary ?? null,
+      dimensions: result
+        ? Object.entries(result.dimension_scores).map(
+            ([dimension, score]) => `${dimension.replaceAll("_", " ")}: ${score}`,
+          )
+        : [],
+      failedChecks: formatList(result?.details.failed_checks),
+      missingEvidence: formatList(result?.details.missing_evidence),
+      blockedReason: result?.details.blocked_reason ?? null,
+      traceRefs: formatTraceRefs(result?.details.trace_refs),
+      judgeNotes: formatList(result?.details.judge_notes),
+      model: result?.details.model ?? null,
+      promptVersion: result?.details.prompt_version ?? null,
     };
   });
 }
@@ -328,4 +348,14 @@ function scenarioLabel(scenario: EvalCaseResource["scenario"]): string {
     return "Usage Spike";
   }
   return "Credit/Refund Dispute";
+}
+
+function formatList(value?: string[]) {
+  return value && value.length > 0 ? value.join(", ") : null;
+}
+
+function formatTraceRefs(value?: Array<{ id: string; category: string }>) {
+  return value && value.length > 0
+    ? value.map((trace) => `${trace.id} (${trace.category})`).join(", ")
+    : null;
 }

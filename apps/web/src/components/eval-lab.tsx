@@ -1,5 +1,6 @@
 import { getEvalCaseViews, type EvalCaseView } from "@/lib/meterdesk-view";
 import Link from "next/link";
+import { rerunEvalCaseAction, runAllEvalCasesAction } from "@/lib/meterdesk-actions";
 
 const SCENARIO_ORDER = ["Duplicate Charge", "Usage Spike", "Credit/Refund Dispute"];
 
@@ -16,9 +17,18 @@ export async function EvalLab() {
           </Link>
           <h1 className="mt-4 text-3xl font-semibold">Eval Lab</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            M3 reads the seeded offline eval case catalog from FastAPI. Eval results remain empty
-            until the M4 graders run real cases.
+            Run offline evals against governed agent traces. Duplicate Charge cases execute through
+            the M3 loop; supporting scenarios show explicit blocked coverage gaps until their
+            runners exist.
           </p>
+          <form action={runAllEvalCasesAction} className="mt-5">
+            <button
+              className="rounded-md bg-meter-blue px-4 py-2 text-sm font-semibold text-white"
+              type="submit"
+            >
+              Run all evals
+            </button>
+          </form>
 
           <div className="mt-6 space-y-6">
             {SCENARIO_ORDER.map((scenario) => (
@@ -33,7 +43,11 @@ export async function EvalLab() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <p className="text-sm font-medium text-meter-blue">{evalCase.id}</p>
-                        <span className="rounded-full bg-[#e9f2fb] px-2.5 py-1 text-xs font-semibold text-meter-blue">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(
+                            evalCase.resultStatus,
+                          )}`}
+                        >
                           {evalCase.resultStatus}
                         </span>
                       </div>
@@ -62,6 +76,67 @@ export async function EvalLab() {
                           {evalCase.resultSummary}
                         </p>
                       ) : null}
+                      {evalCase.dimensions.length > 0 ? (
+                        <ul className="mt-4 space-y-1 text-xs text-slate-600">
+                          {evalCase.dimensions.map((dimension) => (
+                            <li key={dimension}>{dimension}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <dl className="mt-4 space-y-2 text-xs text-slate-600">
+                        {evalCase.failedChecks ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Failed checks</dt>
+                            <dd className="mt-1">{evalCase.failedChecks}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.missingEvidence ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Missing evidence</dt>
+                            <dd className="mt-1">Missing evidence: {evalCase.missingEvidence}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.blockedReason ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Blocked reason</dt>
+                            <dd className="mt-1">{evalCase.blockedReason}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.model ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Model</dt>
+                            <dd className="mt-1">Model: {evalCase.model}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.promptVersion ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Prompt</dt>
+                            <dd className="mt-1">Prompt: {evalCase.promptVersion}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.traceRefs ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Trace refs</dt>
+                            <dd className="mt-1">Trace refs: {evalCase.traceRefs}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.judgeNotes ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Judge notes</dt>
+                            <dd className="mt-1">{evalCase.judgeNotes}</dd>
+                          </div>
+                        ) : null}
+                      </dl>
+                      <form action={rerunEvalCaseAction} className="mt-4">
+                        <input name="caseId" type="hidden" value={evalCase.id} />
+                        <button
+                          aria-label={`Rerun ${evalCase.id}`}
+                          className="rounded-md border border-meter-line px-3 py-2 text-xs font-semibold text-meter-blue"
+                          type="submit"
+                        >
+                          Rerun
+                        </button>
+                      </form>
                     </article>
                   ))}
                 </div>
@@ -74,6 +149,19 @@ export async function EvalLab() {
   } catch (error) {
     return <EvalLabError message={error instanceof Error ? error.message : undefined} />;
   }
+}
+
+function statusClass(status: string) {
+  if (status === "Passed") {
+    return "bg-[#e9f8ef] text-[#166534]";
+  }
+  if (status === "Failed") {
+    return "bg-[#fdecec] text-[#991b1b]";
+  }
+  if (status === "Blocked") {
+    return "bg-[#fff4df] text-[#92400e]";
+  }
+  return "bg-[#e9f2fb] text-meter-blue";
 }
 
 function groupByScenario(cases: EvalCaseView[]) {

@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from meterdesk_api.agent.approvals import ApprovalDecisionError, ApprovalDecisionService
 from meterdesk_api.agent.orchestrator import AgentLoopError, AgentRunOrchestrator
 from meterdesk_api.agent.provider import AgentResolutionProvider
-from meterdesk_api.agent.runtime import get_agent_provider
+from meterdesk_api.agent.runtime import (
+    get_agent_provider,
+    get_optional_agent_provider,
+    get_optional_eval_judge,
+)
+from meterdesk_api.eval.judge import EvalDraftJudge
+from meterdesk_api.eval.runner import EvalCaseNotFound, EvalRunner
 from meterdesk_api.repositories import get_repository
 from meterdesk_api.schemas import (
     AgentRunSummary,
@@ -24,6 +30,8 @@ from meterdesk_api.schemas import (
 router = APIRouter(tags=["m3 resources"])
 REPOSITORY_DEPENDENCY = Depends(get_repository)
 PROVIDER_DEPENDENCY = Depends(get_agent_provider)
+OPTIONAL_PROVIDER_DEPENDENCY = Depends(get_optional_agent_provider)
+OPTIONAL_JUDGE_DEPENDENCY = Depends(get_optional_eval_judge)
 
 
 @router.get("/tickets", response_model=list[TicketSummary])
@@ -161,3 +169,35 @@ async def list_eval_results(
     repository=REPOSITORY_DEPENDENCY,
 ) -> list[EvalResultSummary]:
     return await repository.list_eval_results()
+
+
+@router.post(
+    "/eval-cases/{case_id}/run",
+    response_model=EvalResultSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+async def run_eval_case(
+    case_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+    provider: AgentResolutionProvider | None = OPTIONAL_PROVIDER_DEPENDENCY,
+    judge: EvalDraftJudge | None = OPTIONAL_JUDGE_DEPENDENCY,
+) -> EvalResultSummary:
+    runner = EvalRunner(repository=repository, provider=provider, judge=judge)
+    try:
+        return await runner.run_case(case_id)
+    except EvalCaseNotFound as error:
+        raise HTTPException(status_code=404, detail="Eval case not found") from error
+
+
+@router.post(
+    "/eval-runs",
+    response_model=list[EvalResultSummary],
+    status_code=status.HTTP_201_CREATED,
+)
+async def run_all_eval_cases(
+    repository=REPOSITORY_DEPENDENCY,
+    provider: AgentResolutionProvider | None = OPTIONAL_PROVIDER_DEPENDENCY,
+    judge: EvalDraftJudge | None = OPTIONAL_JUDGE_DEPENDENCY,
+) -> list[EvalResultSummary]:
+    runner = EvalRunner(repository=repository, provider=provider, judge=judge)
+    return await runner.run_all()

@@ -152,6 +152,25 @@ export type EvalCaseResource = {
   required_evidence: string[];
   policy_refs: string[];
   expected_approval_routing: string;
+  fixture_ticket_id: string | null;
+};
+
+export type EvalTraceRef = {
+  id: string;
+  category: string;
+  evidence_refs?: string[];
+  policy_refs?: string[];
+};
+
+export type EvalResultDetailsResource = {
+  failed_checks?: string[];
+  missing_evidence?: string[];
+  policy_refs_seen?: string[];
+  trace_refs?: EvalTraceRef[];
+  blocked_reason?: string | null;
+  judge_notes?: string[];
+  model?: string | null;
+  prompt_version?: string | null;
 };
 
 export type EvalResultResource = {
@@ -161,6 +180,7 @@ export type EvalResultResource = {
   status: string;
   summary: string;
   dimension_scores: Record<string, string>;
+  details: EvalResultDetailsResource;
 };
 
 export class MeterDeskApiError extends Error {
@@ -275,4 +295,12 @@ export async function getEvalCases(apiBaseUrl?: string) {
 
 export async function getEvalResults(apiBaseUrl?: string) {
   return fetchApi<EvalResultResource[]>("/eval-results", apiBaseUrl);
+}
+
+export async function runEvalCase(caseId: string, apiBaseUrl?: string) {
+  return postApi<EvalResultResource>(`/eval-cases/${caseId}/run`, undefined, apiBaseUrl);
+}
+
+export async function runAllEvalCases(apiBaseUrl?: string) {
+  return postApi<EvalResultResource[]>("/eval-runs", undefined, apiBaseUrl);
 }

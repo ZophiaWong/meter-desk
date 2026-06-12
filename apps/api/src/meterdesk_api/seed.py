@@ -26,8 +26,11 @@ from meterdesk_api.seed_data import (
     BILLING_EVIDENCE,
     DEMO_SEED_MARKER,
     DEMO_TICKET_IDS,
+    EVAL_BILLING_EVIDENCE,
     EVAL_CASES,
+    EVAL_FIXTURE_TICKET_IDS,
     EVAL_RESULTS,
+    EVAL_TICKET_DETAILS,
     MOCK_MUTATIONS,
     TICKET_DETAILS,
     TICKETS,
@@ -60,23 +63,31 @@ async def seed_demo_data() -> None:
     try:
         async with session_factory() as session:
             async with session.begin():
+                all_ticket_details = {**TICKET_DETAILS, **EVAL_TICKET_DETAILS}
+                all_billing_evidence = {**BILLING_EVIDENCE, **EVAL_BILLING_EVIDENCE}
+                reset_ticket_ids = (*DEMO_TICKET_IDS, *EVAL_FIXTURE_TICKET_IDS)
                 demo_agent_run_ids = select(AgentRun.id).where(
-                    AgentRun.ticket_id.in_(DEMO_TICKET_IDS)
+                    AgentRun.ticket_id.in_(reset_ticket_ids)
+                )
+                await session.execute(
+                    delete(EvalResult).where(
+                        EvalResult.case_id.in_([case.id for case in EVAL_CASES])
+                    )
                 )
                 await session.execute(
                     delete(EvalResult).where(EvalResult.agent_run_id.in_(demo_agent_run_ids))
                 )
                 await session.execute(
-                    delete(MockMutation).where(MockMutation.ticket_id.in_(DEMO_TICKET_IDS))
+                    delete(MockMutation).where(MockMutation.ticket_id.in_(reset_ticket_ids))
                 )
                 await session.execute(
                     delete(ToolTrace).where(ToolTrace.agent_run_id.in_(demo_agent_run_ids))
                 )
                 await session.execute(
-                    delete(ApprovalRequest).where(ApprovalRequest.ticket_id.in_(DEMO_TICKET_IDS))
+                    delete(ApprovalRequest).where(ApprovalRequest.ticket_id.in_(reset_ticket_ids))
                 )
                 await session.execute(
-                    delete(AgentRun).where(AgentRun.ticket_id.in_(DEMO_TICKET_IDS))
+                    delete(AgentRun).where(AgentRun.ticket_id.in_(reset_ticket_ids))
                 )
 
                 for model in DELETE_ORDER:
@@ -85,7 +96,7 @@ async def seed_demo_data() -> None:
                     )
 
                 accounts = {
-                    detail.customer.id: detail.customer for detail in TICKET_DETAILS.values()
+                    detail.customer.id: detail.customer for detail in all_ticket_details.values()
                 }
                 session.add_all(
                     CustomerAccount(
@@ -118,10 +129,31 @@ async def seed_demo_data() -> None:
                     )
                     for position, ticket in enumerate(TICKETS, start=1)
                 )
+                session.add_all(
+                    Ticket(
+                        id=ticket_id,
+                        customer_account_id=detail.customer.id,
+                        title=detail.title,
+                        scenario=detail.scenario,
+                        status=detail.status,
+                        severity=detail.severity,
+                        opened_at=detail.opened_at,
+                        opened_at_display=detail.opened_at_display,
+                        summary=detail.summary,
+                        outcome=detail.outcome,
+                        sort_order=100 + position,
+                        is_active=False,
+                        seed_marker=DEMO_SEED_MARKER,
+                    )
+                    for position, (ticket_id, detail) in enumerate(
+                        EVAL_TICKET_DETAILS.items(), start=1
+                    )
+                )
                 await session.flush()
 
                 policies = {
-                    evidence.policy.id: evidence.policy for evidence in BILLING_EVIDENCE.values()
+                    evidence.policy.id: evidence.policy
+                    for evidence in all_billing_evidence.values()
                 }
                 session.add_all(
                     PolicyRule(
@@ -143,7 +175,7 @@ async def seed_demo_data() -> None:
                         policy_rule_id=evidence.policy.id,
                         seed_marker=DEMO_SEED_MARKER,
                     )
-                    for ticket_id, evidence in BILLING_EVIDENCE.items()
+                    for ticket_id, evidence in all_billing_evidence.items()
                 )
 
                 session.add_all(
@@ -160,7 +192,7 @@ async def seed_demo_data() -> None:
                         status=evidence.invoice.status,
                         seed_marker=DEMO_SEED_MARKER,
                     )
-                    for ticket_id, evidence in BILLING_EVIDENCE.items()
+                    for ticket_id, evidence in all_billing_evidence.items()
                 )
                 await session.flush()
 
@@ -177,7 +209,7 @@ async def seed_demo_data() -> None:
                         processor_state=charge.processor_state,
                         seed_marker=DEMO_SEED_MARKER,
                     )
-                    for evidence in BILLING_EVIDENCE.values()
+                    for evidence in all_billing_evidence.values()
                     for charge in evidence.charges
                 )
                 await session.flush()
@@ -193,7 +225,7 @@ async def seed_demo_data() -> None:
                         period_end=usage.period_end,
                         seed_marker=DEMO_SEED_MARKER,
                     )
-                    for ticket_id, evidence in BILLING_EVIDENCE.items()
+                    for ticket_id, evidence in all_billing_evidence.items()
                     for usage in evidence.usage
                 )
 
@@ -209,7 +241,7 @@ async def seed_demo_data() -> None:
                         currency=credit.amount.currency if credit.amount else None,
                         seed_marker=DEMO_SEED_MARKER,
                     )
-                    for ticket_id, evidence in BILLING_EVIDENCE.items()
+                    for ticket_id, evidence in all_billing_evidence.items()
                     for credit in evidence.credits
                 )
                 await session.flush()
@@ -342,6 +374,7 @@ async def seed_demo_data() -> None:
                         required_evidence=case.required_evidence,
                         policy_refs=case.policy_refs,
                         expected_approval_routing=case.expected_approval_routing,
+                        fixture_ticket_id=case.fixture_ticket_id,
                         grading_criteria={
                             "deterministic": [
                                 "required_evidence",
@@ -363,6 +396,7 @@ async def seed_demo_data() -> None:
                         status=result.status,
                         summary=result.summary,
                         dimension_scores=result.dimension_scores,
+                        details=result.details,
                         created_at=utc(2026, 6, 5, 12, 7),
                         seed_marker=DEMO_SEED_MARKER,
                     )

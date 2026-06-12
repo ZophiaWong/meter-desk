@@ -166,6 +166,7 @@ class EvalCaseSummary(BaseModel):
     required_evidence: list[str]
     policy_refs: list[str]
     expected_approval_routing: str
+    fixture_ticket_id: str | None = None
 
 
 class EvalResultSummary(BaseModel):
@@ -175,6 +176,7 @@ class EvalResultSummary(BaseModel):
     status: str
     summary: str
     dimension_scores: dict[str, str]
+    details: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApprovalDecisionRequest(BaseModel):

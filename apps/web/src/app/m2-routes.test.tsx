@@ -66,9 +66,68 @@ const evalCases = [
   required_evidence: ["invoice", "policy"],
   policy_refs: ["REFUND-DUP-001 v2026.02"],
   expected_approval_routing: "approval expectation",
+  fixture_ticket_id: id.startsWith("eval-duplicate-charge") ? `EVAL-${id}` : null,
 }));
 
-const evalResults: unknown[] = [];
+const evalResults = [
+  {
+    id: "EVAL-RESULT-001",
+    case_id: "eval-duplicate-charge-001",
+    agent_run_id: "RUN-EVAL-001",
+    status: "passed",
+    summary: "Deterministic eval checks passed.",
+    dimension_scores: {
+      outcome_correctness: "pass",
+      required_evidence: "pass",
+      policy_compliance: "pass",
+      approval_routing: "pass",
+      mutation_safety: "pass",
+      draft_safety: "pass",
+      draft_quality: "not_run",
+    },
+    details: {
+      failed_checks: [],
+      missing_evidence: [],
+      policy_refs_seen: ["REFUND-DUP-001 v2026.02"],
+      trace_refs: [
+        {
+          id: "trace-eval-001",
+          category: "read.billing_evidence",
+          evidence_refs: ["invoice INV-EVAL-DUP-001"],
+          policy_refs: ["REFUND-DUP-001 v2026.02"],
+        },
+      ],
+      blocked_reason: null,
+      judge_notes: ["Draft quality judge not configured."],
+      model: "fake-eval-model",
+      prompt_version: "m3-duplicate-charge-v1",
+    },
+  },
+  {
+    id: "EVAL-RESULT-004",
+    case_id: "eval-usage-spike-001",
+    agent_run_id: null,
+    status: "blocked",
+    summary: "Scenario runner is not implemented in M4",
+    dimension_scores: {
+      outcome_correctness: "blocked",
+      required_evidence: "blocked",
+      policy_compliance: "blocked",
+      approval_routing: "blocked",
+      mutation_safety: "blocked",
+      draft_safety: "blocked",
+      draft_quality: "not_run",
+    },
+    details: {
+      failed_checks: [],
+      missing_evidence: ["invoice", "policy"],
+      policy_refs_seen: [],
+      trace_refs: [],
+      blocked_reason: "Scenario runner is not implemented in M4",
+      judge_notes: [],
+    },
+  },
+];
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -116,7 +175,7 @@ describe("M3 API-backed routes", () => {
   it("renders all nine eval cases with no preview result before M4 runs", async () => {
     mockApi({
       "/eval-cases": evalCases,
-      "/eval-results": evalResults,
+      "/eval-results": [],
     });
 
     render(await EvalLabPage());
@@ -124,5 +183,27 @@ describe("M3 API-backed routes", () => {
     expect(screen.getByRole("heading", { name: "Eval Lab" })).toBeInTheDocument();
     expect(screen.getAllByRole("article")).toHaveLength(9);
     expect(screen.getAllByText("No run yet")).toHaveLength(9);
+    expect(screen.getByRole("button", { name: "Run all evals" })).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: /^Rerun / })).toHaveLength(9);
+  });
+
+  it("renders M4 eval result details and compact trace references", async () => {
+    mockApi({
+      "/eval-cases": evalCases,
+      "/eval-results": evalResults,
+    });
+
+    render(await EvalLabPage());
+
+    expect(screen.getByText("Passed")).toBeInTheDocument();
+    expect(screen.getByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Deterministic eval checks passed.")).toBeInTheDocument();
+    expect(screen.getByText("Scenario runner is not implemented in M4")).toBeInTheDocument();
+    expect(screen.getByText("outcome correctness: pass")).toBeInTheDocument();
+    expect(screen.getByText("draft quality: not_run")).toBeInTheDocument();
+    expect(screen.getByText("Model: fake-eval-model")).toBeInTheDocument();
+    expect(screen.getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();
+    expect(screen.getByText("Trace refs: trace-eval-001 (read.billing_evidence)")).toBeInTheDocument();
+    expect(screen.getByText("Missing evidence: invoice, policy")).toBeInTheDocument();
   });
 });
