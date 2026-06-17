@@ -4,6 +4,7 @@ import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
+from meterdesk_api.agent.orchestrator import AgentRunOrchestrator
 from meterdesk_api.agent.provider import (
     AgentDraftOutput,
     AgentProviderError,
@@ -32,7 +33,6 @@ class FakeProvider(AgentResolutionProvider):
 
     def _default_output(self) -> AgentDraftOutput:
         return AgentDraftOutput(
-            outcome="confirmed_duplicate_charge",
             recommendation="Refund the duplicate captured charge after approval.",
             internal_resolution=(
                 "Confirmed duplicate payment on INV-2026-0418. Recommend refunding "
@@ -42,6 +42,23 @@ class FakeProvider(AgentResolutionProvider):
                 "Thanks for flagging this. We found two captured payments tied to the same "
                 "April invoice. We are sending the duplicate charge for approval and will "
                 "keep you updated."
+            ),
+        )
+
+
+class DraftOnlyProvider(AgentResolutionProvider):
+    model = "draft-only-model"
+
+    async def create_resolution(self, provider_input: AgentProviderInput) -> AgentDraftOutput:
+        return AgentDraftOutput(
+            recommendation=provider_input.decision_reason,
+            internal_resolution=(
+                f"{provider_input.decision_outcome} for {provider_input.ticket_id}. "
+                f"Policy: {provider_input.policy_citation}."
+            ),
+            customer_reply=(
+                "Thanks for raising this. We reviewed the payment events and confirmed the "
+                "second matching event was an authorization, not a captured charge."
             ),
         )
 
@@ -100,6 +117,25 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
     assert approvals[0]["status"] == "pending"
     assert approvals[0]["agent_run_id"] == run["id"]
     assert approvals[0]["action_metadata"]["target_charge_id"] == "ch_2026_0418_B"
+
+
+@pytest.mark.asyncio
+async def test_agent_run_final_outcome_comes_from_backend_decision() -> None:
+    repository = build_seed_repository()
+    orchestrator = AgentRunOrchestrator(repository, DraftOnlyProvider())
+
+    run = await orchestrator.run_duplicate_charge("EVAL-TCK-DUP-002")
+    approvals = await repository.list_approvals(
+        status=None,
+        ticket_id="EVAL-TCK-DUP-002",
+    )
+    mutations = await repository.list_mock_mutations("EVAL-TCK-DUP-002")
+
+    assert run is not None
+    assert run.status == "completed"
+    assert run.final_outcome == "no_refund_expected_billing_behavior"
+    assert approvals == []
+    assert mutations == []
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ApprovalsPage from "./approvals/page";
@@ -195,15 +195,23 @@ describe("M3 API-backed routes", () => {
 
     render(await EvalLabPage());
 
+    const passedEval = screen.getByRole("article", { name: "eval-duplicate-charge-001" });
+    const blockedEval = screen.getByRole("article", { name: "eval-usage-spike-001" });
+
     expect(screen.getByText("Passed")).toBeInTheDocument();
     expect(screen.getByText("Blocked")).toBeInTheDocument();
-    expect(screen.getByText("Deterministic eval checks passed.")).toBeInTheDocument();
-    expect(screen.getByText("Scenario runner is not implemented in M4")).toBeInTheDocument();
-    expect(screen.getByText("outcome correctness: pass")).toBeInTheDocument();
-    expect(screen.getByText("draft quality: not_run")).toBeInTheDocument();
-    expect(screen.getByText("Model: fake-eval-model")).toBeInTheDocument();
-    expect(screen.getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();
-    expect(screen.getByText("Trace refs: trace-eval-001 (read.billing_evidence)")).toBeInTheDocument();
-    expect(screen.getByText("Missing evidence: invoice, policy")).toBeInTheDocument();
+    expect(within(passedEval).getByText("Deterministic eval checks passed.")).toBeInTheDocument();
+    expect(within(blockedEval).getAllByText("Scenario runner is not implemented in M4")).toHaveLength(
+      2,
+    );
+    expect(within(blockedEval).getByText("Blocked reason")).toBeInTheDocument();
+    expect(within(passedEval).getByText("outcome correctness: pass")).toBeInTheDocument();
+    expect(within(passedEval).getByText("draft quality: not_run")).toBeInTheDocument();
+    expect(within(passedEval).getByText("Model: fake-eval-model")).toBeInTheDocument();
+    expect(within(passedEval).getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();
+    expect(
+      within(passedEval).getByText("Trace refs: trace-eval-001 (read.billing_evidence)"),
+    ).toBeInTheDocument();
+    expect(within(blockedEval).getByText("Missing evidence: invoice, policy")).toBeInTheDocument();
   });
 });

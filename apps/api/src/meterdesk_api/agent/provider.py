@@ -29,7 +29,6 @@ class AgentProviderInput(BaseModel):
 class AgentDraftOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    outcome: str
     recommendation: str
     internal_resolution: str
     customer_reply: str
@@ -55,9 +54,9 @@ class OpenAICompatibleProvider:
                     "role": "system",
                     "content": (
                         "You draft governed billing-support recommendations for MeterDesk. "
-                        "Use the validated backend decision exactly. Customer replies are "
-                        "draft-only and must not promise that an unapproved refund or credit has "
-                        "happened."
+                        "The backend decision_outcome is authoritative; do not reclassify the "
+                        "case or include a separate outcome. Customer replies are draft-only and "
+                        "must not promise that an unapproved refund or credit has happened."
                     ),
                 },
                 {
@@ -83,7 +82,7 @@ class OpenAICompatibleProvider:
         except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as error:
             raise AgentProviderError("invalid structured output") from error
 
-        validate_provider_output(provider_input, output)
+        validate_provider_output(output)
         return output
 
     def _post_chat_completion(self, payload: dict[str, object]) -> str:
@@ -106,12 +105,7 @@ class OpenAICompatibleProvider:
             raise AgentProviderError(f"provider request failed: {error.reason}") from error
 
 
-def validate_provider_output(
-    provider_input: AgentProviderInput,
-    output: AgentDraftOutput,
-) -> None:
-    if output.outcome != provider_input.decision_outcome:
-        raise AgentProviderError("provider outcome does not match backend decision")
+def validate_provider_output(output: AgentDraftOutput) -> None:
     if not output.recommendation.strip():
         raise AgentProviderError("provider recommendation is empty")
     if not output.internal_resolution.strip():

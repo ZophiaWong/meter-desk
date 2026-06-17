@@ -144,9 +144,10 @@ class AgentRunOrchestrator:
             return await self._repository.fail_agent_run(run.id, provider_error)
 
         assert provider_output is not None
+        # The decision tool owns the outcome; the provider only drafts text around it.
         run = await self._repository.complete_agent_run(
             agent_run_id=run.id,
-            final_outcome=provider_output.outcome,
+            final_outcome=decision.outcome,
             internal_resolution=provider_output.internal_resolution,
             customer_reply=provider_output.customer_reply,
         )
@@ -199,7 +200,7 @@ class AgentRunOrchestrator:
         for _ in range(2):
             try:
                 output = await self._provider.create_resolution(provider_input)
-                validate_provider_output(provider_input, output)
+                validate_provider_output(output)
                 return output, None
             except AgentProviderError as error:
                 last_error = str(error)

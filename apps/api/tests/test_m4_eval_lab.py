@@ -27,7 +27,6 @@ class EchoProvider(AgentResolutionProvider):
             else " No financial action is recommended."
         )
         return AgentDraftOutput(
-            outcome=provider_input.decision_outcome,
             recommendation=f"{provider_input.decision_reason}{action_text}",
             internal_resolution=(
                 f"{provider_input.decision_outcome} for {provider_input.ticket_id}. "
