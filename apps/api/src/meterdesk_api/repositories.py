@@ -58,6 +58,8 @@ class MeterDeskRepository(Protocol):
 
     async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None: ...
 
+    async def reset_demo_live_state(self, ticket_id: str) -> None: ...
+
     async def get_pending_financial_approval(
         self,
         ticket_id: str,
@@ -231,6 +233,18 @@ class InMemoryMeterDeskRepository:
         ]
         self._mock_mutations = [
             mutation for mutation in self._mock_mutations if mutation.ticket_id != fixture_ticket_id
+        ]
+
+    async def reset_demo_live_state(self, ticket_id: str) -> None:
+        runs = self._agent_runs.pop(ticket_id, [])
+        run_ids = {run.id for run in runs}
+        for run_id in run_ids:
+            self._traces.pop(run_id, None)
+        self._approvals = [
+            approval for approval in self._approvals if approval.ticket_id != ticket_id
+        ]
+        self._mock_mutations = [
+            mutation for mutation in self._mock_mutations if mutation.ticket_id != ticket_id
         ]
 
     async def get_pending_financial_approval(
@@ -1148,6 +1162,20 @@ class SqlAlchemyMeterDeskRepository:
             delete(ApprovalRequest).where(ApprovalRequest.ticket_id == fixture_ticket_id)
         )
         await self._session.execute(delete(AgentRun).where(AgentRun.ticket_id == fixture_ticket_id))
+        await self._session.commit()
+
+    async def reset_demo_live_state(self, ticket_id: str) -> None:
+        from meterdesk_api.models import AgentRun, ApprovalRequest, MockMutation, ToolTrace
+
+        agent_run_ids = select(AgentRun.id).where(AgentRun.ticket_id == ticket_id)
+        await self._session.execute(delete(MockMutation).where(MockMutation.ticket_id == ticket_id))
+        await self._session.execute(
+            delete(ToolTrace).where(ToolTrace.agent_run_id.in_(agent_run_ids))
+        )
+        await self._session.execute(
+            delete(ApprovalRequest).where(ApprovalRequest.ticket_id == ticket_id)
+        )
+        await self._session.execute(delete(AgentRun).where(AgentRun.ticket_id == ticket_id))
         await self._session.commit()
 
 

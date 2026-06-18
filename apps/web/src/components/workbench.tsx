@@ -184,18 +184,21 @@ function ApprovalCard({ scenario }: TicketWorkbenchProps) {
     );
   }
   const isPending = scenario.approval.status.toLowerCase() === "pending";
+  const tone = approvalToneClass(scenario.approval.status);
 
   return (
-    <section className="mt-4 rounded-md border border-meter-amber bg-[#fffaf0] p-4">
+    <section className={`mt-4 rounded-md border p-4 ${tone.panel}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase text-meter-amber">{scenario.approval.status}</p>
+          <p className={`text-xs font-semibold uppercase ${tone.label}`}>
+            {scenario.approval.status}
+          </p>
           <h3 className="mt-2 text-base font-semibold">{scenario.approval.title}</h3>
         </div>
         <span className="text-lg font-semibold">{scenario.approval.amount}</span>
       </div>
       <p className="mt-3 text-sm leading-6 text-slate-700">{scenario.approval.reason}</p>
-      <p className="mt-3 text-sm font-medium text-meter-amber">{scenario.approval.blocker}</p>
+      <p className={`mt-3 text-sm font-medium ${tone.label}`}>{scenario.approval.blocker}</p>
       <p className="mt-2 text-xs text-slate-500">Policy: {scenario.approval.policyCitation}</p>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <form action={approveRequestAction}>
@@ -224,14 +227,21 @@ function ApprovalCard({ scenario }: TicketWorkbenchProps) {
 }
 
 function RunStateCard({ scenario }: TicketWorkbenchProps) {
+  const failed = scenario.run?.status.toLowerCase() === "failed";
+
   return (
-    <section className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4">
+    <section
+      className={`mt-4 rounded-md border p-4 ${
+        failed ? "border-meter-amber bg-[#fffaf0]" : "border-meter-line bg-[#fbfcfe]"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase text-slate-500">Agent run</p>
           <h3 className="mt-2 text-base font-semibold">
             {scenario.run ? scenario.run.status : "No agent run yet"}
           </h3>
+          {scenario.run ? <p className="mt-1 text-xs text-slate-500">{scenario.run.id}</p> : null}
         </div>
         {scenario.run?.model ? (
           <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
@@ -239,6 +249,9 @@ function RunStateCard({ scenario }: TicketWorkbenchProps) {
           </span>
         ) : null}
       </div>
+      {scenario.run?.promptVersion ? (
+        <p className="mt-3 text-xs text-slate-500">Prompt: {scenario.run.promptVersion}</p>
+      ) : null}
       {scenario.run?.errorState ? (
         <p className="mt-3 text-sm font-medium text-meter-amber">{scenario.run.errorState}</p>
       ) : null}
@@ -258,7 +271,12 @@ function RunStateCard({ scenario }: TicketWorkbenchProps) {
 
 function MutationResultList({ scenario }: TicketWorkbenchProps) {
   if (scenario.mutations.length === 0) {
-    return null;
+    return (
+      <section className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4">
+        <h3 className="text-sm font-semibold uppercase text-slate-500">Mock mutation</h3>
+        <p className="mt-3 text-sm leading-6 text-slate-600">No mock mutation executed</p>
+      </section>
+    );
   }
   return (
     <section className="mt-4 rounded-md border border-meter-mint bg-[#f0fdf8] p-4">
@@ -330,4 +348,24 @@ function DraftReply({ scenario }: TicketWorkbenchProps) {
       <p className="mt-3 text-sm leading-6 text-slate-700">{scenario.drafts.customerReply}</p>
     </section>
   );
+}
+
+function approvalToneClass(status: string) {
+  const normalized = status.toLowerCase();
+  if (normalized === "approved") {
+    return {
+      panel: "border-meter-mint bg-[#f0fdf8]",
+      label: "text-meter-mint",
+    };
+  }
+  if (normalized === "rejected") {
+    return {
+      panel: "border-[#f2b8b8] bg-[#fff5f5]",
+      label: "text-[#991b1b]",
+    };
+  }
+  return {
+    panel: "border-meter-amber bg-[#fffaf0]",
+    label: "text-meter-amber",
+  };
 }

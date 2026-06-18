@@ -15,10 +15,10 @@ API_BASE_URL ?= http://localhost:$(API_PORT)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down db-migrate test test-api test-web test-db lint lint-api lint-web seed health
+.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down db-migrate test test-api test-web test-db lint lint-api lint-web seed demo-reset-live health
 
 help:
-	@printf "MeterDesk M0 commands:\n"
+	@printf "MeterDesk commands:\n"
 	@printf "  make install   Install API and Web dependencies\n"
 	@printf "  make db-up     Start local Postgres with Docker Compose\n"
 	@printf "  make dev       Start Postgres, FastAPI, and Next.js\n"
@@ -26,7 +26,8 @@ help:
 	@printf "  make test      Run API and Web tests\n"
 	@printf "  make test-db   Run Postgres-backed M3 migration/seed/API checks\n"
 	@printf "  make lint      Run API and Web lint/type checks\n"
-	@printf "  make seed      Reset and load M3 demo mock billing data\n"
+	@printf "  make seed      Reset and load M5 portfolio baseline data\n"
+	@printf "  make demo-reset-live Reset TCK-1042 runtime state for a live provider demo\n"
 
 install: install-api install-web
 
@@ -83,6 +84,9 @@ lint-web:
 
 seed: db-migrate
 	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run python -m meterdesk_api.seed
+
+demo-reset-live: db-migrate
+	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run python -m meterdesk_api.demo_reset_live
 
 health:
 	curl --fail --silent http://localhost:$(API_PORT)/health

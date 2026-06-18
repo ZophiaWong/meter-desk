@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from meterdesk_api.db import create_engine
+from meterdesk_api.demo_reset_live import reset_live_demo_state
 from meterdesk_api.main import app
 from meterdesk_api.repositories import SqlAlchemyMeterDeskRepository
 from meterdesk_api.schemas import EvalResultSummary
@@ -33,9 +34,9 @@ async def test_seeded_postgres_resources_are_queryable() -> None:
     assert evidence.status_code == 200
     assert evidence.json()["invoice"]["id"] == "INV-2026-0418"
     assert approvals.status_code == 200
-    assert approvals.json() == []
+    assert [approval["id"] for approval in approvals.json()] == ["APR-2042"]
     assert runs.status_code == 200
-    assert runs.json() == []
+    assert [run["id"] for run in runs.json()] == ["RUN-2042"]
     assert eval_cases.status_code == 200
     assert len(eval_cases.json()) == 9
 
@@ -53,7 +54,7 @@ async def test_agent_run_requires_provider_configuration() -> None:
 
 
 @pytest.mark.asyncio
-async def test_seed_resets_m3_runtime_rows_for_demo_tickets() -> None:
+async def test_seed_restores_m5_portfolio_baseline_for_demo_tickets() -> None:
     await seed_demo_data()
     engine = create_engine()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -115,11 +116,13 @@ async def test_seed_resets_m3_runtime_rows_for_demo_tickets() -> None:
     assert tickets.status_code == 200
     assert [ticket["id"] for ticket in tickets.json()] == ["TCK-1042", "TCK-1098", "TCK-1137"]
     assert runs.status_code == 200
-    assert runs.json() == []
+    assert [run["id"] for run in runs.json()] == ["RUN-2042"]
+    assert runs.json()[0]["status"] == "completed"
     assert approvals.status_code == 200
-    assert approvals.json() == []
+    assert [approval["id"] for approval in approvals.json()] == ["APR-2042"]
+    assert approvals.json()[0]["status"] == "pending"
     assert pending_approvals.status_code == 200
-    assert pending_approvals.json() == []
+    assert [approval["id"] for approval in pending_approvals.json()] == ["APR-2042"]
     assert mutations.status_code == 200
     assert mutations.json() == []
 
@@ -159,3 +162,33 @@ async def test_reset_eval_fixture_state_removes_postgres_results_linked_to_fixtu
             assert results == []
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_demo_reset_live_clears_only_duplicate_charge_runtime_rows() -> None:
+    await seed_demo_data()
+    await reset_live_demo_state()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        evidence = await client.get("/tickets/TCK-1042/billing-evidence")
+        runs = await client.get("/tickets/TCK-1042/agent-runs")
+        approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
+        mutations = await client.get("/mock-mutations?ticket_id=TCK-1042")
+        eval_cases = await client.get("/eval-cases")
+        historical_mutations = await client.get("/mock-mutations?ticket_id=TCK-1137")
+
+    assert evidence.status_code == 200
+    assert evidence.json()["invoice"]["id"] == "INV-2026-0418"
+    assert runs.status_code == 200
+    assert runs.json() == []
+    assert approvals.status_code == 200
+    assert approvals.json() == []
+    assert mutations.status_code == 200
+    assert mutations.json() == []
+    assert eval_cases.status_code == 200
+    assert len(eval_cases.json()) == 9
+    assert historical_mutations.status_code == 200
+    assert [mutation["id"] for mutation in historical_mutations.json()] == ["MM-1137-001"]

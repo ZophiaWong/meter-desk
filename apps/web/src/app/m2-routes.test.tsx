@@ -43,6 +43,29 @@ const approvals = [
   },
 ];
 
+const terminalApprovals = [
+  {
+    ...approvals[0],
+    id: "APR-2042-APPROVED",
+    status: "approved",
+    blocker: "Approved; mock mutation executed",
+    decided_at: "2026-06-05T12:10:00Z",
+    decision: "approved",
+    decided_by: "Demo Operator",
+    decision_note: "Approved for demo.",
+  },
+  {
+    ...approvals[0],
+    id: "APR-2042-REJECTED",
+    status: "rejected",
+    blocker: "Rejected by human reviewer; no mock mutation executed",
+    decided_at: "2026-06-05T12:11:00Z",
+    decision: "rejected",
+    decided_by: "Demo Operator",
+    decision_note: "Rejected for demo.",
+  },
+];
+
 const evalCases = [
   "eval-duplicate-charge-001",
   "eval-duplicate-charge-002",
@@ -170,6 +193,24 @@ describe("M3 API-backed routes", () => {
     expect(screen.getByText("Mutation blocked until human approval")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+  });
+
+  it("renders approved and rejected approval queue states", async () => {
+    mockApi({
+      "/approvals": terminalApprovals,
+      "/tickets": tickets,
+    });
+
+    render(await ApprovalsPage({ searchParams: { status: "all" } }));
+
+    expect(screen.getByText("Approved; mock mutation executed")).toBeInTheDocument();
+    expect(
+      screen.getByText("Rejected by human reviewer; no mock mutation executed"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Approve" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Reject" })[1]).toBeDisabled();
   });
 
   it("renders all nine eval cases with no preview result before M4 runs", async () => {

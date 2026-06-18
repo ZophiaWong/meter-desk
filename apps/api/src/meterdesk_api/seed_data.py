@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 from meterdesk_api.repositories import InMemoryMeterDeskRepository
 from meterdesk_api.schemas import (
+    AgentRunSummary,
     ApprovalSummary,
     BillingEvidence,
     ChargeEvidence,
@@ -72,7 +73,7 @@ TICKETS = [
         id="TCK-1042",
         title="Same invoice charged twice",
         customer=NORTHSTAR.name,
-        status="Open - ready for agent run",
+        status="Ready for approval",
         summary="Two captured charges are attached to INV-2026-0418.",
         scenario="duplicate_charge",
         is_active=True,
@@ -100,7 +101,7 @@ TICKET_DETAILS = {
         id="TCK-1042",
         title="Duplicate charge investigation",
         scenario="duplicate_charge",
-        status="Open - ready for agent run",
+        status="Ready for approval",
         severity="Billing dispute",
         opened_at=utc(2026, 6, 5, 12),
         opened_at_display="Jun 5, 2026",
@@ -109,8 +110,8 @@ TICKET_DETAILS = {
             "statement."
         ),
         outcome=(
-            "M3 starts with billing evidence only. Run the governed agent loop to produce a "
-            "recommendation, trace, and approval request."
+            "Seeded M5 baseline: duplicate captured charge confirmed, draft prepared, and "
+            "original refund blocked behind human approval."
         ),
         customer=NORTHSTAR,
     ),
@@ -441,11 +442,144 @@ EVAL_BILLING_EVIDENCE = {
     ),
 }
 
-AGENT_RUNS = {"TCK-1042": [], "TCK-1098": [], "TCK-1137": []}
+AGENT_RUNS = {
+    "TCK-1042": [
+        AgentRunSummary(
+            id="RUN-2042",
+            ticket_id="TCK-1042",
+            status="completed",
+            source="m5_seeded_demo",
+            final_outcome="confirmed_duplicate_charge",
+            internal_resolution=(
+                "Confirmed two captured payments for INV-2026-0418. The second charge "
+                "ch_2026_0418_B matches the invoice total and qualifies for an original-method "
+                "refund after human approval under REFUND-DUP-001 v2026.02."
+            ),
+            customer_reply=(
+                "Thanks for flagging this. We found two captured payments tied to the same "
+                "April invoice. A refund request for the duplicate charge is pending human "
+                "approval, and this reply remains a draft until your team sends it."
+            ),
+            model="seeded-demo",
+            prompt_version="m3-duplicate-charge-v1",
+        )
+    ],
+    "TCK-1098": [],
+    "TCK-1137": [],
+}
 
-TRACES: dict[str, list[ToolTraceSummary]] = {}
+TRACES: dict[str, list[ToolTraceSummary]] = {
+    "RUN-2042": [
+        ToolTraceSummary(
+            id="trace-2042-read-evidence",
+            agent_run_id="RUN-2042",
+            sequence=1,
+            category="read.billing_evidence",
+            risk="Low",
+            label="Collected Duplicate Charge billing evidence",
+            input_summary="Read ticket, invoice, charges, credits, usage, and policy for TCK-1042.",
+            output_summary=(
+                "Found invoice INV-2026-0418 with 2 captured charge records and policy "
+                "REFUND-DUP-001 v2026.02."
+            ),
+            evidence_refs=[
+                "invoice INV-2026-0418",
+                "charge ch_2026_0418_A",
+                "charge ch_2026_0418_B",
+                "credit cred-ledger-1042",
+                "usage usage-2026-04-northstar",
+            ],
+            policy_refs=["REFUND-DUP-001 v2026.02"],
+            approval_refs=[],
+        ),
+        ToolTraceSummary(
+            id="trace-2042-prior-actions",
+            agent_run_id="RUN-2042",
+            sequence=2,
+            category="read.prior_financial_actions",
+            risk="Low",
+            label="Checked prior approvals and mock mutations",
+            input_summary="Read existing approval and mutation state for TCK-1042.",
+            output_summary="Found 0 executed mock financial action(s).",
+            evidence_refs=["ticket TCK-1042"],
+            policy_refs=[],
+            approval_refs=[],
+        ),
+        ToolTraceSummary(
+            id="trace-2042-decision",
+            agent_run_id="RUN-2042",
+            sequence=3,
+            category="decision.refund_eligibility",
+            risk="Medium",
+            label="Evaluated duplicate-charge refund eligibility",
+            input_summary="Compared captured charges, invoice total, policy, and prior actions.",
+            output_summary=(
+                "Refund the duplicate captured charge ch_2026_0418_B to the original payment "
+                "method after human approval."
+            ),
+            evidence_refs=[
+                "invoice INV-2026-0418",
+                "charge ch_2026_0418_A",
+                "charge ch_2026_0418_B",
+                "policy REFUND-DUP-001 v2026.02",
+            ],
+            policy_refs=["REFUND-DUP-001 v2026.02"],
+            approval_refs=[],
+        ),
+        ToolTraceSummary(
+            id="trace-2042-draft",
+            agent_run_id="RUN-2042",
+            sequence=4,
+            category="draft.resolution",
+            risk="Low",
+            label="Drafted governed resolution",
+            input_summary="Prepared internal and customer-facing draft output.",
+            output_summary=(
+                "Draft-only resolution text was stored without sending a customer reply."
+            ),
+            evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+            policy_refs=["REFUND-DUP-001 v2026.02"],
+            approval_refs=[],
+        ),
+        ToolTraceSummary(
+            id="trace-2042-approval",
+            agent_run_id="RUN-2042",
+            sequence=5,
+            category="approval.create_request",
+            risk="Medium",
+            label="Created approval request for financial action",
+            input_summary="Created human approval gate for proposed original refund.",
+            output_summary="Approval request APR-2042 is pending.",
+            evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+            policy_refs=["REFUND-DUP-001 v2026.02"],
+            approval_refs=["APR-2042"],
+        ),
+    ]
+}
 
-APPROVALS: list[ApprovalSummary] = []
+APPROVALS: list[ApprovalSummary] = [
+    ApprovalSummary(
+        id="APR-2042",
+        ticket_id="TCK-1042",
+        agent_run_id="RUN-2042",
+        title="Original refund pending approval",
+        status="pending",
+        action_type="original_refund",
+        amount=money(124800),
+        reason=(
+            "Refund the duplicate captured charge ch_2026_0418_B to the original payment method."
+        ),
+        policy_citation="REFUND-DUP-001 v2026.02",
+        blocker="Mutation blocked until human approval",
+        evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+        action_metadata={
+            "action_type": "original_refund",
+            "invoice_id": "INV-2026-0418",
+            "target_charge_id": "ch_2026_0418_B",
+            "action_basis": "confirmed_duplicate_charge",
+        },
+    )
+]
 
 MOCK_MUTATIONS = [
     MockMutationSummary(

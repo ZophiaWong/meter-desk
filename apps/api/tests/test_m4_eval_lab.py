@@ -124,7 +124,7 @@ async def test_eval_results_are_latest_only_and_do_not_reset_workbench_ticket_st
     assert [result.case_id for result in results].count("eval-duplicate-charge-003") == 1
     assert results[0].id == second.id
     assert workbench_runs is not None
-    assert [run.id for run in workbench_runs] == [workbench_run.id]
+    assert [run.id for run in workbench_runs] == ["RUN-2042", workbench_run.id]
 
 
 @pytest.mark.asyncio

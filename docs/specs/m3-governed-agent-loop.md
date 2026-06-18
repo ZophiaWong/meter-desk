@@ -41,9 +41,9 @@ beyond the current v1 roadmap unless a later approved spec changes scope.
 
 ## Seed And UI Behavior
 
-The M3 seed starts `TCK-1042` with durable ticket and billing evidence only. It does not seed a
-Duplicate Charge preview run, trace, approval, or eval result. The operator starts the governed run
-from the Ticket Workbench.
+The original M3 seed started `TCK-1042` with durable ticket and billing evidence only. M5 supersedes
+this demo seed behavior for portfolio readiness by seeding a completed walkthrough sample and
+providing a live reset command. The live governed run behavior itself remains unchanged.
 
 The workbench shows:
 

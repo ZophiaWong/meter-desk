@@ -64,8 +64,9 @@ class DraftOnlyProvider(AgentResolutionProvider):
 
 
 @pytest.fixture(autouse=True)
-def m3_dependency_overrides():
+async def m3_dependency_overrides():
     repository = build_seed_repository()
+    await repository.reset_demo_live_state("TCK-1042")
     provider = FakeProvider()
 
     async def repository_override():

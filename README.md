@@ -87,10 +87,13 @@ make test
 make test-db
 make lint
 make seed
+make demo-reset-live
 make db-down
 ```
 
-`make seed` runs migrations and resets the demo-owned mock billing rows. It preserves unrelated local domain rows, rebuilds the Duplicate Charge, Usage Spike, Credit/Refund Dispute, historical mock mutation, and eval case fixtures, and leaves the Duplicate Charge ticket ready for a live governed agent run.
+`make seed` runs migrations and resets the demo-owned mock billing rows. It preserves unrelated local domain rows, rebuilds the Duplicate Charge, Usage Spike, Credit/Refund Dispute, historical mock mutation, eval case fixtures, and a completed Duplicate Charge portfolio baseline with a pending approval and no mock mutation.
+
+`make demo-reset-live` clears only `TCK-1042` runtime state so a configured OpenAI-compatible provider can run the live Duplicate Charge agent path from the Workbench.
 
 `make test-db` starts local Postgres, runs migrations, seeds demo data, and verifies key M3 seed and run-preflight APIs against the real database. The default `make test` remains fast and does not require Docker/Postgres.
 
@@ -109,15 +112,16 @@ If `/health/db` returns 503 while Postgres appears healthy in Docker, see [WSL2 
 
 ## Demo Walkthrough
 
-The intended demo will center on the Duplicate Charge golden path:
+The interview demo centers on the Duplicate Charge golden path. The short flow is:
 
 1. Open a duplicate charge ticket in the Ticket Workbench.
-2. Run the agent investigation.
-3. Inspect billing evidence, policy citations, and the agent action timeline.
-4. Review the draft resolution and customer reply.
-5. Approve or reject the proposed refund or credit.
-6. Inspect the mock mutation and audit trace.
-7. Run the related offline eval case and review trace-based grading.
+2. Inspect billing evidence, policy citations, the seeded agent run, and the trace timeline.
+3. Review the draft-only internal resolution and customer reply.
+4. Approve or reject the proposed refund.
+5. Inspect the mock mutation and audit trace.
+6. Run Eval Lab and review Duplicate Charge scores plus supporting scenario coverage gaps.
+
+For the full interview script, including the no-key baseline, live provider reset path, architecture talking points, and likely interview questions, see [MeterDesk Interview Demo Walkthrough](intv/meterdesk-demo-walkthrough.md).
 
 ## Out of Scope for V1
 

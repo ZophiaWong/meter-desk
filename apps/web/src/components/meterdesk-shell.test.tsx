@@ -23,7 +23,7 @@ const scenario: WorkbenchScenario = {
       id: "TCK-1042",
       title: "Same invoice charged twice",
       customer: "Northstar Compute",
-      status: "Open - ready for agent run",
+      status: "Ready for approval",
       summary: "Two captured charges are attached to INV-2026-0418.",
       isActive: true,
     },
@@ -43,7 +43,7 @@ const scenario: WorkbenchScenario = {
     severity: "Billing dispute",
     openedAt: "Jun 5, 2026",
     summary: "Customer reports that April usage was paid once but appears twice.",
-    outcome: "M3 starts with billing evidence only.",
+    outcome: "Seeded M5 baseline: duplicate captured charge confirmed.",
   },
   evidence: {
     account: {
@@ -110,6 +110,7 @@ describe("MeterDeskShell", () => {
     expect(screen.getByText("M3 API")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
     expect(screen.getByText("No agent run yet")).toBeInTheDocument();
+    expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
 
     const evidence = screen.getByRole("region", { name: "Billing evidence" });
     expect(within(evidence).getByText("Northstar Compute")).toBeInTheDocument();
@@ -126,8 +127,8 @@ describe("MeterDeskShell", () => {
           ...scenario,
           run: {
             id: "RUN-2042",
-            status: "completed",
-            model: "fake-m3-model",
+            status: "Completed",
+            model: "seeded-demo",
             promptVersion: "m3-duplicate-charge-v1",
             errorState: null,
           },
@@ -160,10 +161,71 @@ describe("MeterDeskShell", () => {
       />,
     );
 
+    expect(screen.getByText("RUN-2042")).toBeInTheDocument();
+    expect(screen.getByText("seeded-demo")).toBeInTheDocument();
+    expect(screen.getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();
     expect(screen.getByText("Confirmed duplicate payment on INV-2026-0418.")).toBeInTheDocument();
     expect(screen.getByText("Draft only - not sent")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+    expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
+  });
+
+  it("renders failed run and approved mutation states for the demo path", () => {
+    const failedScenario = {
+      ...scenario,
+      run: {
+        id: "RUN-failed",
+        status: "Failed",
+        model: "live-model",
+        promptVersion: "m3-duplicate-charge-v1",
+        errorState: "Provider failed after retry: invalid structured output",
+      },
+    };
+
+    const approvedScenario = {
+      ...scenario,
+      run: {
+        id: "RUN-2042",
+        status: "Completed",
+        model: "seeded-demo",
+        promptVersion: "m3-duplicate-charge-v1",
+        errorState: null,
+      },
+      approval: {
+        id: "APR-2042",
+        title: "Original refund pending approval",
+        ticketId: "TCK-1042",
+        amount: "$1,248.00",
+        status: "Approved",
+        reason: "Refund the second captured charge ch_2026_0418_B to the original payment method.",
+        blocker: "Approved; mock mutation executed",
+        policyCitation: "REFUND-DUP-001 v2026.02",
+      },
+      mutations: [
+        {
+          id: "MM-2042",
+          amount: "$1,248.00",
+          status: "Mock executed",
+          reason: "Approved original refund for duplicate captured charge.",
+          executedAt: "Jun 5, 2026 12:10 UTC",
+        },
+      ],
+    };
+
+    const { rerender } = render(
+      <MeterDeskShell scenario={failedScenario} status={reachableStatus} />,
+    );
+
+    expect(screen.getByText("Provider failed after retry: invalid structured output")).toBeInTheDocument();
+    expect(screen.getByText("No approval request")).toBeInTheDocument();
+
+    rerender(<MeterDeskShell scenario={approvedScenario} status={reachableStatus} />);
+
+    expect(screen.getByText("MM-2042")).toBeInTheDocument();
+    expect(screen.getByText("Approved; mock mutation executed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
   });
 
   it("shows an explicit backend error instead of falling back to static data", () => {

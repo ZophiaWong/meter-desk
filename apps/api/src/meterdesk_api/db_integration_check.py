@@ -22,15 +22,15 @@ async def run_db_integration_check() -> None:
     assert evidence.status_code == 200
     assert evidence.json()["invoice"]["id"] == "INV-2026-0418"
     assert approvals.status_code == 200
-    assert approvals.json() == []
+    assert [approval["id"] for approval in approvals.json()] == ["APR-2042"]
     assert runs.status_code == 200
-    assert runs.json() == []
+    assert [run["id"] for run in runs.json()] == ["RUN-2042"]
     assert eval_cases.status_code == 200
     assert len(eval_cases.json()) == 9
     assert write.status_code == 503
     assert write.json()["detail"] == "OpenAI-compatible provider is not configured"
 
-    print("MeterDesk M3 DB integration check passed.")
+    print("MeterDesk M5 DB integration check passed.")
 
 
 def main() -> None:

@@ -37,6 +37,8 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
         detail_response = await client.get("/tickets/TCK-1042")
         evidence_response = await client.get("/tickets/TCK-1042/billing-evidence")
         runs_response = await client.get("/tickets/TCK-1042/agent-runs")
+        approvals_response = await client.get("/approvals?ticket_id=TCK-1042&status=all")
+        mutations_response = await client.get("/mock-mutations?ticket_id=TCK-1042")
 
     assert list_response.status_code == 200
     ticket_ids = [ticket["id"] for ticket in list_response.json()]
@@ -57,7 +59,21 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
     assert evidence["policy"]["id"] == "REFUND-DUP-001"
 
     assert runs_response.status_code == 200
-    assert runs_response.json() == []
+    runs = runs_response.json()
+    assert [run["id"] for run in runs] == ["RUN-2042"]
+    assert runs[0]["status"] == "completed"
+    assert runs[0]["final_outcome"] == "confirmed_duplicate_charge"
+    assert runs[0]["internal_resolution"]
+    assert runs[0]["customer_reply"]
+
+    assert approvals_response.status_code == 200
+    approvals = approvals_response.json()
+    assert [approval["id"] for approval in approvals] == ["APR-2042"]
+    assert approvals[0]["status"] == "pending"
+    assert approvals[0]["agent_run_id"] == "RUN-2042"
+
+    assert mutations_response.status_code == 200
+    assert mutations_response.json() == []
 
 
 @pytest.mark.asyncio
@@ -77,7 +93,7 @@ async def test_missing_resource_returns_404_and_empty_collections_return_arrays(
 
 
 @pytest.mark.asyncio
-async def test_m3_seed_starts_without_preview_governance_artifacts() -> None:
+async def test_m5_seed_starts_with_portfolio_baseline_governance_artifacts() -> None:
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
@@ -89,9 +105,18 @@ async def test_m3_seed_starts_without_preview_governance_artifacts() -> None:
         write_response = await client.post("/tickets/TCK-1042/agent-runs")
 
     assert approvals_response.status_code == 200
-    assert approvals_response.json() == []
+    assert [approval["id"] for approval in approvals_response.json()] == ["APR-2042"]
 
-    assert traces_response.status_code == 404
+    assert traces_response.status_code == 200
+    traces = traces_response.json()
+    assert [trace["category"] for trace in traces] == [
+        "read.billing_evidence",
+        "read.prior_financial_actions",
+        "decision.refund_eligibility",
+        "draft.resolution",
+        "approval.create_request",
+    ]
+    assert traces[-1]["approval_refs"] == ["APR-2042"]
 
     assert eval_cases_response.status_code == 200
     cases = eval_cases_response.json()
