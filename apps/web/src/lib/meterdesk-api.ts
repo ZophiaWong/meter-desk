@@ -103,6 +103,29 @@ export type ToolTraceResource = {
   policy_refs: string[];
   approval_refs: string[];
   error_state: string | null;
+  governance_metadata?: {
+    policy_id?: string;
+    policy_version?: string;
+    gate?: string;
+    gate_result?: string;
+    enforcement_outcome?: string;
+    trace_required?: boolean;
+  };
+};
+
+export type ToolPolicyResource = {
+  id: string;
+  label: string;
+  category: string;
+  risk: "Low" | "Medium" | "High";
+  executor: string;
+  gate: string;
+  required_evidence_refs: string[];
+  requires_policy_refs: boolean;
+  requires_approval_ref: boolean;
+  trace_required: boolean;
+  eval_dimensions: string[];
+  version: string;
 };
 
 export type ApprovalResource = {
@@ -246,6 +269,10 @@ export async function getAgentRuns(ticketId: string, apiBaseUrl?: string) {
 
 export async function getToolTraces(agentRunId: string, apiBaseUrl?: string) {
   return fetchApi<ToolTraceResource[]>(`/agent-runs/${agentRunId}/traces`, apiBaseUrl);
+}
+
+export async function getGovernanceToolPolicies(apiBaseUrl?: string) {
+  return fetchApi<ToolPolicyResource[]>("/governance/tool-policies", apiBaseUrl);
 }
 
 export async function getApprovals(apiBaseUrl?: string) {

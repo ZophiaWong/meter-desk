@@ -111,6 +111,16 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
         "draft.resolution",
         "approval.create_request",
     ]
+    assert [trace["governance_metadata"]["gate_result"] for trace in trace_response.json()] == [
+        "allowed",
+        "allowed",
+        "allowed",
+        "allowed",
+        "allowed",
+    ]
+    assert trace_response.json()[2]["governance_metadata"]["policy_id"] == (
+        "decision.refund_eligibility"
+    )
 
     assert approvals_response.status_code == 200
     approvals = approvals_response.json()
@@ -279,3 +289,5 @@ async def test_approve_executes_one_mock_mutation_and_is_idempotent() -> None:
     assert trace_response.status_code == 200
     assert trace_response.json()[-1]["category"] == "mutation.mock_refund"
     assert trace_response.json()[-1]["risk"] == "High"
+    assert trace_response.json()[-1]["governance_metadata"]["gate_result"] == "allowed"
+    assert trace_response.json()[-1]["governance_metadata"]["policy_id"] == "mutation.mock_refund"

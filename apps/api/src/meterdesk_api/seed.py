@@ -281,6 +281,7 @@ async def seed_demo_data() -> None:
                         policy_refs=trace.policy_refs,
                         approval_refs=trace.approval_refs,
                         error_state=trace.error_state,
+                        governance_metadata=trace.governance_metadata,
                         seed_marker=DEMO_SEED_MARKER,
                     )
                     for traces in TRACES.values()

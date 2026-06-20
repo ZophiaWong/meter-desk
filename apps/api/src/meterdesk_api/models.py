@@ -155,6 +155,7 @@ class ToolTrace(SeededRow, Base):
     policy_refs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     approval_refs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     error_state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    governance_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 class ApprovalRequest(SeededRow, Base):

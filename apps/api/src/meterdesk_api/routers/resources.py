@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from meterdesk_api.agent.approvals import ApprovalDecisionError, ApprovalDecisionService
+from meterdesk_api.agent.governance import ToolPolicy, list_tool_policy_summaries
 from meterdesk_api.agent.orchestrator import AgentLoopError, AgentRunOrchestrator
 from meterdesk_api.agent.provider import AgentResolutionProvider
 from meterdesk_api.agent.runtime import (
@@ -155,6 +156,11 @@ async def list_mock_mutations(
     repository=REPOSITORY_DEPENDENCY,
 ) -> list[MockMutationSummary]:
     return await repository.list_mock_mutations(ticket_id=ticket_id)
+
+
+@router.get("/governance/tool-policies", response_model=list[ToolPolicy])
+async def list_governance_tool_policies() -> list[ToolPolicy]:
+    return list_tool_policy_summaries()
 
 
 @router.get("/eval-cases", response_model=list[EvalCaseSummary])

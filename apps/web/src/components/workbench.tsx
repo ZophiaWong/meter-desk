@@ -144,6 +144,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         <h2 id="governance-heading" className="text-lg font-semibold">
           Governance and trace
         </h2>
+        <GovernanceRulesDrawer scenario={scenario} />
         <RunStateCard scenario={scenario} />
         <ApprovalCard scenario={scenario} />
         <MutationResultList scenario={scenario} />
@@ -319,11 +320,57 @@ function TraceTimeline({ traces }: { traces: WorkbenchScenario["traces"] }) {
             </div>
             <p className="mt-2 text-sm text-slate-700">{trace.label}</p>
             <p className="mt-2 text-sm leading-6 text-slate-600">{trace.output}</p>
+            {trace.governance ? (
+              <p className="mt-2 text-xs font-medium text-slate-500">{trace.governance}</p>
+            ) : null}
             <p className="mt-2 text-xs font-medium text-meter-blue">{trace.evidence}</p>
           </li>
         ))}
       </ol>
     </section>
+  );
+}
+
+function GovernanceRulesDrawer({ scenario }: TicketWorkbenchProps) {
+  const policyCount = scenario.toolPolicies.length;
+  const highRiskCount = scenario.toolPolicies.filter((policy) => policy.risk === "High").length;
+
+  return (
+    <details className="mt-3 rounded-md border border-meter-line bg-[#fbfcfe] p-3">
+      <summary className="cursor-pointer list-none text-sm font-semibold text-meter-blue">
+        {policyCount} governed actions | {highRiskCount} high-risk gate | View rules
+      </summary>
+      <div className="mt-4 space-y-3">
+        <p className="text-xs leading-5 text-slate-500">
+          Read-only matrix generated from the backend code-first registry.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-separate border-spacing-y-2 text-left text-xs">
+            <thead className="text-slate-500">
+              <tr>
+                <th className="pr-3 font-semibold">Action</th>
+                <th className="pr-3 font-semibold">Risk</th>
+                <th className="pr-3 font-semibold">Gate</th>
+                <th className="font-semibold">Refs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {scenario.toolPolicies.map((policy) => (
+                <tr className="align-top" key={policy.id}>
+                  <td className="pr-3">
+                    <p className="font-semibold text-slate-800">{policy.id}</p>
+                    <p className="mt-1 text-slate-500">{policy.label}</p>
+                  </td>
+                  <td className="pr-3 font-semibold">{policy.risk}</td>
+                  <td className="pr-3 text-slate-600">{policy.gate}</td>
+                  <td className="text-slate-600">{policy.requiredRefs}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
   );
 }
 

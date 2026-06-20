@@ -4,6 +4,7 @@ import {
   getBillingEvidence,
   getEvalCases,
   getEvalResults,
+  getGovernanceToolPolicies,
   getMockMutations,
   getTicket,
   getTickets,
@@ -69,6 +70,7 @@ export type TraceEntry = {
   label: string;
   output: string;
   evidence: string;
+  governance: string | null;
 };
 
 export type ApprovalRequest = {
@@ -103,6 +105,18 @@ export type DraftOutputs = {
   customerReply: string;
 };
 
+export type ToolPolicyView = {
+  id: string;
+  label: string;
+  risk: "Low" | "Medium" | "High";
+  executor: string;
+  gate: string;
+  requiredRefs: string;
+  approvalRequired: boolean;
+  traceRequired: boolean;
+  evalDimensions: string;
+};
+
 export type WorkbenchScenario = {
   nav: ServiceSurface[];
   tickets: TicketListItem[];
@@ -121,6 +135,7 @@ export type WorkbenchScenario = {
   approval: ApprovalRequest | null;
   mutations: MockMutationView[];
   drafts: DraftOutputs | null;
+  toolPolicies: ToolPolicyView[];
 };
 
 export type ApprovalQueueItem = {
@@ -167,13 +182,14 @@ export const NAV_ITEMS: ServiceSurface[] = [
 const DEFAULT_TICKET_ID = "TCK-1042";
 
 export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> {
-  const [tickets, ticket, evidence, runs, approvals, mutations] = await Promise.all([
+  const [tickets, ticket, evidence, runs, approvals, mutations, toolPolicies] = await Promise.all([
     getTickets(),
     getTicket(DEFAULT_TICKET_ID),
     getBillingEvidence(DEFAULT_TICKET_ID),
     getAgentRuns(DEFAULT_TICKET_ID),
     getApprovalsByStatus("all", DEFAULT_TICKET_ID),
     getMockMutations(DEFAULT_TICKET_ID),
+    getGovernanceToolPolicies(),
   ]);
   const run = runs.at(-1) ?? null;
   const traces = run ? await getToolTraces(run.id) : [];
@@ -241,6 +257,9 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
       label: trace.label,
       output: trace.output_summary,
       evidence: `Evidence: ${trace.evidence_refs.join(", ")}`,
+      governance: trace.governance_metadata?.gate_result
+        ? `${titleCase(trace.governance_metadata.gate_result)} by ${trace.category} - ${trace.risk} risk`
+        : null,
     })),
     approval: approval ? mapApproval(approval) : null,
     mutations: mutations.map((mutation) => ({
@@ -257,6 +276,21 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
             customerReply: run.customer_reply,
           }
         : null,
+    toolPolicies: toolPolicies.map((policy) => ({
+      id: policy.id,
+      label: policy.label,
+      risk: policy.risk,
+      executor: policy.executor,
+      gate: policy.gate,
+      requiredRefs: [
+        ...policy.required_evidence_refs,
+        ...(policy.requires_policy_refs ? ["policy"] : []),
+        ...(policy.requires_approval_ref ? ["approval"] : []),
+      ].join(", "),
+      approvalRequired: policy.requires_approval_ref,
+      traceRequired: policy.trace_required,
+      evalDimensions: policy.eval_dimensions.join(", "),
+    })),
   };
 }
 

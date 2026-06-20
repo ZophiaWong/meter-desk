@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from meterdesk_api.agent.governance import GovernanceKernel
 from meterdesk_api.repositories import MeterDeskRepository
 from meterdesk_api.schemas import ApprovalDecisionResponse
 
@@ -36,11 +37,23 @@ class ApprovalDecisionService:
             mutation = await self._repository.get_mock_mutation_by_approval(approval_id)
             return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
 
+        existing_mutation = await self._repository.get_mock_mutation_by_approval(approval_id)
         approval, mutation = await self._repository.approve_request(
             approval_id=approval_id,
             decided_by=decided_by,
             decision_note=decision_note,
         )
+        if existing_mutation is None and approval.agent_run_id is not None:
+            await GovernanceKernel(self._repository).record_action(
+                agent_run_id=approval.agent_run_id,
+                policy_id="mutation.mock_refund",
+                label="Executed approved mock financial mutation",
+                input_summary=f"Executed approved request {approval.id}.",
+                output_summary=f"Created mock mutation {mutation.id}.",
+                evidence_refs=approval.evidence_refs,
+                policy_refs=[approval.policy_citation],
+                approval_refs=[approval.id],
+            )
         return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
 
     async def reject(

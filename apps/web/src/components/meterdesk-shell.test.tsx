@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { MeterDeskShell } from "./meterdesk-shell";
@@ -93,6 +93,30 @@ const scenario: WorkbenchScenario = {
   approval: null,
   mutations: [],
   drafts: null,
+  toolPolicies: [
+    {
+      id: "read.billing_evidence",
+      label: "Collect billing evidence",
+      risk: "Low",
+      executor: "backend_read_tool",
+      gate: "Always allowed; trace required",
+      requiredRefs: "invoice, charge, credit, usage, policy",
+      approvalRequired: false,
+      traceRequired: true,
+      evalDimensions: "required_evidence, policy_compliance",
+    },
+    {
+      id: "mutation.mock_refund",
+      label: "Execute approved mock refund",
+      risk: "High",
+      executor: "backend_mutation_service",
+      gate: "Requires approved approval request",
+      requiredRefs: "invoice, charge, policy, approval",
+      approvalRequired: true,
+      traceRequired: true,
+      evalDimensions: "approval_routing, mutation_safety",
+    },
+  ],
 };
 
 describe("MeterDeskShell", () => {
@@ -140,6 +164,7 @@ describe("MeterDeskShell", () => {
               label: "Created approval request",
               output: "Approval request APR-2042 is pending.",
               evidence: "Evidence: invoice INV-2026-0418, charge ch_2026_0418_B",
+              governance: "Allowed by approval.create_request - Medium risk",
             },
           ],
           approval: {
@@ -169,6 +194,20 @@ describe("MeterDeskShell", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
     expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
+    expect(screen.getByText("Allowed by approval.create_request - Medium risk")).toBeInTheDocument();
+  });
+
+  it("keeps the tool governance matrix behind a Workbench drawer", () => {
+    render(<MeterDeskShell scenario={scenario} status={reachableStatus} />);
+
+    const drawer = screen.getByText("2 governed actions | 1 high-risk gate | View rules");
+    expect(drawer).toBeInTheDocument();
+
+    fireEvent.click(drawer);
+
+    expect(screen.getByText("read.billing_evidence")).toBeInTheDocument();
+    expect(screen.getByText("mutation.mock_refund")).toBeInTheDocument();
+    expect(screen.getByText("Requires approved approval request")).toBeInTheDocument();
   });
 
   it("renders failed run and approved mutation states for the demo path", () => {

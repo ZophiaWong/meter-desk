@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from meterdesk_api.agent.decision import DuplicateChargeDecisionInput, DuplicateChargeDecisionTool
+from meterdesk_api.agent.governance import GovernanceKernel
 from meterdesk_api.agent.provider import (
     AgentDraftOutput,
     AgentProviderError,
@@ -35,6 +36,7 @@ class AgentRunOrchestrator:
         self._repository = repository
         self._provider = provider
         self._decision_tool = DuplicateChargeDecisionTool()
+        self._governance = GovernanceKernel(repository)
 
     async def run_duplicate_charge(self, ticket_id: str) -> AgentRunSummary | None:
         ticket = await self._repository.get_ticket(ticket_id)
@@ -60,10 +62,9 @@ class AgentRunOrchestrator:
             model=self._provider.model,
             prompt_version=PROMPT_VERSION,
         )
-        await self._repository.add_tool_trace(
+        await self._governance.record_action(
             agent_run_id=run.id,
-            category="read.billing_evidence",
-            risk="Low",
+            policy_id="read.billing_evidence",
             label="Collected Duplicate Charge billing evidence",
             input_summary=(
                 f"Read ticket, invoice, charges, credits, usage, and policy for {ticket_id}."
@@ -83,10 +84,9 @@ class AgentRunOrchestrator:
         )
 
         executed_metadata = await self._repository.list_executed_action_metadata(ticket_id)
-        await self._repository.add_tool_trace(
+        await self._governance.record_action(
             agent_run_id=run.id,
-            category="read.prior_financial_actions",
-            risk="Low",
+            policy_id="read.prior_financial_actions",
             label="Checked prior approvals and mock mutations",
             input_summary=f"Read existing approval and mutation state for {ticket_id}.",
             output_summary=f"Found {len(executed_metadata)} executed mock financial action(s).",
@@ -103,10 +103,9 @@ class AgentRunOrchestrator:
                 executed_action_metadata=executed_metadata,
             )
         )
-        await self._repository.add_tool_trace(
+        await self._governance.record_action(
             agent_run_id=run.id,
-            category="decision.refund_eligibility",
-            risk="Medium",
+            policy_id="decision.refund_eligibility",
             label="Evaluated duplicate-charge refund eligibility",
             input_summary="Compared captured charges, invoice total, policy, and prior actions.",
             output_summary=decision.reason,
@@ -129,10 +128,9 @@ class AgentRunOrchestrator:
         )
         provider_output, provider_error = await self._create_resolution_with_retry(provider_input)
         if provider_error is not None:
-            await self._repository.add_tool_trace(
+            await self._governance.record_action(
                 agent_run_id=run.id,
-                category="draft.resolution",
-                risk="Low",
+                policy_id="draft.resolution",
                 label="Provider draft failed validation",
                 input_summary="Requested structured internal and customer-facing draft output.",
                 output_summary="Provider failed after retry.",
@@ -151,10 +149,9 @@ class AgentRunOrchestrator:
             internal_resolution=provider_output.internal_resolution,
             customer_reply=provider_output.customer_reply,
         )
-        await self._repository.add_tool_trace(
+        await self._governance.record_action(
             agent_run_id=run.id,
-            category="draft.resolution",
-            risk="Low",
+            policy_id="draft.resolution",
             label="Drafted governed resolution",
             input_summary="Requested strict structured recommendation and drafts from provider.",
             output_summary="Provider returned validated draft-only resolution output.",
@@ -178,10 +175,9 @@ class AgentRunOrchestrator:
                 evidence_refs=decision.evidence_refs,
                 action_metadata=decision.action_metadata,
             )
-            await self._repository.add_tool_trace(
+            await self._governance.record_action(
                 agent_run_id=run.id,
-                category="approval.create_request",
-                risk="Medium",
+                policy_id="approval.create_request",
                 label="Created approval request for financial action",
                 input_summary="Created human approval gate for proposed original refund.",
                 output_summary=f"Approval request {approval.id} is pending.",

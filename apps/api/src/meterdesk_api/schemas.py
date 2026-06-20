@@ -122,6 +122,7 @@ class ToolTraceSummary(BaseModel):
     policy_refs: list[str]
     approval_refs: list[str]
     error_state: str | None = None
+    governance_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ApprovalSummary(BaseModel):

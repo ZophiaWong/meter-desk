@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
+from meterdesk_api.agent.governance import build_governance_metadata_for_trace
 from meterdesk_api.repositories import InMemoryMeterDeskRepository
 from meterdesk_api.schemas import (
     AgentRunSummary,
@@ -42,6 +43,18 @@ def money(amount_cents: int, currency: str = "USD") -> MoneyAmount:
 
 def utc(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
     return datetime(year, month, day, hour, minute, tzinfo=UTC)
+
+
+def governed_trace(**kwargs) -> ToolTraceSummary:
+    return ToolTraceSummary(
+        **kwargs,
+        governance_metadata=build_governance_metadata_for_trace(
+            policy_id=kwargs["category"],
+            evidence_refs=kwargs["evidence_refs"],
+            policy_refs=kwargs["policy_refs"],
+            approval_refs=kwargs["approval_refs"],
+        ),
+    )
 
 
 NORTHSTAR = CustomerSummary(
@@ -470,7 +483,7 @@ AGENT_RUNS = {
 
 TRACES: dict[str, list[ToolTraceSummary]] = {
     "RUN-2042": [
-        ToolTraceSummary(
+        governed_trace(
             id="trace-2042-read-evidence",
             agent_run_id="RUN-2042",
             sequence=1,
@@ -492,7 +505,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
             policy_refs=["REFUND-DUP-001 v2026.02"],
             approval_refs=[],
         ),
-        ToolTraceSummary(
+        governed_trace(
             id="trace-2042-prior-actions",
             agent_run_id="RUN-2042",
             sequence=2,
@@ -505,7 +518,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
             policy_refs=[],
             approval_refs=[],
         ),
-        ToolTraceSummary(
+        governed_trace(
             id="trace-2042-decision",
             agent_run_id="RUN-2042",
             sequence=3,
@@ -526,7 +539,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
             policy_refs=["REFUND-DUP-001 v2026.02"],
             approval_refs=[],
         ),
-        ToolTraceSummary(
+        governed_trace(
             id="trace-2042-draft",
             agent_run_id="RUN-2042",
             sequence=4,
@@ -541,7 +554,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
             policy_refs=["REFUND-DUP-001 v2026.02"],
             approval_refs=[],
         ),
-        ToolTraceSummary(
+        governed_trace(
             id="trace-2042-approval",
             agent_run_id="RUN-2042",
             sequence=5,

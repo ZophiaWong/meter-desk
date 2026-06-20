@@ -101,6 +101,7 @@ class MeterDeskRepository(Protocol):
         policy_refs: list[str],
         approval_refs: list[str],
         error_state: str | None = None,
+        governance_metadata: dict[str, object] | None = None,
     ) -> ToolTraceSummary: ...
 
     async def create_approval_request(
@@ -328,6 +329,7 @@ class InMemoryMeterDeskRepository:
         policy_refs: list[str],
         approval_refs: list[str],
         error_state: str | None = None,
+        governance_metadata: dict[str, object] | None = None,
     ) -> ToolTraceSummary:
         traces = self._traces.setdefault(agent_run_id, [])
         trace = ToolTraceSummary(
@@ -343,6 +345,7 @@ class InMemoryMeterDeskRepository:
             policy_refs=policy_refs,
             approval_refs=approval_refs,
             error_state=error_state,
+            governance_metadata=governance_metadata or {},
         )
         traces.append(trace)
         return trace
@@ -437,18 +440,6 @@ class InMemoryMeterDeskRepository:
             executed_at_display=_format_display_time(_now()),
         )
         self._mock_mutations.append(mutation)
-        if approval.agent_run_id is not None:
-            await self.add_tool_trace(
-                agent_run_id=approval.agent_run_id,
-                category="mutation.mock_refund",
-                risk="High",
-                label="Executed approved mock financial mutation",
-                input_summary=f"Executed approved request {approval.id}.",
-                output_summary=f"Created mock mutation {mutation.id}.",
-                evidence_refs=approval.evidence_refs,
-                policy_refs=[approval.policy_citation],
-                approval_refs=[approval.id],
-            )
         return approval, mutation
 
     async def reject_request(
@@ -750,6 +741,7 @@ class SqlAlchemyMeterDeskRepository:
                 policy_refs=trace.policy_refs,
                 approval_refs=trace.approval_refs,
                 error_state=trace.error_state,
+                governance_metadata=trace.governance_metadata,
             )
             for trace in traces
         ]
@@ -882,6 +874,7 @@ class SqlAlchemyMeterDeskRepository:
         policy_refs: list[str],
         approval_refs: list[str],
         error_state: str | None = None,
+        governance_metadata: dict[str, object] | None = None,
     ) -> ToolTraceSummary:
         from meterdesk_api.models import ToolTrace
 
@@ -905,6 +898,7 @@ class SqlAlchemyMeterDeskRepository:
             policy_refs=policy_refs,
             approval_refs=approval_refs,
             error_state=error_state,
+            governance_metadata=governance_metadata or {},
             seed_marker=None,
         )
         self._session.add(trace)
@@ -981,7 +975,7 @@ class SqlAlchemyMeterDeskRepository:
         decided_by: str,
         decision_note: str | None,
     ) -> tuple[ApprovalSummary, MockMutationSummary]:
-        from meterdesk_api.models import ApprovalRequest, MockMutation, ToolTrace
+        from meterdesk_api.models import ApprovalRequest, MockMutation
 
         approval = await self._session.get(ApprovalRequest, approval_id)
         approval.status = "approved"
@@ -1015,31 +1009,6 @@ class SqlAlchemyMeterDeskRepository:
                 seed_marker=None,
             )
             self._session.add(mutation)
-            if approval.agent_run_id is not None:
-                sequence = (
-                    await self._session.execute(
-                        select(func.coalesce(func.max(ToolTrace.sequence), 0)).where(
-                            ToolTrace.agent_run_id == approval.agent_run_id
-                        )
-                    )
-                ).scalar_one()
-                self._session.add(
-                    ToolTrace(
-                        id=_new_id("trace"),
-                        agent_run_id=approval.agent_run_id,
-                        sequence=sequence + 1,
-                        category="mutation.mock_refund",
-                        risk="High",
-                        label="Executed approved mock financial mutation",
-                        input_summary=f"Executed approved request {approval.id}.",
-                        output_summary=f"Created mock mutation {mutation.id}.",
-                        evidence_refs=approval.evidence_refs,
-                        policy_refs=[approval.policy_citation],
-                        approval_refs=[approval.id],
-                        error_state=None,
-                        seed_marker=None,
-                    )
-                )
 
         await self._session.commit()
         return _approval_to_summary(approval), _mutation_to_summary(mutation)
@@ -1226,6 +1195,7 @@ def _trace_to_summary(trace) -> ToolTraceSummary:
         policy_refs=trace.policy_refs,
         approval_refs=trace.approval_refs,
         error_state=trace.error_state,
+        governance_metadata=trace.governance_metadata,
     )
 
 
