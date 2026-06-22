@@ -47,6 +47,10 @@ Start with these documents before implementation:
 - [Implementation Roadmap](docs/specs/implementation-roadmap.md) - milestone sequence for building the v1 system
 - [M2 Backend Domain + Mock Billing](docs/specs/m2-backend-domain-mock-billing.md) - durable mock billing data, read APIs, seed behavior, and DB checks
 - [M3 Governed Agent Loop](docs/specs/m3-governed-agent-loop.md) - constrained agent orchestration, provider boundary, approval writes, and mock mutation execution
+- [M4 Eval Lab](docs/specs/m4-eval-lab.md) - deterministic eval runner, Duplicate Charge fixtures, and supporting scenario blocked gaps
+- [M5 Polish + Portfolio Readiness](docs/specs/m5-polish-portfolio-readiness.md) - seeded demo baseline, live reset, and interview walkthrough expectations
+- [M6 Governed Runtime + Financial Safety](docs/specs/m6-governed-runtime-financial-safety.md) - planned upgrade from trace kernel to governed action runtime
+- [M7 Eval Contracts + Scenario Unblocking](docs/specs/m7-eval-contracts-scenario-unblocking.md) - planned compliance checks and supporting scenario readiness gates
 
 ## Local Setup
 
