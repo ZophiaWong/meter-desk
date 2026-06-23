@@ -82,6 +82,7 @@ export type ApprovalRequest = {
   reason: string;
   blocker: string;
   policyCitation: string;
+  actionFingerprint: string;
 };
 
 export type AgentRunView = {
@@ -98,6 +99,7 @@ export type MockMutationView = {
   status: string;
   reason: string;
   executedAt: string;
+  actionFingerprint: string;
 };
 
 export type DraftOutputs = {
@@ -258,7 +260,13 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
       output: trace.output_summary,
       evidence: `Evidence: ${trace.evidence_refs.join(", ")}`,
       governance: trace.governance_metadata?.gate_result
-        ? `${titleCase(trace.governance_metadata.gate_result)} by ${trace.category} - ${trace.risk} risk`
+        ? [
+            `${titleCase(trace.governance_metadata.gate_result)} by ${trace.category}`,
+            `${trace.risk} risk`,
+            trace.governance_metadata.reason_code,
+          ]
+            .filter(Boolean)
+            .join(" - ")
         : null,
     })),
     approval: approval ? mapApproval(approval) : null,
@@ -268,6 +276,7 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
       status: titleCase(mutation.status.replace("_", " ")),
       reason: mutation.reason,
       executedAt: mutation.executed_at_display,
+      actionFingerprint: mutation.action_fingerprint,
     })),
     drafts:
       run?.internal_resolution && run.customer_reply
@@ -367,6 +376,7 @@ function mapApproval(approval: ApprovalResource): ApprovalRequest {
     reason: approval.reason,
     blocker: approval.blocker,
     policyCitation: approval.policy_citation,
+    actionFingerprint: approval.action_fingerprint,
   };
 }
 

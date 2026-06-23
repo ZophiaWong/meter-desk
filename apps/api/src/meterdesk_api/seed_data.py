@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from meterdesk_api.agent.governance import build_governance_metadata_for_trace
+from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.repositories import InMemoryMeterDeskRepository
 from meterdesk_api.schemas import (
     AgentRunSummary,
@@ -591,6 +592,16 @@ APPROVALS: list[ApprovalSummary] = [
             "target_charge_id": "ch_2026_0418_B",
             "action_basis": "confirmed_duplicate_charge",
         },
+        action_fingerprint=build_action_fingerprint(
+            ticket_id="TCK-1042",
+            action_type="original_refund",
+            amount_cents=124800,
+            currency="USD",
+            action_metadata={
+                "target_charge_id": "ch_2026_0418_B",
+                "invoice_id": "INV-2026-0418",
+            },
+        ),
     )
 ]
 
@@ -608,6 +619,13 @@ MOCK_MUTATIONS = [
             "action_type": "goodwill_credit",
             "credit_ledger_entry_id": "cred-ledger-1137",
         },
+        action_fingerprint=build_action_fingerprint(
+            ticket_id="TCK-1137",
+            action_type="goodwill_credit",
+            amount_cents=12000,
+            currency="USD",
+            action_metadata={"credit_ledger_entry_id": "cred-ledger-1137"},
+        ),
         executed_at=utc(2026, 5, 28, 15, 45),
         executed_at_display="May 28, 2026 15:45 UTC",
     )

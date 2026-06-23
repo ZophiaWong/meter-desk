@@ -104,12 +104,19 @@ export type ToolTraceResource = {
   approval_refs: string[];
   error_state: string | null;
   governance_metadata?: {
+    schema_version?: string;
     policy_id?: string;
     policy_version?: string;
+    risk?: "Low" | "Medium" | "High";
     gate?: string;
     gate_result?: string;
     enforcement_outcome?: string;
+    required_ref_categories?: string[];
+    satisfied_ref_categories?: string[];
+    missing_ref_categories?: string[];
+    negative_evidence_refs?: string[];
     trace_required?: boolean;
+    reason_code?: string;
   };
 };
 
@@ -141,6 +148,7 @@ export type ApprovalResource = {
   blocker: string;
   evidence_refs: string[];
   action_metadata: Record<string, unknown>;
+  action_fingerprint: string;
   decided_at: string | null;
   decision: string | null;
   decided_by: string | null;
@@ -157,6 +165,7 @@ export type MockMutationResource = {
   amount: MoneyAmount;
   reason: string;
   action_metadata: Record<string, unknown>;
+  action_fingerprint: string;
   executed_at: string;
   executed_at_display: string;
 };
@@ -210,9 +219,39 @@ export class MeterDeskApiError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly code = "api.request_failed",
+    readonly details: Record<string, unknown> = {},
   ) {
     super(message);
   }
+}
+
+type StructuredApiError = {
+  code?: unknown;
+  message?: unknown;
+  details?: unknown;
+};
+
+async function buildApiError(response: Response, path: string): Promise<MeterDeskApiError> {
+  const fallbackMessage = `FastAPI request failed for ${path}`;
+  try {
+    const payload = (await response.json()) as StructuredApiError;
+    if (typeof payload.code === "string" && typeof payload.message === "string") {
+      return new MeterDeskApiError(
+        payload.message,
+        response.status,
+        payload.code,
+        isRecord(payload.details) ? payload.details : {},
+      );
+    }
+  } catch {
+    // Non-JSON errors keep the generic internal API error shape.
+  }
+  return new MeterDeskApiError(fallbackMessage, response.status);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function fetchApi<T>(
@@ -225,7 +264,7 @@ export async function fetchApi<T>(
   });
 
   if (!response.ok) {
-    throw new MeterDeskApiError(`FastAPI request failed for ${path}`, response.status);
+    throw await buildApiError(response, path);
   }
 
   return (await response.json()) as T;
@@ -245,7 +284,7 @@ export async function postApi<T>(
   });
 
   if (!response.ok) {
-    throw new MeterDeskApiError(`FastAPI request failed for ${path}`, response.status);
+    throw await buildApiError(response, path);
   }
 
   return (await response.json()) as T;

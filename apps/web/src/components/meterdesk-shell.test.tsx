@@ -176,6 +176,8 @@ describe("MeterDeskShell", () => {
             reason: "Refund the second captured charge ch_2026_0418_B to the original payment method.",
             blocker: "Mutation blocked until human approval",
             policyCitation: "REFUND-DUP-001 v2026.02",
+            actionFingerprint:
+              "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
           },
           drafts: {
             internalResolution: "Confirmed duplicate payment on INV-2026-0418.",
@@ -240,6 +242,8 @@ describe("MeterDeskShell", () => {
         reason: "Refund the second captured charge ch_2026_0418_B to the original payment method.",
         blocker: "Approved; mock mutation executed",
         policyCitation: "REFUND-DUP-001 v2026.02",
+        actionFingerprint:
+          "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
       },
       mutations: [
         {
@@ -248,6 +252,8 @@ describe("MeterDeskShell", () => {
           status: "Mock executed",
           reason: "Approved original refund for duplicate captured charge.",
           executedAt: "Jun 5, 2026 12:10 UTC",
+          actionFingerprint:
+            "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
         },
       ],
     };

@@ -7,9 +7,12 @@ from uuid import uuid4
 
 from fastapi import Depends
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from meterdesk_api.db import get_session
+from meterdesk_api.errors import MeterDeskAPIError
+from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.schemas import (
     AgentRunSummary,
     ApprovalSummary,
@@ -66,6 +69,16 @@ class MeterDeskRepository(Protocol):
         action_type: str,
     ) -> ApprovalSummary | None: ...
 
+    async def get_pending_approval_by_fingerprint(
+        self,
+        action_fingerprint: str,
+    ) -> ApprovalSummary | None: ...
+
+    async def get_executed_mock_mutation_by_fingerprint(
+        self,
+        action_fingerprint: str,
+    ) -> MockMutationSummary | None: ...
+
     async def list_executed_action_metadata(self, ticket_id: str) -> list[dict[str, object]]: ...
 
     async def create_agent_run(
@@ -119,6 +132,7 @@ class MeterDeskRepository(Protocol):
         policy_citation: str,
         evidence_refs: list[str],
         action_metadata: dict[str, object],
+        action_fingerprint: str | None = None,
     ) -> ApprovalSummary: ...
 
     async def get_approval(self, approval_id: str) -> ApprovalSummary | None: ...
@@ -262,9 +276,30 @@ class InMemoryMeterDeskRepository:
                 return approval
         return None
 
+    async def get_pending_approval_by_fingerprint(
+        self,
+        action_fingerprint: str,
+    ) -> ApprovalSummary | None:
+        for approval in self._approvals:
+            if approval.action_fingerprint == action_fingerprint and approval.status == "pending":
+                return approval
+        return None
+
+    async def get_executed_mock_mutation_by_fingerprint(
+        self,
+        action_fingerprint: str,
+    ) -> MockMutationSummary | None:
+        for mutation in self._mock_mutations:
+            if (
+                mutation.action_fingerprint == action_fingerprint
+                and mutation.status == "mock_executed"
+            ):
+                return mutation
+        return None
+
     async def list_executed_action_metadata(self, ticket_id: str) -> list[dict[str, object]]:
         return [
-            mutation.action_metadata
+            {**mutation.action_metadata, "action_fingerprint": mutation.action_fingerprint}
             for mutation in self._mock_mutations
             if mutation.ticket_id == ticket_id and mutation.status == "mock_executed"
         ]
@@ -365,7 +400,23 @@ class InMemoryMeterDeskRepository:
         policy_citation: str,
         evidence_refs: list[str],
         action_metadata: dict[str, object],
+        action_fingerprint: str | None = None,
     ) -> ApprovalSummary:
+        fingerprint = action_fingerprint or build_action_fingerprint(
+            ticket_id=ticket_id,
+            action_type=action_type,
+            amount_cents=amount_cents,
+            currency=currency,
+            action_metadata=action_metadata,
+        )
+        duplicate = await self.get_pending_approval_by_fingerprint(fingerprint)
+        if duplicate is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.pending_duplicate",
+                message="A pending financial approval already exists for this action.",
+                details={"action_fingerprint": fingerprint},
+            )
         approval = ApprovalSummary(
             id=_new_id("APR"),
             ticket_id=ticket_id,
@@ -383,6 +434,7 @@ class InMemoryMeterDeskRepository:
             blocker=blocker,
             evidence_refs=evidence_refs,
             action_metadata=action_metadata,
+            action_fingerprint=fingerprint,
         )
         self._approvals.append(approval)
         return approval
@@ -410,7 +462,33 @@ class InMemoryMeterDeskRepository:
         decided_by: str,
         decision_note: str | None,
     ) -> tuple[ApprovalSummary, MockMutationSummary]:
-        approval = (await self.get_approval(approval_id)).model_copy(
+        current = await self.get_approval(approval_id)
+        existing = await self.get_mock_mutation_by_approval(approval_id)
+        if existing is not None:
+            approval = current.model_copy(
+                update={
+                    "status": "approved",
+                    "decision": "approved",
+                    "decided_at": _now(),
+                    "decided_by": decided_by,
+                    "decision_note": decision_note,
+                    "blocker": "Approved; mock mutation executed",
+                }
+            )
+            self._replace_approval(approval)
+            return approval, existing
+        duplicate_action = await self.get_executed_mock_mutation_by_fingerprint(
+            current.action_fingerprint
+        )
+        if duplicate_action is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="mutation.duplicate_action",
+                message="This financial action has already been executed.",
+                details={"action_fingerprint": current.action_fingerprint},
+            )
+
+        approval = current.model_copy(
             update={
                 "status": "approved",
                 "decision": "approved",
@@ -421,11 +499,6 @@ class InMemoryMeterDeskRepository:
             }
         )
         self._replace_approval(approval)
-
-        existing = await self.get_mock_mutation_by_approval(approval_id)
-        if existing is not None:
-            return approval, existing
-
         mutation = MockMutationSummary(
             id=_new_id("MM"),
             ticket_id=approval.ticket_id,
@@ -436,6 +509,7 @@ class InMemoryMeterDeskRepository:
             amount=approval.amount,
             reason=approval.reason,
             action_metadata=approval.action_metadata,
+            action_fingerprint=approval.action_fingerprint,
             executed_at=_now(),
             executed_at_display=_format_display_time(_now()),
         )
@@ -788,6 +862,38 @@ class SqlAlchemyMeterDeskRepository:
         ).scalar_one_or_none()
         return _approval_to_summary(approval) if approval is not None else None
 
+    async def get_pending_approval_by_fingerprint(
+        self,
+        action_fingerprint: str,
+    ) -> ApprovalSummary | None:
+        from meterdesk_api.models import ApprovalRequest
+
+        approval = (
+            await self._session.execute(
+                select(ApprovalRequest)
+                .where(ApprovalRequest.action_fingerprint == action_fingerprint)
+                .where(ApprovalRequest.status == "pending")
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return _approval_to_summary(approval) if approval is not None else None
+
+    async def get_executed_mock_mutation_by_fingerprint(
+        self,
+        action_fingerprint: str,
+    ) -> MockMutationSummary | None:
+        from meterdesk_api.models import MockMutation
+
+        mutation = (
+            await self._session.execute(
+                select(MockMutation)
+                .where(MockMutation.action_fingerprint == action_fingerprint)
+                .where(MockMutation.status == "mock_executed")
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return _mutation_to_summary(mutation) if mutation is not None else None
+
     async def list_executed_action_metadata(self, ticket_id: str) -> list[dict[str, object]]:
         from meterdesk_api.models import MockMutation
 
@@ -799,7 +905,10 @@ class SqlAlchemyMeterDeskRepository:
                 .order_by(MockMutation.executed_at)
             )
         ).scalars()
-        return [mutation.action_metadata for mutation in mutations]
+        return [
+            {**mutation.action_metadata, "action_fingerprint": mutation.action_fingerprint}
+            for mutation in mutations
+        ]
 
     async def create_agent_run(
         self,
@@ -920,9 +1029,17 @@ class SqlAlchemyMeterDeskRepository:
         policy_citation: str,
         evidence_refs: list[str],
         action_metadata: dict[str, object],
+        action_fingerprint: str | None = None,
     ) -> ApprovalSummary:
         from meterdesk_api.models import ApprovalRequest
 
+        fingerprint = action_fingerprint or build_action_fingerprint(
+            ticket_id=ticket_id,
+            action_type=action_type,
+            amount_cents=amount_cents,
+            currency=currency,
+            action_metadata=action_metadata,
+        )
         approval = ApprovalRequest(
             id=_new_id("APR"),
             ticket_id=ticket_id,
@@ -938,6 +1055,7 @@ class SqlAlchemyMeterDeskRepository:
             policy_citation=policy_citation,
             evidence_refs=evidence_refs,
             action_metadata=action_metadata,
+            action_fingerprint=fingerprint,
             created_at=_now(),
             decided_at=None,
             decision=None,
@@ -946,7 +1064,16 @@ class SqlAlchemyMeterDeskRepository:
             seed_marker=None,
         )
         self._session.add(approval)
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError as error:
+            await self._session.rollback()
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.pending_duplicate",
+                message="A pending financial approval already exists for this action.",
+                details={"action_fingerprint": fingerprint},
+            ) from error
         return _approval_to_summary(approval)
 
     async def get_approval(self, approval_id: str) -> ApprovalSummary | None:
@@ -978,19 +1105,33 @@ class SqlAlchemyMeterDeskRepository:
         from meterdesk_api.models import ApprovalRequest, MockMutation
 
         approval = await self._session.get(ApprovalRequest, approval_id)
-        approval.status = "approved"
-        approval.decision = "approved"
-        approval.decided_at = _now()
-        approval.decided_by = decided_by
-        approval.decision_note = decision_note
-        approval.blocker = "Approved; mock mutation executed"
-
         mutation = (
             await self._session.execute(
                 select(MockMutation).where(MockMutation.approval_request_id == approval.id).limit(1)
             )
         ).scalar_one_or_none()
         if mutation is None:
+            duplicate_action = (
+                await self._session.execute(
+                    select(MockMutation)
+                    .where(MockMutation.action_fingerprint == approval.action_fingerprint)
+                    .where(MockMutation.status == "mock_executed")
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if duplicate_action is not None:
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="mutation.duplicate_action",
+                    message="This financial action has already been executed.",
+                    details={"action_fingerprint": approval.action_fingerprint},
+                )
+            approval.status = "approved"
+            approval.decision = "approved"
+            approval.decided_at = _now()
+            approval.decided_by = decided_by
+            approval.decision_note = decision_note
+            approval.blocker = "Approved; mock mutation executed"
             now = _now()
             mutation = MockMutation(
                 id=_new_id("MM"),
@@ -1004,13 +1145,30 @@ class SqlAlchemyMeterDeskRepository:
                 currency=approval.currency,
                 reason=approval.reason,
                 action_metadata=approval.action_metadata,
+                action_fingerprint=approval.action_fingerprint,
                 executed_at=now,
                 executed_at_display=_format_display_time(now),
                 seed_marker=None,
             )
             self._session.add(mutation)
+        else:
+            approval.status = "approved"
+            approval.decision = "approved"
+            approval.decided_at = _now()
+            approval.decided_by = decided_by
+            approval.decision_note = decision_note
+            approval.blocker = "Approved; mock mutation executed"
 
-        await self._session.commit()
+        try:
+            await self._session.commit()
+        except IntegrityError as error:
+            await self._session.rollback()
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="mutation.duplicate_action",
+                message="This financial action has already been executed.",
+                details={"action_fingerprint": approval.action_fingerprint},
+            ) from error
         return _approval_to_summary(approval), _mutation_to_summary(mutation)
 
     async def reject_request(
@@ -1217,6 +1375,7 @@ def _approval_to_summary(approval) -> ApprovalSummary:
         blocker=approval.blocker,
         evidence_refs=approval.evidence_refs,
         action_metadata=approval.action_metadata,
+        action_fingerprint=approval.action_fingerprint,
         decided_at=approval.decided_at,
         decision=approval.decision,
         decided_by=approval.decided_by,
@@ -1239,6 +1398,7 @@ def _mutation_to_summary(mutation) -> MockMutationSummary:
         ),
         reason=mutation.reason,
         action_metadata=mutation.action_metadata,
+        action_fingerprint=mutation.action_fingerprint,
         executed_at=mutation.executed_at,
         executed_at_display=mutation.executed_at_display,
     )

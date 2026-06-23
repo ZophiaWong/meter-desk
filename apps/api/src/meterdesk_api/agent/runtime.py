@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from fastapi import HTTPException
-
 from meterdesk_api.agent.provider import AgentResolutionProvider, OpenAICompatibleProvider
+from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.eval.judge import EvalDraftJudge, OpenAICompatibleEvalJudge
 from meterdesk_api.settings import get_settings
 
@@ -10,9 +9,10 @@ from meterdesk_api.settings import get_settings
 async def get_agent_provider() -> AgentResolutionProvider:
     settings = get_settings()
     if not settings.openai_api_key or not settings.openai_model:
-        raise HTTPException(
+        raise MeterDeskAPIError(
             status_code=503,
-            detail="OpenAI-compatible provider is not configured",
+            code="provider.not_configured",
+            message="OpenAI-compatible provider is not configured.",
         )
     return OpenAICompatibleProvider(
         api_key=settings.openai_api_key,
@@ -24,8 +24,8 @@ async def get_agent_provider() -> AgentResolutionProvider:
 async def get_optional_agent_provider() -> AgentResolutionProvider | None:
     try:
         return await get_agent_provider()
-    except HTTPException as error:
-        if error.status_code == 503:
+    except MeterDeskAPIError as error:
+        if error.code == "provider.not_configured":
             return None
         raise
 

@@ -175,6 +175,7 @@ class ApprovalRequest(SeededRow, Base):
     policy_citation: Mapped[str] = mapped_column(String(120), nullable=False)
     evidence_refs: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     action_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    action_fingerprint: Mapped[str] = mapped_column(String(260), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decision: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -198,6 +199,7 @@ class MockMutation(SeededRow, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     action_metadata: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    action_fingerprint: Mapped[str] = mapped_column(String(260), nullable=False, index=True)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     executed_at_display: Mapped[str] = mapped_column(String(80), nullable=False)
 

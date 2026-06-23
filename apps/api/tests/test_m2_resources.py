@@ -1,8 +1,8 @@
 import pytest
-from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from meterdesk_api.agent.runtime import get_agent_provider
+from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.main import app
 from meterdesk_api.repositories import get_repository
 from meterdesk_api.seed_data import build_seed_repository
@@ -14,9 +14,10 @@ def seeded_repository_override():
         return build_seed_repository()
 
     async def missing_provider_override():
-        raise HTTPException(
+        raise MeterDeskAPIError(
             status_code=503,
-            detail="OpenAI-compatible provider is not configured",
+            code="provider.not_configured",
+            message="OpenAI-compatible provider is not configured.",
         )
 
     app.dependency_overrides[get_repository] = repository_override
@@ -131,4 +132,4 @@ async def test_m5_seed_starts_with_portfolio_baseline_governance_artifacts() -> 
     assert eval_results_response.json() == []
 
     assert write_response.status_code == 503
-    assert write_response.json()["detail"] == "OpenAI-compatible provider is not configured"
+    assert write_response.json()["code"] == "provider.not_configured"

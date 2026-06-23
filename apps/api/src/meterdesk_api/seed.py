@@ -4,6 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from meterdesk_api.db import create_engine
+from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.models import (
     AgentRun,
     ApprovalRequest,
@@ -304,6 +305,7 @@ async def seed_demo_data() -> None:
                         policy_citation=approval.policy_citation,
                         evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
                         action_metadata=approval.action_metadata,
+                        action_fingerprint=approval.action_fingerprint,
                         created_at=utc(2026, 6, 5, 12, 6),
                         decided_by=approval.decided_by,
                         decision_note=approval.decision_note,
@@ -334,6 +336,13 @@ async def seed_demo_data() -> None:
                             "action_type": "goodwill_credit",
                             "credit_ledger_entry_id": "cred-ledger-1137",
                         },
+                        action_fingerprint=build_action_fingerprint(
+                            ticket_id="TCK-1137",
+                            action_type="goodwill_credit",
+                            amount_cents=12000,
+                            currency="USD",
+                            action_metadata={"credit_ledger_entry_id": "cred-ledger-1137"},
+                        ),
                         created_at=utc(2026, 5, 28, 15, 40),
                         decided_at=utc(2026, 5, 28, 15, 44),
                         decision="approved",
@@ -357,6 +366,7 @@ async def seed_demo_data() -> None:
                         currency=mutation.amount.currency,
                         reason=mutation.reason,
                         action_metadata=mutation.action_metadata,
+                        action_fingerprint=mutation.action_fingerprint,
                         executed_at=mutation.executed_at,
                         executed_at_display=mutation.executed_at_display,
                         seed_marker=DEMO_SEED_MARKER,

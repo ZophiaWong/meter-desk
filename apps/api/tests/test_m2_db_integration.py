@@ -50,7 +50,7 @@ async def test_agent_run_requires_provider_configuration() -> None:
         response = await client.post("/tickets/TCK-1042/agent-runs")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "OpenAI-compatible provider is not configured"
+    assert response.json()["code"] == "provider.not_configured"
 
 
 @pytest.mark.asyncio

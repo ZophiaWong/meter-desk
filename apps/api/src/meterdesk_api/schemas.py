@@ -125,6 +125,22 @@ class ToolTraceSummary(BaseModel):
     governance_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class GovernanceMetadata(BaseModel):
+    schema_version: str
+    policy_id: str
+    policy_version: str
+    risk: RiskLevel
+    gate: str
+    gate_result: str
+    enforcement_outcome: str
+    required_ref_categories: list[str] = Field(default_factory=list)
+    satisfied_ref_categories: list[str] = Field(default_factory=list)
+    missing_ref_categories: list[str] = Field(default_factory=list)
+    negative_evidence_refs: list[str] = Field(default_factory=list)
+    trace_required: bool
+    reason_code: str
+
+
 class ApprovalSummary(BaseModel):
     id: str
     ticket_id: str
@@ -138,6 +154,7 @@ class ApprovalSummary(BaseModel):
     blocker: str
     evidence_refs: list[str] = Field(default_factory=list)
     action_metadata: dict[str, Any] = Field(default_factory=dict)
+    action_fingerprint: str
     decided_at: datetime | None = None
     decision: str | None = None
     decided_by: str | None = None
@@ -154,6 +171,7 @@ class MockMutationSummary(BaseModel):
     amount: MoneyAmount
     reason: str
     action_metadata: dict[str, Any] = Field(default_factory=dict)
+    action_fingerprint: str
     executed_at: datetime
     executed_at_display: str
 

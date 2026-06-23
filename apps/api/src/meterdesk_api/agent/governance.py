@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel
 
+from meterdesk_api.errors import MeterDeskAPIError
+from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.repositories import MeterDeskRepository
-from meterdesk_api.schemas import RiskLevel
+from meterdesk_api.schemas import (
+    ApprovalDecisionResponse,
+    ApprovalSummary,
+    GovernanceMetadata,
+    RiskLevel,
+)
 
-GOVERNANCE_POLICY_VERSION = "governance-kernel-v1"
+GOVERNANCE_POLICY_VERSION = "1.0.0"
+GOVERNANCE_METADATA_SCHEMA_VERSION = "1.0.0"
 
 
 class ToolPolicy(BaseModel):
@@ -22,7 +28,7 @@ class ToolPolicy(BaseModel):
     requires_approval_ref: bool = False
     trace_required: bool = True
     eval_dimensions: list[str]
-    version: Literal["governance-kernel-v1"] = GOVERNANCE_POLICY_VERSION
+    version: str = GOVERNANCE_POLICY_VERSION
 
 
 TOOL_POLICIES: tuple[ToolPolicy, ...] = (
@@ -112,19 +118,26 @@ def build_governance_metadata_for_trace(
     evidence_refs: list[str],
     policy_refs: list[str],
     approval_refs: list[str],
+    negative_evidence_refs: list[str] | None = None,
 ) -> dict[str, object]:
     policy = get_tool_policy(policy_id)
     if policy is None:
-        raise GovernanceViolation(f"Unknown tool policy: {policy_id}")
+        raise GovernanceViolation(
+            status_code=409,
+            code="governance.unknown_policy",
+            message=f"Unknown tool policy: {policy_id}",
+            details={"policy_id": policy_id},
+        )
     return _build_governance_metadata(
         policy=policy,
         evidence_refs=evidence_refs,
         policy_refs=policy_refs,
         approval_refs=approval_refs,
+        negative_evidence_refs=negative_evidence_refs or [],
     )
 
 
-class GovernanceViolation(Exception):
+class GovernanceViolation(MeterDeskAPIError):
     pass
 
 
@@ -143,25 +156,299 @@ class GovernanceKernel:
         evidence_refs: list[str],
         policy_refs: list[str],
         approval_refs: list[str],
+        negative_evidence_refs: list[str] | None = None,
         error_state: str | None = None,
     ):
         policy = get_tool_policy(policy_id)
         if policy is None:
-            raise GovernanceViolation(f"Unknown tool policy: {policy_id}")
+            error = GovernanceViolation(
+                status_code=409,
+                code="governance.unknown_policy",
+                message=f"Unknown tool policy: {policy_id}",
+                details={"policy_id": policy_id},
+            )
+            await self._record_blocked_trace(
+                agent_run_id=agent_run_id,
+                policy=None,
+                policy_id=policy_id,
+                label=label,
+                input_summary=input_summary,
+                output_summary=output_summary,
+                evidence_refs=evidence_refs,
+                policy_refs=policy_refs,
+                approval_refs=approval_refs,
+                negative_evidence_refs=negative_evidence_refs or [],
+                error=error,
+            )
+            raise error
 
         metadata = build_governance_metadata_for_trace(
             policy_id=policy.id,
             evidence_refs=evidence_refs,
             policy_refs=policy_refs,
             approval_refs=approval_refs,
+            negative_evidence_refs=negative_evidence_refs or [],
         )
         if metadata["missing_ref_categories"]:
-            raise GovernanceViolation(
-                "Missing required governance refs: " + ", ".join(metadata["missing_ref_categories"])
+            error = GovernanceViolation(
+                status_code=409,
+                code="governance.missing_required_ref",
+                message=(
+                    "Missing required governance refs: "
+                    + ", ".join(metadata["missing_ref_categories"])
+                ),
+                details={"missing_ref_categories": metadata["missing_ref_categories"]},
             )
+            await self._record_trace(
+                agent_run_id=agent_run_id,
+                policy=policy,
+                label=label,
+                input_summary=input_summary,
+                output_summary=output_summary,
+                evidence_refs=evidence_refs,
+                policy_refs=policy_refs,
+                approval_refs=approval_refs,
+                governance_metadata=_blocked_metadata(metadata, error.code),
+                error_state=error.code,
+            )
+            raise error
         if policy.risk == "High":
-            await self._enforce_high_risk_approval(approval_refs)
+            try:
+                await self._enforce_high_risk_approval(approval_refs)
+            except GovernanceViolation as error:
+                await self._record_trace(
+                    agent_run_id=agent_run_id,
+                    policy=policy,
+                    label=label,
+                    input_summary=input_summary,
+                    output_summary=output_summary,
+                    evidence_refs=evidence_refs,
+                    policy_refs=policy_refs,
+                    approval_refs=approval_refs,
+                    governance_metadata=_blocked_metadata(metadata, error.code),
+                    error_state=error.code,
+                )
+                raise
 
+        return await self._record_trace(
+            agent_run_id=agent_run_id,
+            policy=policy,
+            label=label,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            evidence_refs=evidence_refs,
+            policy_refs=policy_refs,
+            approval_refs=approval_refs,
+            governance_metadata=metadata,
+            error_state=error_state,
+        )
+
+    async def create_approval_request(
+        self,
+        *,
+        ticket_id: str,
+        agent_run_id: str,
+        title: str,
+        action_type: str,
+        amount_cents: int,
+        amount_display: str,
+        currency: str,
+        reason: str,
+        blocker: str,
+        policy_citation: str,
+        evidence_refs: list[str],
+        policy_refs: list[str],
+        action_metadata: dict[str, object],
+        label: str,
+        input_summary: str,
+        output_summary: str,
+    ) -> ApprovalSummary:
+        action_fingerprint = build_action_fingerprint(
+            ticket_id=ticket_id,
+            action_type=action_type,
+            amount_cents=amount_cents,
+            currency=currency,
+            action_metadata=action_metadata,
+        )
+        pending = await self._repository.get_pending_approval_by_fingerprint(action_fingerprint)
+        if pending is not None:
+            error = GovernanceViolation(
+                status_code=409,
+                code="approval.pending_duplicate",
+                message="A pending financial approval already exists for this action.",
+                details={"action_fingerprint": action_fingerprint},
+            )
+            await self._record_financial_block(
+                agent_run_id=agent_run_id,
+                policy_id="approval.create_request",
+                label=label,
+                input_summary=input_summary,
+                output_summary=output_summary,
+                evidence_refs=evidence_refs,
+                policy_refs=policy_refs,
+                approval_refs=[pending.id],
+                error=error,
+            )
+            raise error
+        executed = await self._repository.get_executed_mock_mutation_by_fingerprint(
+            action_fingerprint
+        )
+        if executed is not None:
+            error = GovernanceViolation(
+                status_code=409,
+                code="mutation.duplicate_action",
+                message="This financial action has already been executed.",
+                details={"action_fingerprint": action_fingerprint},
+            )
+            await self._record_financial_block(
+                agent_run_id=agent_run_id,
+                policy_id="approval.create_request",
+                label=label,
+                input_summary=input_summary,
+                output_summary=output_summary,
+                evidence_refs=evidence_refs,
+                policy_refs=policy_refs,
+                approval_refs=[],
+                error=error,
+            )
+            raise error
+
+        approval = await self._repository.create_approval_request(
+            ticket_id=ticket_id,
+            agent_run_id=agent_run_id,
+            title=title,
+            action_type=action_type,
+            amount_cents=amount_cents,
+            amount_display=amount_display,
+            currency=currency,
+            reason=reason,
+            blocker=blocker,
+            policy_citation=policy_citation,
+            evidence_refs=evidence_refs,
+            action_metadata=action_metadata,
+            action_fingerprint=action_fingerprint,
+        )
+        await self.record_action(
+            agent_run_id=agent_run_id,
+            policy_id="approval.create_request",
+            label=label,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            evidence_refs=evidence_refs,
+            policy_refs=policy_refs,
+            approval_refs=[approval.id],
+        )
+        return approval
+
+    async def execute_approved_mock_refund(
+        self,
+        approval_id: str,
+        *,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> ApprovalDecisionResponse:
+        approval = await self._repository.get_approval(approval_id)
+        if approval is None:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="approval.not_found",
+                message="Approval request not found.",
+            )
+        if approval.status == "rejected":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.rejected_terminal",
+                message="Rejected approval requests cannot be approved.",
+            )
+        if approval.status == "approved":
+            mutation = await self._repository.get_mock_mutation_by_approval(approval_id)
+            return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
+
+        existing_mutation = await self._repository.get_mock_mutation_by_approval(approval_id)
+        try:
+            approval, mutation = await self._repository.approve_request(
+                approval_id=approval_id,
+                decided_by=decided_by,
+                decision_note=decision_note,
+            )
+        except MeterDeskAPIError as error:
+            if approval.agent_run_id is not None:
+                await self._record_financial_block(
+                    agent_run_id=approval.agent_run_id,
+                    policy_id="mutation.mock_refund",
+                    label="Blocked duplicate mock financial mutation",
+                    input_summary=f"Attempted to execute approved request {approval.id}.",
+                    output_summary=error.message,
+                    evidence_refs=approval.evidence_refs,
+                    policy_refs=[approval.policy_citation],
+                    approval_refs=[approval.id],
+                    error=error,
+                )
+            raise
+        if existing_mutation is None and approval.agent_run_id is not None:
+            await self.record_action(
+                agent_run_id=approval.agent_run_id,
+                policy_id="mutation.mock_refund",
+                label="Executed approved mock financial mutation",
+                input_summary=f"Executed approved request {approval.id}.",
+                output_summary=f"Created mock mutation {mutation.id}.",
+                evidence_refs=approval.evidence_refs,
+                policy_refs=[approval.policy_citation],
+                approval_refs=[approval.id],
+            )
+        return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
+
+    async def _record_financial_block(
+        self,
+        *,
+        agent_run_id: str,
+        policy_id: str,
+        label: str,
+        input_summary: str,
+        output_summary: str,
+        evidence_refs: list[str],
+        policy_refs: list[str],
+        approval_refs: list[str],
+        error: MeterDeskAPIError,
+    ) -> None:
+        policy = get_tool_policy(policy_id)
+        if policy is None:
+            return
+        metadata = _build_governance_metadata(
+            policy=policy,
+            evidence_refs=evidence_refs,
+            policy_refs=policy_refs,
+            approval_refs=approval_refs,
+            negative_evidence_refs=[],
+            reason_code=error.code,
+        )
+        await self._record_trace(
+            agent_run_id=agent_run_id,
+            policy=policy,
+            label=label,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            evidence_refs=evidence_refs,
+            policy_refs=policy_refs,
+            approval_refs=approval_refs,
+            governance_metadata=_blocked_metadata(metadata, error.code),
+            error_state=error.code,
+        )
+
+    async def _record_trace(
+        self,
+        *,
+        agent_run_id: str,
+        policy: ToolPolicy,
+        label: str,
+        input_summary: str,
+        output_summary: str,
+        evidence_refs: list[str],
+        policy_refs: list[str],
+        approval_refs: list[str],
+        governance_metadata: dict[str, object],
+        error_state: str | None = None,
+    ):
         return await self._repository.add_tool_trace(
             agent_run_id=agent_run_id,
             category=policy.id,
@@ -173,19 +460,75 @@ class GovernanceKernel:
             policy_refs=policy_refs,
             approval_refs=approval_refs,
             error_state=error_state,
-            governance_metadata=metadata,
+            governance_metadata=governance_metadata,
+        )
+
+    async def _record_blocked_trace(
+        self,
+        *,
+        agent_run_id: str,
+        policy: ToolPolicy | None,
+        policy_id: str,
+        label: str,
+        input_summary: str,
+        output_summary: str,
+        evidence_refs: list[str],
+        policy_refs: list[str],
+        approval_refs: list[str],
+        negative_evidence_refs: list[str],
+        error: GovernanceViolation,
+    ) -> None:
+        traces = await self._repository.list_traces(agent_run_id)
+        if traces is None:
+            return
+        metadata = (
+            _build_governance_metadata(
+                policy=policy,
+                evidence_refs=evidence_refs,
+                policy_refs=policy_refs,
+                approval_refs=approval_refs,
+                negative_evidence_refs=negative_evidence_refs,
+                reason_code=error.code,
+            )
+            if policy is not None
+            else _unknown_policy_metadata(policy_id, error.code)
+        )
+        await self._repository.add_tool_trace(
+            agent_run_id=agent_run_id,
+            category=policy.id if policy is not None else policy_id,
+            risk=policy.risk if policy is not None else "Low",
+            label=label,
+            input_summary=input_summary,
+            output_summary=output_summary,
+            evidence_refs=evidence_refs,
+            policy_refs=policy_refs,
+            approval_refs=approval_refs,
+            error_state=error.code,
+            governance_metadata=_blocked_metadata(metadata, error.code),
         )
 
     async def _enforce_high_risk_approval(self, approval_refs: list[str]) -> None:
         if not approval_refs:
-            raise GovernanceViolation("High-risk action requires an approval reference")
+            raise GovernanceViolation(
+                status_code=409,
+                code="governance.approval_gate_blocked",
+                message="High-risk action requires an approval reference",
+            )
         for approval_ref in approval_refs:
             approval = await self._repository.get_approval(approval_ref)
             if approval is None:
-                raise GovernanceViolation(f"Approval request not found: {approval_ref}")
+                raise GovernanceViolation(
+                    status_code=409,
+                    code="governance.approval_gate_blocked",
+                    message=f"Approval request not found: {approval_ref}",
+                    details={"approval_id": approval_ref},
+                )
             if approval.status != "approved":
                 raise GovernanceViolation(
-                    f"High-risk action requires approved approval: {approval_ref}"
+                    status_code=409,
+                    code="governance.approval_gate_blocked",
+                    message=f"High-risk action requires approved approval: {approval_ref}",
+                    details={"approval_id": approval_ref, "approval_status": approval.status},
                 )
 
 
@@ -195,6 +538,8 @@ def _build_governance_metadata(
     evidence_refs: list[str],
     policy_refs: list[str],
     approval_refs: list[str],
+    negative_evidence_refs: list[str],
+    reason_code: str | None = None,
 ) -> dict[str, object]:
     satisfied = _evidence_ref_categories(evidence_refs)
     required = list(policy.required_evidence_refs)
@@ -208,18 +553,54 @@ def _build_governance_metadata(
             satisfied.add("approval")
 
     missing = [category for category in required if category not in satisfied]
+    resolved_reason_code = reason_code or (
+        "governance.missing_required_ref" if missing else "governance.allowed"
+    )
+    return GovernanceMetadata(
+        schema_version=GOVERNANCE_METADATA_SCHEMA_VERSION,
+        policy_id=policy.id,
+        policy_version=policy.version,
+        risk=policy.risk,
+        gate=policy.gate,
+        gate_result="allowed" if not missing else "blocked",
+        enforcement_outcome="trace_recorded" if not missing else "blocked_before_execution",
+        required_ref_categories=required,
+        satisfied_ref_categories=[category for category in required if category in satisfied],
+        missing_ref_categories=missing,
+        negative_evidence_refs=negative_evidence_refs,
+        trace_required=policy.trace_required,
+        reason_code=resolved_reason_code,
+    ).model_dump()
+
+
+def _blocked_metadata(
+    metadata: dict[str, object],
+    reason_code: str,
+) -> dict[str, object]:
     return {
-        "policy_id": policy.id,
-        "policy_version": policy.version,
-        "risk": policy.risk,
-        "gate": policy.gate,
-        "gate_result": "allowed" if not missing else "blocked",
-        "enforcement_outcome": "trace_recorded" if not missing else "blocked_before_trace",
-        "required_ref_categories": required,
-        "satisfied_ref_categories": [category for category in required if category in satisfied],
-        "missing_ref_categories": missing,
-        "trace_required": policy.trace_required,
+        **metadata,
+        "gate_result": "blocked",
+        "enforcement_outcome": "blocked_before_execution",
+        "reason_code": reason_code,
     }
+
+
+def _unknown_policy_metadata(policy_id: str, reason_code: str) -> dict[str, object]:
+    return GovernanceMetadata(
+        schema_version=GOVERNANCE_METADATA_SCHEMA_VERSION,
+        policy_id=policy_id,
+        policy_version="unknown",
+        risk="Low",
+        gate="Unknown governance policy",
+        gate_result="blocked",
+        enforcement_outcome="blocked_before_execution",
+        required_ref_categories=[],
+        satisfied_ref_categories=[],
+        missing_ref_categories=[],
+        negative_evidence_refs=[],
+        trace_required=True,
+        reason_code=reason_code,
+    ).model_dump()
 
 
 def _evidence_ref_categories(evidence_refs: list[str]) -> set[str]:

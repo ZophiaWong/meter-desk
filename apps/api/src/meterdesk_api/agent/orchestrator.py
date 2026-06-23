@@ -9,22 +9,37 @@ from meterdesk_api.agent.provider import (
     AgentResolutionProvider,
     validate_provider_output,
 )
+from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.repositories import MeterDeskRepository
 from meterdesk_api.schemas import AgentRunSummary
 
 PROMPT_VERSION = "m3-duplicate-charge-v1"
 
 
-class AgentLoopError(Exception):
+class AgentLoopError(MeterDeskAPIError):
     status_code = 400
+    code = "agent.run_failed"
+    message = "Agent run failed."
+
+    def __init__(self, message: str | None = None, details: dict[str, object] | None = None):
+        super().__init__(
+            status_code=self.status_code,
+            code=self.code,
+            message=message or self.message,
+            details=details,
+        )
 
 
 class UnsupportedScenarioError(AgentLoopError):
     status_code = 422
+    code = "agent.unsupported_scenario"
+    message = "M3 agent loop only supports Duplicate Charge tickets."
 
 
 class PendingApprovalError(AgentLoopError):
     status_code = 409
+    code = "approval.pending_duplicate"
+    message = "A pending financial approval already exists for this action."
 
 
 class AgentRunOrchestrator:
@@ -43,14 +58,16 @@ class AgentRunOrchestrator:
         if ticket is None:
             return None
         if ticket.scenario != "duplicate_charge":
-            raise UnsupportedScenarioError("M3 agent loop only supports Duplicate Charge tickets")
+            raise UnsupportedScenarioError()
 
         pending_approval = await self._repository.get_pending_financial_approval(
             ticket_id=ticket_id,
             action_type="original_refund",
         )
         if pending_approval is not None:
-            raise PendingApprovalError("Pending financial approval already exists for this ticket")
+            raise PendingApprovalError(
+                details={"action_fingerprint": pending_approval.action_fingerprint}
+            )
 
         evidence = await self._repository.get_billing_evidence(ticket_id)
         if evidence is None:
@@ -84,6 +101,7 @@ class AgentRunOrchestrator:
         )
 
         executed_metadata = await self._repository.list_executed_action_metadata(ticket_id)
+        negative_evidence_refs = ["no_prior_mock_mutation"] if not executed_metadata else []
         await self._governance.record_action(
             agent_run_id=run.id,
             policy_id="read.prior_financial_actions",
@@ -93,6 +111,7 @@ class AgentRunOrchestrator:
             evidence_refs=[f"ticket {ticket_id}"],
             policy_refs=[],
             approval_refs=[],
+            negative_evidence_refs=negative_evidence_refs,
         )
 
         decision = self._decision_tool.evaluate(
@@ -161,7 +180,7 @@ class AgentRunOrchestrator:
         )
 
         if decision.requires_approval:
-            approval = await self._repository.create_approval_request(
+            await self._governance.create_approval_request(
                 ticket_id=ticket_id,
                 agent_run_id=run.id,
                 title="Original refund pending approval",
@@ -173,17 +192,11 @@ class AgentRunOrchestrator:
                 blocker="Mutation blocked until human approval",
                 policy_citation=evidence.policy.citation,
                 evidence_refs=decision.evidence_refs,
+                policy_refs=decision.policy_refs,
                 action_metadata=decision.action_metadata,
-            )
-            await self._governance.record_action(
-                agent_run_id=run.id,
-                policy_id="approval.create_request",
                 label="Created approval request for financial action",
                 input_summary="Created human approval gate for proposed original refund.",
-                output_summary=f"Approval request {approval.id} is pending.",
-                evidence_refs=decision.evidence_refs,
-                policy_refs=decision.policy_refs,
-                approval_refs=[approval.id],
+                output_summary="Approval request is pending.",
             )
 
         return run

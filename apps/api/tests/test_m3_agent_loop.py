@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 
 from meterdesk_api.agent.orchestrator import AgentRunOrchestrator
@@ -12,6 +11,7 @@ from meterdesk_api.agent.provider import (
     AgentResolutionProvider,
 )
 from meterdesk_api.agent.runtime import get_agent_provider
+from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.main import app
 from meterdesk_api.repositories import get_repository
 from meterdesk_api.seed_data import build_seed_repository
@@ -128,6 +128,12 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
     assert approvals[0]["status"] == "pending"
     assert approvals[0]["agent_run_id"] == run["id"]
     assert approvals[0]["action_metadata"]["target_charge_id"] == "ch_2026_0418_B"
+    assert approvals[0]["action_fingerprint"] == (
+        "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD"
+    )
+    assert trace_response.json()[1]["governance_metadata"]["negative_evidence_refs"] == [
+        "no_prior_mock_mutation"
+    ]
 
 
 @pytest.mark.asyncio
@@ -160,7 +166,16 @@ async def test_start_agent_run_is_blocked_while_approval_is_pending() -> None:
 
     assert first.status_code == 201
     assert second.status_code == 409
-    assert second.json()["detail"] == "Pending financial approval already exists for this ticket"
+    assert second.json() == {
+        "code": "approval.pending_duplicate",
+        "message": "A pending financial approval already exists for this action.",
+        "details": {
+            "action_fingerprint": (
+                "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|"
+                "amount:124800|currency:USD"
+            )
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -196,9 +211,10 @@ async def test_provider_validation_failure_retries_once_then_persists_failed_run
 @pytest.mark.asyncio
 async def test_missing_provider_config_returns_503_without_creating_run() -> None:
     async def missing_provider_override():
-        raise HTTPException(
+        raise MeterDeskAPIError(
             status_code=503,
-            detail="OpenAI-compatible provider is not configured",
+            code="provider.not_configured",
+            message="OpenAI-compatible provider is not configured.",
         )
 
     app.dependency_overrides[get_agent_provider] = missing_provider_override
@@ -211,7 +227,11 @@ async def test_missing_provider_config_returns_503_without_creating_run() -> Non
         runs = await client.get("/tickets/TCK-1042/agent-runs")
 
     assert response.status_code == 503
-    assert response.json()["detail"] == "OpenAI-compatible provider is not configured"
+    assert response.json() == {
+        "code": "provider.not_configured",
+        "message": "OpenAI-compatible provider is not configured.",
+        "details": {},
+    }
     assert runs.json() == []
 
 
@@ -225,7 +245,7 @@ async def test_unsupported_scenario_has_no_side_effects() -> None:
         runs = await client.get("/tickets/TCK-1098/agent-runs")
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "M3 agent loop only supports Duplicate Charge tickets"
+    assert response.json()["code"] == "agent.unsupported_scenario"
     assert runs.json() == []
 
 
@@ -285,6 +305,12 @@ async def test_approve_executes_one_mock_mutation_and_is_idempotent() -> None:
     assert opposite.status_code == 409
     assert len(mutations.json()) == 1
     assert mutations.json()[0]["approval_request_id"] == approval_id
+    assert first.json()["approval"]["action_fingerprint"] == (
+        "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD"
+    )
+    assert (
+        mutations.json()[0]["action_fingerprint"] == first.json()["approval"]["action_fingerprint"]
+    )
 
     assert trace_response.status_code == 200
     assert trace_response.json()[-1]["category"] == "mutation.mock_refund"

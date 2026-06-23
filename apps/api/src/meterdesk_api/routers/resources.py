@@ -89,7 +89,7 @@ async def start_agent_run(
     try:
         run = await orchestrator.run_duplicate_charge(ticket_id)
     except AgentLoopError as error:
-        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        raise error
     if run is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return run
@@ -130,7 +130,7 @@ async def approve_request(
             decision_note=decision.decision_note,
         )
     except ApprovalDecisionError as error:
-        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        raise error
 
 
 @router.post("/approvals/{approval_id}/reject", response_model=ApprovalDecisionResponse)
@@ -147,7 +147,7 @@ async def reject_request(
             decision_note=decision.decision_note,
         )
     except ApprovalDecisionError as error:
-        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        raise error
 
 
 @router.get("/mock-mutations", response_model=list[MockMutationSummary])
