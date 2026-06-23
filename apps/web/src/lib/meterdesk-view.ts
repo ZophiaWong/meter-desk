@@ -6,11 +6,13 @@ import {
   getEvalResults,
   getGovernanceToolPolicies,
   getMockMutations,
+  getRunCompliance,
   getTicket,
   getTickets,
   getToolTraces,
   type ApprovalResource,
   type EvalCaseResource,
+  type RunComplianceResource,
   type TicketSummaryResource,
 } from "@/lib/meterdesk-api";
 
@@ -93,6 +95,17 @@ export type AgentRunView = {
   errorState: string | null;
 };
 
+export type RunComplianceView = {
+  status: string;
+  checkedAt: string;
+  highRiskGateCount: number;
+  verifiedGovernedActionCount: number;
+  reasonCodes: string | null;
+  affectedTraceIds: string | null;
+  missingRefs: string | null;
+  policyVersions: string | null;
+};
+
 export type MockMutationView = {
   id: string;
   amount: string;
@@ -133,6 +146,7 @@ export type WorkbenchScenario = {
   };
   evidence: BillingEvidence;
   run: AgentRunView | null;
+  compliance: RunComplianceView | null;
   traces: TraceEntry[];
   approval: ApprovalRequest | null;
   mutations: MockMutationView[];
@@ -169,7 +183,11 @@ export type EvalCaseView = {
   failedChecks: string | null;
   missingEvidence: string | null;
   blockedReason: string | null;
+  blockedCode: string | null;
+  readinessGaps: string | null;
+  recommendedNextScenario: string | null;
   traceRefs: string | null;
+  complianceReasonCodes: string | null;
   judgeNotes: string | null;
   model: string | null;
   promptVersion: string | null;
@@ -195,6 +213,7 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
   ]);
   const run = runs.at(-1) ?? null;
   const traces = run ? await getToolTraces(run.id) : [];
+  const compliance = run ? await getRunCompliance(run.id) : null;
   const approval = approvals.at(-1) ?? null;
 
   return {
@@ -252,6 +271,7 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
           errorState: run.error_state,
         }
       : null,
+    compliance: compliance ? mapCompliance(compliance) : null,
     traces: traces.map((trace) => ({
       id: trace.id,
       category: trace.category,
@@ -347,7 +367,11 @@ export async function getEvalCaseViews(): Promise<EvalCaseView[]> {
       failedChecks: formatList(result?.details.failed_checks),
       missingEvidence: formatList(result?.details.missing_evidence),
       blockedReason: result?.details.blocked_reason ?? null,
+      blockedCode: result?.details.blocked_code ?? null,
+      readinessGaps: formatList(result?.details.readiness_gaps),
+      recommendedNextScenario: result?.details.recommended_next_scenario ?? null,
       traceRefs: formatTraceRefs(result?.details.trace_refs),
+      complianceReasonCodes: formatList(result?.details.compliance?.reason_codes),
       judgeNotes: formatList(result?.details.judge_notes),
       model: result?.details.model ?? null,
       promptVersion: result?.details.prompt_version ?? null,
@@ -380,6 +404,19 @@ function mapApproval(approval: ApprovalResource): ApprovalRequest {
   };
 }
 
+function mapCompliance(compliance: RunComplianceResource): RunComplianceView {
+  return {
+    status: titleCase(compliance.status),
+    checkedAt: compliance.checked_at,
+    highRiskGateCount: compliance.high_risk_gate_count,
+    verifiedGovernedActionCount: compliance.verified_governed_action_count,
+    reasonCodes: formatList(compliance.reason_codes),
+    affectedTraceIds: formatList(compliance.affected_trace_ids),
+    missingRefs: formatList(compliance.missing_ref_categories),
+    policyVersions: formatPolicyVersions(compliance.policy_versions_seen),
+  };
+}
+
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -401,5 +438,12 @@ function formatList(value?: string[]) {
 function formatTraceRefs(value?: Array<{ id: string; category: string }>) {
   return value && value.length > 0
     ? value.map((trace) => `${trace.id} (${trace.category})`).join(", ")
+    : null;
+}
+
+function formatPolicyVersions(value: Record<string, string>) {
+  const entries = Object.entries(value);
+  return entries.length > 0
+    ? entries.map(([policyId, version]) => `${policyId} ${version}`).join(", ")
     : null;
 }

@@ -65,10 +65,14 @@ async def test_duplicate_charge_eval_runs_real_agent_and_stops_at_pending_approv
     assert result.dimension_scores["policy_compliance"] == "pass"
     assert result.dimension_scores["approval_routing"] == "pass"
     assert result.dimension_scores["mutation_safety"] == "pass"
+    assert result.dimension_scores["governance_compliance"] == "pass"
     assert result.dimension_scores["draft_quality"] == "not_run"
     assert result.details["failed_checks"] == []
     assert result.details["missing_evidence"] == []
     assert result.details["policy_refs_seen"] == ["REFUND-DUP-001 v2026.02"]
+    assert result.details["compliance"]["status"] == "passed"
+    assert result.details["compliance"]["high_risk_gate_count"] == 1
+    assert result.details["compliance"]["verified_governed_action_count"] == 5
     assert result.details["trace_refs"]
     assert approvals and approvals[0].agent_run_id == result.agent_run_id
     assert mutations == []
@@ -100,8 +104,12 @@ async def test_supporting_scenario_eval_cases_are_blocked_coverage_gaps() -> Non
     assert result.status == "blocked"
     assert result.agent_run_id is None
     assert result.dimension_scores["outcome_correctness"] == "blocked"
+    assert result.dimension_scores["governance_compliance"] == "blocked"
     assert result.dimension_scores["draft_quality"] == "not_run"
     assert result.details["blocked_reason"] == "Scenario runner is not implemented in M4"
+    assert result.details["blocked_code"] == "scenario.runner_not_implemented"
+    assert result.details["recommended_next_scenario"] == "credit_refund_dispute"
+    assert result.details["readiness_gaps"]
 
 
 @pytest.mark.asyncio
@@ -166,7 +174,44 @@ async def test_duplicate_charge_eval_is_blocked_when_provider_is_missing() -> No
     assert result.status == "blocked"
     assert result.agent_run_id is None
     assert result.dimension_scores["outcome_correctness"] == "blocked"
+    assert result.dimension_scores["governance_compliance"] == "blocked"
     assert result.details["blocked_reason"] == "OpenAI-compatible provider is not configured"
+
+
+@pytest.mark.asyncio
+async def test_governance_compliance_failure_is_blocking_for_eval(monkeypatch) -> None:
+    from meterdesk_api.agent.compliance import RunComplianceFailure, RunComplianceResult
+    from meterdesk_api.eval import runner as runner_module
+
+    async def failed_check(self, agent_run_id: str) -> RunComplianceResult:
+        return RunComplianceResult(
+            status="failed",
+            checked_at="2026-06-23T00:00:00Z",
+            failed_checks=[
+                RunComplianceFailure(
+                    code="governance.metadata_missing",
+                    message="Governance metadata is missing.",
+                    affected_trace_ids=["trace-missing"],
+                )
+            ],
+            reason_codes=["governance.metadata_missing"],
+            affected_trace_ids=["trace-missing"],
+            missing_ref_categories=[],
+            policy_versions_seen={},
+            high_risk_gate_count=0,
+            verified_governed_action_count=0,
+        )
+
+    monkeypatch.setattr(runner_module.RunComplianceChecker, "check", failed_check)
+    repository = build_seed_repository()
+    runner = EvalRunner(repository=repository, provider=EchoProvider())
+
+    result = await runner.run_case("eval-duplicate-charge-001")
+
+    assert result.status == "failed"
+    assert result.dimension_scores["governance_compliance"] == "fail"
+    assert "governance_compliance" in result.details["failed_checks"]
+    assert result.details["compliance"]["reason_codes"] == ["governance.metadata_missing"]
 
 
 @pytest.mark.asyncio

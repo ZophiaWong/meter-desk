@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 Scenario = Literal["duplicate_charge", "usage_spike", "credit_refund_dispute"]
 RiskLevel = Literal["Low", "Medium", "High"]
+RunComplianceStatus = Literal["passed", "failed", "unsupported"]
 
 
 class MoneyAmount(BaseModel):
@@ -196,6 +197,28 @@ class EvalResultSummary(BaseModel):
     summary: str
     dimension_scores: dict[str, str]
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class RunComplianceFailure(BaseModel):
+    code: str
+    message: str
+    affected_trace_ids: list[str] = Field(default_factory=list)
+    missing_ref_categories: list[str] = Field(default_factory=list)
+    approval_ids: list[str] = Field(default_factory=list)
+    mutation_ids: list[str] = Field(default_factory=list)
+    action_fingerprints: list[str] = Field(default_factory=list)
+
+
+class RunComplianceResult(BaseModel):
+    status: RunComplianceStatus
+    checked_at: datetime
+    failed_checks: list[RunComplianceFailure] = Field(default_factory=list)
+    reason_codes: list[str] = Field(default_factory=list)
+    affected_trace_ids: list[str] = Field(default_factory=list)
+    missing_ref_categories: list[str] = Field(default_factory=list)
+    policy_versions_seen: dict[str, str] = Field(default_factory=dict)
+    high_risk_gate_count: int
+    verified_governed_action_count: int
 
 
 class ApprovalDecisionRequest(BaseModel):

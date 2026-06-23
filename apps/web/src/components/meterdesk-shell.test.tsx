@@ -89,6 +89,7 @@ const scenario: WorkbenchScenario = {
     },
   },
   run: null,
+  compliance: null,
   traces: [],
   approval: null,
   mutations: [],
@@ -156,6 +157,16 @@ describe("MeterDeskShell", () => {
             promptVersion: "m3-duplicate-charge-v1",
             errorState: null,
           },
+          compliance: {
+            status: "Passed",
+            checkedAt: "2026-06-23T00:00:00Z",
+            highRiskGateCount: 1,
+            verifiedGovernedActionCount: 5,
+            reasonCodes: null,
+            affectedTraceIds: null,
+            missingRefs: null,
+            policyVersions: "approval.create_request 1.0.0",
+          },
           traces: [
             {
               id: "trace-001",
@@ -189,6 +200,9 @@ describe("MeterDeskShell", () => {
     );
 
     expect(screen.getByText("RUN-2042")).toBeInTheDocument();
+    expect(screen.getByText("Compliance: Passed")).toBeInTheDocument();
+    expect(screen.getByText("5 governed actions verified")).toBeInTheDocument();
+    expect(screen.getByText("1 high-risk gate")).toBeInTheDocument();
     expect(screen.getByText("seeded-demo")).toBeInTheDocument();
     expect(screen.getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();
     expect(screen.getByText("Confirmed duplicate payment on INV-2026-0418.")).toBeInTheDocument();
@@ -200,7 +214,24 @@ describe("MeterDeskShell", () => {
   });
 
   it("keeps the tool governance matrix behind a Workbench drawer", () => {
-    render(<MeterDeskShell scenario={scenario} status={reachableStatus} />);
+    render(
+      <MeterDeskShell
+        scenario={{
+          ...scenario,
+          compliance: {
+            status: "Failed",
+            checkedAt: "2026-06-23T00:00:00Z",
+            highRiskGateCount: 0,
+            verifiedGovernedActionCount: 2,
+            reasonCodes: "governance.metadata_missing",
+            affectedTraceIds: "trace-unsafe",
+            missingRefs: "approval",
+            policyVersions: "mutation.mock_refund 1.0.0",
+          },
+        }}
+        status={reachableStatus}
+      />,
+    );
 
     const drawer = screen.getByText("2 governed actions | 1 high-risk gate | View rules");
     expect(drawer).toBeInTheDocument();
@@ -210,6 +241,11 @@ describe("MeterDeskShell", () => {
     expect(screen.getByText("read.billing_evidence")).toBeInTheDocument();
     expect(screen.getByText("mutation.mock_refund")).toBeInTheDocument();
     expect(screen.getByText("Requires approved approval request")).toBeInTheDocument();
+    expect(screen.getByText("Compliance diagnostics")).toBeInTheDocument();
+    expect(screen.getByText("Reason codes: governance.metadata_missing")).toBeInTheDocument();
+    expect(screen.getByText("Affected traces: trace-unsafe")).toBeInTheDocument();
+    expect(screen.getByText("Missing refs: approval")).toBeInTheDocument();
+    expect(screen.getByText("Policy versions: mutation.mock_refund 1.0.0")).toBeInTheDocument();
   });
 
   it("renders failed run and approved mutation states for the demo path", () => {

@@ -194,12 +194,38 @@ export type EvalTraceRef = {
   policy_refs?: string[];
 };
 
+export type RunComplianceFailureResource = {
+  code: string;
+  message: string;
+  affected_trace_ids: string[];
+  missing_ref_categories: string[];
+  approval_ids: string[];
+  mutation_ids: string[];
+  action_fingerprints: string[];
+};
+
+export type RunComplianceResource = {
+  status: "passed" | "failed" | "unsupported";
+  checked_at: string;
+  failed_checks: RunComplianceFailureResource[];
+  reason_codes: string[];
+  affected_trace_ids: string[];
+  missing_ref_categories: string[];
+  policy_versions_seen: Record<string, string>;
+  high_risk_gate_count: number;
+  verified_governed_action_count: number;
+};
+
 export type EvalResultDetailsResource = {
   failed_checks?: string[];
   missing_evidence?: string[];
   policy_refs_seen?: string[];
   trace_refs?: EvalTraceRef[];
   blocked_reason?: string | null;
+  blocked_code?: string | null;
+  readiness_gaps?: string[];
+  recommended_next_scenario?: string | null;
+  compliance?: RunComplianceResource | null;
   judge_notes?: string[];
   model?: string | null;
   prompt_version?: string | null;
@@ -308,6 +334,10 @@ export async function getAgentRuns(ticketId: string, apiBaseUrl?: string) {
 
 export async function getToolTraces(agentRunId: string, apiBaseUrl?: string) {
   return fetchApi<ToolTraceResource[]>(`/agent-runs/${agentRunId}/traces`, apiBaseUrl);
+}
+
+export async function getRunCompliance(agentRunId: string, apiBaseUrl?: string) {
+  return fetchApi<RunComplianceResource>(`/agent-runs/${agentRunId}/compliance`, apiBaseUrl);
 }
 
 export async function getGovernanceToolPolicies(apiBaseUrl?: string) {

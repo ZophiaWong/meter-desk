@@ -102,6 +102,36 @@ export async function EvalLab() {
                             <dd className="mt-1">{evalCase.blockedReason}</dd>
                           </div>
                         ) : null}
+                        {evalCase.blockedCode ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Blocked code</dt>
+                            <dd className="mt-1">Blocked code: {evalCase.blockedCode}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.readinessGaps ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Readiness gaps</dt>
+                            <dd className="mt-1">Readiness gaps: {evalCase.readinessGaps}</dd>
+                          </div>
+                        ) : null}
+                        {evalCase.recommendedNextScenario ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">
+                              Recommended next scenario
+                            </dt>
+                            <dd className="mt-1">
+                              Recommended next scenario: {evalCase.recommendedNextScenario}
+                            </dd>
+                          </div>
+                        ) : null}
+                        {evalCase.complianceReasonCodes ? (
+                          <div>
+                            <dt className="font-semibold text-slate-500">Compliance</dt>
+                            <dd className="mt-1">
+                              Compliance reason codes: {evalCase.complianceReasonCodes}
+                            </dd>
+                          </div>
+                        ) : null}
                         {evalCase.model ? (
                           <div>
                             <dt className="font-semibold text-slate-500">Model</dt>

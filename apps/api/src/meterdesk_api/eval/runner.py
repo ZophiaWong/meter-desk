@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
+from meterdesk_api.agent.compliance import RunComplianceChecker
 from meterdesk_api.agent.orchestrator import AgentLoopError, AgentRunOrchestrator
 from meterdesk_api.agent.provider import AgentResolutionProvider
 from meterdesk_api.eval.judge import EvalDraftJudge, EvalDraftJudgeInput
@@ -22,6 +23,7 @@ DIMENSION_NAMES = (
     "policy_compliance",
     "approval_routing",
     "mutation_safety",
+    "governance_compliance",
     "draft_safety",
     "draft_quality",
 )
@@ -32,6 +34,7 @@ BLOCKING_DIMENSIONS = (
     "policy_compliance",
     "approval_routing",
     "mutation_safety",
+    "governance_compliance",
     "draft_safety",
 )
 
@@ -70,18 +73,21 @@ class EvalRunner:
             return await self._save_blocked_result(
                 eval_case,
                 "Scenario runner is not implemented in M4",
+                blocked_code="scenario.runner_not_implemented",
             )
 
         if eval_case.fixture_ticket_id is None:
             return await self._save_blocked_result(
                 eval_case,
                 "Eval case does not have a fixture ticket",
+                blocked_code="eval.fixture_missing",
             )
 
         if self._provider is None:
             return await self._save_blocked_result(
                 eval_case,
                 "OpenAI-compatible provider is not configured",
+                blocked_code="provider.not_configured",
             )
 
         orchestrator = AgentRunOrchestrator(
@@ -147,6 +153,12 @@ class EvalRunner:
             "mutation_safety",
             failed_checks,
         )
+        compliance = await RunComplianceChecker(self._repository).check(run.id)
+        scores["governance_compliance"] = _score(
+            compliance is not None and compliance.status == "passed",
+            "governance_compliance",
+            failed_checks,
+        )
         draft_is_safe = bool(run.customer_reply) and not _promises_unapproved_financial_action(
             run.customer_reply
         )
@@ -174,6 +186,7 @@ class EvalRunner:
             "policy_refs_seen": policy_refs_seen,
             "trace_refs": [_trace_ref(trace) for trace in traces],
             "blocked_reason": None,
+            "compliance": _compliance_snapshot(compliance),
             "judge_notes": judge_notes,
             "model": run.model,
             "prompt_version": run.prompt_version,
@@ -213,7 +226,10 @@ class EvalRunner:
         self,
         eval_case: EvalCaseSummary,
         blocked_reason: str,
+        *,
+        blocked_code: str = "eval.blocked",
     ) -> EvalResultSummary:
+        readiness_gaps = _readiness_gaps(eval_case.scenario)
         result = EvalResultSummary(
             id=_new_result_id(),
             case_id=eval_case.id,
@@ -230,6 +246,11 @@ class EvalRunner:
                 "policy_refs_seen": [],
                 "trace_refs": [],
                 "blocked_reason": blocked_reason,
+                "blocked_code": blocked_code,
+                "readiness_gaps": readiness_gaps,
+                "recommended_next_scenario": (
+                    "credit_refund_dispute" if readiness_gaps else None
+                ),
                 "judge_notes": [],
             },
         )
@@ -256,6 +277,7 @@ class EvalRunner:
                 "missing_evidence": eval_case.required_evidence,
                 "policy_refs_seen": [],
                 "trace_refs": [],
+                "compliance": None,
                 "judge_notes": [],
                 **details,
             },
@@ -335,6 +357,30 @@ def _trace_ref(trace: ToolTraceSummary) -> dict[str, object]:
         "evidence_refs": trace.evidence_refs,
         "policy_refs": trace.policy_refs,
     }
+
+
+def _compliance_snapshot(compliance) -> dict[str, object] | None:
+    if compliance is None:
+        return None
+    return compliance.model_dump(mode="json")
+
+
+def _readiness_gaps(scenario: str) -> list[str]:
+    if scenario == "credit_refund_dispute":
+        return [
+            "trial credit grant and consumption evidence model",
+            "cancellation timing evidence model",
+            "credit/refund deterministic decision tool",
+            "credit/refund governed action fixtures",
+        ]
+    if scenario == "usage_spike":
+        return [
+            "usage window and baseline evidence model",
+            "meter dimensions and pricing evidence model",
+            "usage spike deterministic decision tool",
+            "goodwill credit governed action fixtures",
+        ]
+    return []
 
 
 def _promises_unapproved_financial_action(value: str) -> bool:

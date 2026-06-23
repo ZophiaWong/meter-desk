@@ -3,6 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from meterdesk_api.agent.approvals import ApprovalDecisionError, ApprovalDecisionService
+from meterdesk_api.agent.compliance import RunComplianceChecker
 from meterdesk_api.agent.governance import ToolPolicy, list_tool_policy_summaries
 from meterdesk_api.agent.orchestrator import AgentLoopError, AgentRunOrchestrator
 from meterdesk_api.agent.provider import AgentResolutionProvider
@@ -23,6 +24,7 @@ from meterdesk_api.schemas import (
     EvalCaseSummary,
     EvalResultSummary,
     MockMutationSummary,
+    RunComplianceResult,
     TicketDetail,
     TicketSummary,
     ToolTraceSummary,
@@ -104,6 +106,17 @@ async def list_traces(
     if traces is None:
         raise HTTPException(status_code=404, detail="Agent run not found")
     return traces
+
+
+@router.get("/agent-runs/{agent_run_id}/compliance", response_model=RunComplianceResult)
+async def get_run_compliance(
+    agent_run_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+) -> RunComplianceResult:
+    result = await RunComplianceChecker(repository).check(agent_run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+    return result
 
 
 @router.get("/approvals", response_model=list[ApprovalSummary])

@@ -38,6 +38,8 @@ class MeterDeskRepository(Protocol):
 
     async def list_agent_runs(self, ticket_id: str) -> list[AgentRunSummary] | None: ...
 
+    async def get_agent_run(self, agent_run_id: str) -> AgentRunSummary | None: ...
+
     async def list_traces(self, agent_run_id: str) -> list[ToolTraceSummary] | None: ...
 
     async def list_approvals(
@@ -196,6 +198,13 @@ class InMemoryMeterDeskRepository:
         if ticket_id not in self._ticket_details:
             return None
         return self._agent_runs.get(ticket_id, [])
+
+    async def get_agent_run(self, agent_run_id: str) -> AgentRunSummary | None:
+        for runs in self._agent_runs.values():
+            for run in runs:
+                if run.id == agent_run_id:
+                    return run
+        return None
 
     async def list_traces(self, agent_run_id: str) -> list[ToolTraceSummary] | None:
         if agent_run_id not in self._traces:
@@ -787,6 +796,12 @@ class SqlAlchemyMeterDeskRepository:
             )
             for run in runs
         ]
+
+    async def get_agent_run(self, agent_run_id: str) -> AgentRunSummary | None:
+        from meterdesk_api.models import AgentRun
+
+        run = await self._session.get(AgentRun, agent_run_id)
+        return _run_to_summary(run) if run is not None else None
 
     async def list_traces(self, agent_run_id: str) -> list[ToolTraceSummary] | None:
         from meterdesk_api.models import AgentRun, ToolTrace

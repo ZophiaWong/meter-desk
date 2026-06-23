@@ -146,6 +146,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         </h2>
         <GovernanceRulesDrawer scenario={scenario} />
         <RunStateCard scenario={scenario} />
+        <ComplianceCard scenario={scenario} />
         <ApprovalCard scenario={scenario} />
         <MutationResultList scenario={scenario} />
         <TraceTimeline traces={scenario.traces} />
@@ -170,6 +171,35 @@ function KeyValue({ label, value }: { label: string; value: string }) {
       <span className="text-slate-500">{label}</span>
       <span className="text-right font-medium">{value}</span>
     </div>
+  );
+}
+
+function ComplianceCard({ scenario }: TicketWorkbenchProps) {
+  if (!scenario.compliance) {
+    return null;
+  }
+
+  const failed = scenario.compliance.status === "Failed";
+  return (
+    <section
+      className={`mt-4 rounded-md border p-4 ${
+        failed ? "border-[#f2b8b8] bg-[#fff5f5]" : "border-meter-line bg-[#fbfcfe]"
+      }`}
+    >
+      <p className="text-xs font-semibold uppercase text-slate-500">Run compliance</p>
+      <h3 className="mt-2 text-base font-semibold">
+        Compliance: {scenario.compliance.status}
+      </h3>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+        <p>{scenario.compliance.verifiedGovernedActionCount} governed actions verified</p>
+        <p>{scenario.compliance.highRiskGateCount} high-risk gate</p>
+      </div>
+      {scenario.compliance.reasonCodes ? (
+        <p className="mt-3 text-xs font-medium text-[#991b1b]">
+          {scenario.compliance.reasonCodes}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -344,6 +374,23 @@ function GovernanceRulesDrawer({ scenario }: TicketWorkbenchProps) {
         <p className="text-xs leading-5 text-slate-500">
           Read-only matrix generated from the backend code-first registry.
         </p>
+        {scenario.compliance ? (
+          <div className="rounded-md border border-meter-line bg-white p-3 text-xs text-slate-600">
+            <h3 className="font-semibold text-slate-800">Compliance diagnostics</h3>
+            {scenario.compliance.reasonCodes ? (
+              <p className="mt-2">Reason codes: {scenario.compliance.reasonCodes}</p>
+            ) : null}
+            {scenario.compliance.affectedTraceIds ? (
+              <p className="mt-2">Affected traces: {scenario.compliance.affectedTraceIds}</p>
+            ) : null}
+            {scenario.compliance.missingRefs ? (
+              <p className="mt-2">Missing refs: {scenario.compliance.missingRefs}</p>
+            ) : null}
+            {scenario.compliance.policyVersions ? (
+              <p className="mt-2">Policy versions: {scenario.compliance.policyVersions}</p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="min-w-full border-separate border-spacing-y-2 text-left text-xs">
             <thead className="text-slate-500">

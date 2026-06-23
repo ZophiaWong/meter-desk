@@ -105,6 +105,7 @@ const evalResults = [
       policy_compliance: "pass",
       approval_routing: "pass",
       mutation_safety: "pass",
+      governance_compliance: "pass",
       draft_safety: "pass",
       draft_quality: "not_run",
     },
@@ -121,6 +122,17 @@ const evalResults = [
         },
       ],
       blocked_reason: null,
+      compliance: {
+        status: "passed",
+        reason_codes: [],
+        affected_trace_ids: [],
+        missing_ref_categories: [],
+        policy_versions_seen: {
+          "read.billing_evidence": "1.0.0",
+        },
+        high_risk_gate_count: 1,
+        verified_governed_action_count: 5,
+      },
       judge_notes: ["Draft quality judge not configured."],
       model: "fake-eval-model",
       prompt_version: "m3-duplicate-charge-v1",
@@ -138,6 +150,7 @@ const evalResults = [
       policy_compliance: "blocked",
       approval_routing: "blocked",
       mutation_safety: "blocked",
+      governance_compliance: "blocked",
       draft_safety: "blocked",
       draft_quality: "not_run",
     },
@@ -147,6 +160,9 @@ const evalResults = [
       policy_refs_seen: [],
       trace_refs: [],
       blocked_reason: "Scenario runner is not implemented in M4",
+      blocked_code: "scenario.runner_not_implemented",
+      readiness_gaps: ["usage meter evidence model", "pricing evidence model"],
+      recommended_next_scenario: "credit_refund_dispute",
       judge_notes: [],
     },
   },
@@ -247,6 +263,7 @@ describe("M3 API-backed routes", () => {
     );
     expect(within(blockedEval).getByText("Blocked reason")).toBeInTheDocument();
     expect(within(passedEval).getByText("outcome correctness: pass")).toBeInTheDocument();
+    expect(within(passedEval).getByText("governance compliance: pass")).toBeInTheDocument();
     expect(within(passedEval).getByText("draft quality: not_run")).toBeInTheDocument();
     expect(within(passedEval).getByText("Model: fake-eval-model")).toBeInTheDocument();
     expect(within(passedEval).getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();
@@ -254,5 +271,12 @@ describe("M3 API-backed routes", () => {
       within(passedEval).getByText("Trace refs: trace-eval-001 (read.billing_evidence)"),
     ).toBeInTheDocument();
     expect(within(blockedEval).getByText("Missing evidence: invoice, policy")).toBeInTheDocument();
+    expect(within(blockedEval).getByText("Blocked code: scenario.runner_not_implemented")).toBeInTheDocument();
+    expect(
+      within(blockedEval).getByText("Readiness gaps: usage meter evidence model, pricing evidence model"),
+    ).toBeInTheDocument();
+    expect(
+      within(blockedEval).getByText("Recommended next scenario: credit_refund_dispute"),
+    ).toBeInTheDocument();
   });
 });

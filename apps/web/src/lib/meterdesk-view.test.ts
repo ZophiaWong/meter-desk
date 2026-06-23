@@ -29,6 +29,16 @@ describe("meterdesk-view", () => {
     expect(scenario.traces[0].governance).toBe(
       "Allowed by read.prior_financial_actions - Low risk - governance.allowed",
     );
+    expect(scenario.compliance).toEqual({
+      status: "Passed",
+      checkedAt: "2026-06-23T00:00:00Z",
+      highRiskGateCount: 1,
+      verifiedGovernedActionCount: 5,
+      reasonCodes: null,
+      affectedTraceIds: null,
+      missingRefs: null,
+      policyVersions: "read.prior_financial_actions 1.0.0",
+    });
     expect(scenario.approval?.actionFingerprint).toBe(
       "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
     );
@@ -172,4 +182,17 @@ const payloads: Record<string, unknown> = {
       },
     },
   ],
+  "/agent-runs/RUN-2042/compliance": {
+    status: "passed",
+    checked_at: "2026-06-23T00:00:00Z",
+    failed_checks: [],
+    reason_codes: [],
+    affected_trace_ids: [],
+    missing_ref_categories: [],
+    policy_versions_seen: {
+      "read.prior_financial_actions": "1.0.0",
+    },
+    high_risk_gate_count: 1,
+    verified_governed_action_count: 5,
+  },
 };
