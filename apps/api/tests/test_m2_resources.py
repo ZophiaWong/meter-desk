@@ -86,6 +86,7 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
         "REFUND-DUP-001 v2026.02",
     ]
     assert "APR-2042" in tile_by_kind["risk_gate"]["refs"]
+    assert not any(ref.startswith("ticket:") for ref in tile_by_kind["risk_gate"]["refs"])
     assert tile_by_kind["risk_gate"]["tone"] == "warning"
     assert "Draft only" in tile_by_kind["draft"]["body"]
 

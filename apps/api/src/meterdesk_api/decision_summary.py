@@ -387,7 +387,7 @@ def _risk_gate_tile(
             title="Approved mock mutation executed",
             body=f"{mutation.id} executed only after approval; action fingerprint is preserved.",
             tone="success",
-            refs=[mutation.id, mutation.action_fingerprint],
+            refs=[mutation.id],
         )
     if approval is None:
         return AgentDecisionSummaryTile(
@@ -405,7 +405,7 @@ def _risk_gate_tile(
             title="Financial action rejected",
             body=f"{approval.id} was rejected by a human reviewer; no mock mutation executed.",
             tone="danger",
-            refs=[approval.id, approval.action_fingerprint],
+            refs=[approval.id],
         )
     if approval.status == "approved":
         return AgentDecisionSummaryTile(
@@ -414,7 +414,7 @@ def _risk_gate_tile(
             title="Financial action approved",
             body=f"{approval.id} is approved; mock mutation execution remains tracked separately.",
             tone="success",
-            refs=[approval.id, approval.action_fingerprint],
+            refs=[approval.id],
         )
     return AgentDecisionSummaryTile(
         kind="risk_gate",
@@ -422,7 +422,7 @@ def _risk_gate_tile(
         title="Refund blocked for approval",
         body=f"{approval.id} is pending human approval; no mock mutation has executed.",
         tone="warning",
-        refs=[approval.id, approval.action_fingerprint],
+        refs=[approval.id],
     )
 
 

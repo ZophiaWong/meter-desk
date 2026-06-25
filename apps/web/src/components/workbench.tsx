@@ -205,7 +205,7 @@ function AgentDecisionSummaryCard({
                 <div className="mt-3 flex flex-wrap gap-2">
                   {tile.refs.map((ref) => (
                     <span
-                      className="rounded-full border border-meter-line bg-white px-2.5 py-1 text-xs font-medium text-slate-600"
+                      className="max-w-full break-all rounded-full border border-meter-line bg-white px-2.5 py-1 text-xs font-medium text-slate-600"
                       key={ref}
                     >
                       {ref}
