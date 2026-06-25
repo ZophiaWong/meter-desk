@@ -60,6 +60,8 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
           </div>
         </div>
 
+        <AgentDecisionSummaryCard summary={scenario.decisionSummary} />
+
         <section aria-labelledby="billing-evidence-heading" className="mt-5" role="region">
           <h2 id="billing-evidence-heading" className="text-lg font-semibold">
             Billing evidence
@@ -153,6 +155,77 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         <DraftReply scenario={scenario} />
       </section>
     </div>
+  );
+}
+
+function AgentDecisionSummaryCard({
+  summary,
+}: {
+  summary: WorkbenchScenario["decisionSummary"];
+}) {
+  return (
+    <section
+      aria-labelledby="agent-decision-summary-heading"
+      className="mt-5 rounded-md border border-meter-line bg-[#f8fafc] p-4"
+      role="region"
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2
+            id="agent-decision-summary-heading"
+            className="text-xs font-semibold uppercase text-slate-500"
+          >
+            Agent Decision Summary
+          </h2>
+          <h3 className="mt-2 text-xl font-semibold">
+            {summary.decisionLabel}
+          </h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+            {summary.rationale}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs font-medium">
+          {summary.runId ? <SummaryBadge label={`Run ${summary.runId}`} /> : null}
+          {summary.policyCitation ? <SummaryBadge label={summary.policyCitation} /> : null}
+          {summary.complianceStatus ? (
+            <SummaryBadge label={`Compliance ${summary.complianceStatus}`} />
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {summary.tiles.map((tile) => {
+          const tone = summaryToneClass(tile.tone);
+          return (
+            <article className={`rounded-md border p-3 ${tone.panel}`} key={tile.kind}>
+              <p className={`text-xs font-semibold uppercase ${tone.label}`}>{tile.label}</p>
+              <h3 className="mt-2 text-base font-semibold">{tile.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-700">{tile.body}</p>
+              {tile.refs.length > 0 ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {tile.refs.map((ref) => (
+                    <span
+                      className="rounded-full border border-meter-line bg-white px-2.5 py-1 text-xs font-medium text-slate-600"
+                      key={ref}
+                    >
+                      {ref}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function SummaryBadge({ label }: { label: string }) {
+  return (
+    <span className="rounded-full border border-meter-line bg-white px-2.5 py-1 text-slate-600">
+      {label}
+    </span>
   );
 }
 
@@ -461,5 +534,36 @@ function approvalToneClass(status: string) {
   return {
     panel: "border-meter-amber bg-[#fffaf0]",
     label: "text-meter-amber",
+  };
+}
+
+function summaryToneClass(tone: WorkbenchScenario["decisionSummary"]["tiles"][number]["tone"]) {
+  if (tone === "success") {
+    return {
+      panel: "border-meter-mint bg-[#f0fdf8]",
+      label: "text-meter-mint",
+    };
+  }
+  if (tone === "warning") {
+    return {
+      panel: "border-meter-amber bg-[#fffaf0]",
+      label: "text-meter-amber",
+    };
+  }
+  if (tone === "danger") {
+    return {
+      panel: "border-[#f2b8b8] bg-[#fff5f5]",
+      label: "text-[#991b1b]",
+    };
+  }
+  if (tone === "info") {
+    return {
+      panel: "border-[#c7d7ec] bg-[#f7fbff]",
+      label: "text-meter-blue",
+    };
+  }
+  return {
+    panel: "border-meter-line bg-white",
+    label: "text-slate-500",
   };
 }

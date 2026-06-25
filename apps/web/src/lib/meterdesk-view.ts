@@ -2,6 +2,7 @@ import {
   getAgentRuns,
   getApprovalsByStatus,
   getBillingEvidence,
+  getDecisionSummary,
   getEvalCases,
   getEvalResults,
   getGovernanceToolPolicies,
@@ -11,6 +12,7 @@ import {
   getTickets,
   getToolTraces,
   type ApprovalResource,
+  type AgentDecisionSummaryResource,
   type EvalCaseResource,
   type RunComplianceResource,
   type TicketSummaryResource,
@@ -63,6 +65,28 @@ export type BillingEvidence = {
     title: string;
     reason: string;
   };
+};
+
+export type DecisionSummaryTile = {
+  kind: AgentDecisionSummaryResource["tiles"][number]["kind"];
+  label: string;
+  title: string;
+  body: string;
+  tone: AgentDecisionSummaryResource["tiles"][number]["tone"];
+  refs: string[];
+};
+
+export type AgentDecisionSummary = {
+  ticketId: string;
+  state: AgentDecisionSummaryResource["state"];
+  decisionLabel: string;
+  rationale: string;
+  runId: string | null;
+  approvalId: string | null;
+  mutationId: string | null;
+  policyCitation: string | null;
+  complianceStatus: string | null;
+  tiles: DecisionSummaryTile[];
 };
 
 export type TraceEntry = {
@@ -144,6 +168,7 @@ export type WorkbenchScenario = {
     summary: string;
     outcome: string;
   };
+  decisionSummary: AgentDecisionSummary;
   evidence: BillingEvidence;
   run: AgentRunView | null;
   compliance: RunComplianceView | null;
@@ -202,15 +227,17 @@ export const NAV_ITEMS: ServiceSurface[] = [
 const DEFAULT_TICKET_ID = "TCK-1042";
 
 export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> {
-  const [tickets, ticket, evidence, runs, approvals, mutations, toolPolicies] = await Promise.all([
-    getTickets(),
-    getTicket(DEFAULT_TICKET_ID),
-    getBillingEvidence(DEFAULT_TICKET_ID),
-    getAgentRuns(DEFAULT_TICKET_ID),
-    getApprovalsByStatus("all", DEFAULT_TICKET_ID),
-    getMockMutations(DEFAULT_TICKET_ID),
-    getGovernanceToolPolicies(),
-  ]);
+  const [tickets, ticket, evidence, decisionSummary, runs, approvals, mutations, toolPolicies] =
+    await Promise.all([
+      getTickets(),
+      getTicket(DEFAULT_TICKET_ID),
+      getBillingEvidence(DEFAULT_TICKET_ID),
+      getDecisionSummary(DEFAULT_TICKET_ID),
+      getAgentRuns(DEFAULT_TICKET_ID),
+      getApprovalsByStatus("all", DEFAULT_TICKET_ID),
+      getMockMutations(DEFAULT_TICKET_ID),
+      getGovernanceToolPolicies(),
+    ]);
   const run = runs.at(-1) ?? null;
   const traces = run ? await getToolTraces(run.id) : [];
   const compliance = run ? await getRunCompliance(run.id) : null;
@@ -228,6 +255,7 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
       summary: ticket.summary,
       outcome: ticket.outcome,
     },
+    decisionSummary: mapDecisionSummary(decisionSummary),
     evidence: {
       account: {
         name: evidence.account.name,
@@ -377,6 +405,28 @@ export async function getEvalCaseViews(): Promise<EvalCaseView[]> {
       promptVersion: result?.details.prompt_version ?? null,
     };
   });
+}
+
+function mapDecisionSummary(summary: AgentDecisionSummaryResource): AgentDecisionSummary {
+  return {
+    ticketId: summary.ticket_id,
+    state: summary.state,
+    decisionLabel: summary.decision_label,
+    rationale: summary.rationale,
+    runId: summary.run_id,
+    approvalId: summary.approval_id,
+    mutationId: summary.mutation_id,
+    policyCitation: summary.policy_citation,
+    complianceStatus: summary.compliance_status ? titleCase(summary.compliance_status) : null,
+    tiles: summary.tiles.map((tile) => ({
+      kind: tile.kind,
+      label: tile.label,
+      title: tile.title,
+      body: tile.body,
+      tone: tile.tone,
+      refs: tile.refs,
+    })),
+  };
 }
 
 function mapTickets(tickets: TicketSummaryResource[]): TicketListItem[] {

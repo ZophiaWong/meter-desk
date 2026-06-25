@@ -8,6 +8,18 @@ from pydantic import BaseModel, ConfigDict, Field
 Scenario = Literal["duplicate_charge", "usage_spike", "credit_refund_dispute"]
 RiskLevel = Literal["Low", "Medium", "High"]
 RunComplianceStatus = Literal["passed", "failed", "unsupported"]
+DecisionSummaryState = Literal[
+    "not_run",
+    "running",
+    "completed",
+    "failed",
+    "pending_approval",
+    "approved",
+    "rejected",
+    "mock_executed",
+]
+DecisionSummaryTileKind = Literal["decision", "evidence", "risk_gate", "draft"]
+DecisionSummaryTone = Literal["neutral", "info", "success", "warning", "danger"]
 
 
 class MoneyAmount(BaseModel):
@@ -95,6 +107,28 @@ class BillingEvidence(BaseModel):
     credits: list[CreditEvidence]
     usage: list[UsageEvidence]
     policy: PolicyEvidence
+
+
+class AgentDecisionSummaryTile(BaseModel):
+    kind: DecisionSummaryTileKind
+    label: str
+    title: str
+    body: str
+    tone: DecisionSummaryTone
+    refs: list[str] = Field(default_factory=list)
+
+
+class AgentDecisionSummary(BaseModel):
+    ticket_id: str
+    state: DecisionSummaryState
+    decision_label: str
+    rationale: str
+    run_id: str | None = None
+    approval_id: str | None = None
+    mutation_id: str | None = None
+    policy_citation: str | None = None
+    compliance_status: RunComplianceStatus | None = None
+    tiles: list[AgentDecisionSummaryTile]
 
 
 class AgentRunSummary(BaseModel):

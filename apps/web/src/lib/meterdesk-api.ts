@@ -77,6 +77,42 @@ export type BillingEvidenceResource = {
   };
 };
 
+export type DecisionSummaryState =
+  | "not_run"
+  | "running"
+  | "completed"
+  | "failed"
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "mock_executed";
+
+export type DecisionSummaryTileKind = "decision" | "evidence" | "risk_gate" | "draft";
+
+export type DecisionSummaryTone = "neutral" | "info" | "success" | "warning" | "danger";
+
+export type DecisionSummaryTileResource = {
+  kind: DecisionSummaryTileKind;
+  label: string;
+  title: string;
+  body: string;
+  tone: DecisionSummaryTone;
+  refs: string[];
+};
+
+export type AgentDecisionSummaryResource = {
+  ticket_id: string;
+  state: DecisionSummaryState;
+  decision_label: string;
+  rationale: string;
+  run_id: string | null;
+  approval_id: string | null;
+  mutation_id: string | null;
+  policy_citation: string | null;
+  compliance_status: "passed" | "failed" | "unsupported" | null;
+  tiles: DecisionSummaryTileResource[];
+};
+
 export type AgentRunResource = {
   id: string;
   ticket_id: string;
@@ -326,6 +362,13 @@ export async function getTicket(ticketId: string, apiBaseUrl?: string) {
 
 export async function getBillingEvidence(ticketId: string, apiBaseUrl?: string) {
   return fetchApi<BillingEvidenceResource>(`/tickets/${ticketId}/billing-evidence`, apiBaseUrl);
+}
+
+export async function getDecisionSummary(ticketId: string, apiBaseUrl?: string) {
+  return fetchApi<AgentDecisionSummaryResource>(
+    `/tickets/${ticketId}/decision-summary`,
+    apiBaseUrl,
+  );
 }
 
 export async function getAgentRuns(ticketId: string, apiBaseUrl?: string) {

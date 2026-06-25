@@ -12,10 +12,12 @@ from meterdesk_api.agent.runtime import (
     get_optional_agent_provider,
     get_optional_eval_judge,
 )
+from meterdesk_api.decision_summary import build_agent_decision_summary
 from meterdesk_api.eval.judge import EvalDraftJudge
 from meterdesk_api.eval.runner import EvalCaseNotFound, EvalRunner
 from meterdesk_api.repositories import get_repository
 from meterdesk_api.schemas import (
+    AgentDecisionSummary,
     AgentRunSummary,
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
@@ -64,6 +66,17 @@ async def get_billing_evidence(
     if evidence is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
     return evidence
+
+
+@router.get("/tickets/{ticket_id}/decision-summary", response_model=AgentDecisionSummary)
+async def get_decision_summary(
+    ticket_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+) -> AgentDecisionSummary:
+    summary = await build_agent_decision_summary(repository, ticket_id)
+    if summary is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return summary
 
 
 @router.get("/tickets/{ticket_id}/agent-runs", response_model=list[AgentRunSummary])

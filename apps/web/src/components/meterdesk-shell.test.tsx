@@ -45,6 +45,52 @@ const scenario: WorkbenchScenario = {
     summary: "Customer reports that April usage was paid once but appears twice.",
     outcome: "Seeded M5 baseline: duplicate captured charge confirmed.",
   },
+  decisionSummary: {
+    ticketId: "TCK-1042",
+    state: "not_run",
+    decisionLabel: "Investigation pending",
+    rationale:
+      "Billing evidence is loaded for TCK-1042. Run the governed investigation to produce a trace-backed decision, approval gate, and customer draft.",
+    runId: null,
+    approvalId: null,
+    mutationId: null,
+    policyCitation: "REFUND-DUP-001 v2026.02",
+    complianceStatus: null,
+    tiles: [
+      {
+        kind: "decision",
+        label: "Decision",
+        title: "Investigation pending",
+        body: "No agent run has produced a trace-backed recommendation yet.",
+        tone: "neutral",
+        refs: ["TCK-1042"],
+      },
+      {
+        kind: "evidence",
+        label: "Evidence",
+        title: "Evidence loaded",
+        body: "Invoice, charge, usage, credit, and policy evidence are ready for review.",
+        tone: "info",
+        refs: ["INV-2026-0418", "REFUND-DUP-001 v2026.02"],
+      },
+      {
+        kind: "risk_gate",
+        label: "Risk gate",
+        title: "Risk gate pending",
+        body: "Refund or credit mutations remain unavailable until a governed run creates an approval request.",
+        tone: "warning",
+        refs: [],
+      },
+      {
+        kind: "draft",
+        label: "Draft",
+        title: "No customer draft yet",
+        body: "Customer-facing text will remain draft-only after the agent run.",
+        tone: "neutral",
+        refs: [],
+      },
+    ],
+  },
   evidence: {
     account: {
       name: "Northstar Compute",
@@ -133,6 +179,11 @@ describe("MeterDeskShell", () => {
     expect(screen.getByText("API reachable")).toBeInTheDocument();
     expect(screen.getByText("Postgres reachable")).toBeInTheDocument();
     expect(screen.getByText("M3 API")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Agent Decision Summary" })).toBeInTheDocument();
+    expect(screen.getAllByText("Investigation pending").length).toBeGreaterThan(0);
+    expect(screen.getByText("Evidence loaded")).toBeInTheDocument();
+    expect(screen.getByText("Risk gate pending")).toBeInTheDocument();
+    expect(screen.getByText("No customer draft yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
     expect(screen.getByText("No agent run yet")).toBeInTheDocument();
     expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
@@ -167,6 +218,52 @@ describe("MeterDeskShell", () => {
             missingRefs: null,
             policyVersions: "approval.create_request 1.0.0",
           },
+          decisionSummary: {
+            ticketId: "TCK-1042",
+            state: "pending_approval",
+            decisionLabel: "Duplicate captured charge confirmed",
+            rationale:
+              "Agent confirmed a duplicate captured charge on INV-2026-0418 and prepared an original refund request. The $1,248.00 mutation remains blocked until human approval.",
+            runId: "RUN-2042",
+            approvalId: "APR-2042",
+            mutationId: null,
+            policyCitation: "REFUND-DUP-001 v2026.02",
+            complianceStatus: "Passed",
+            tiles: [
+              {
+                kind: "decision",
+                label: "Decision",
+                title: "Duplicate captured charge confirmed",
+                body: "The governed decision tool classified the duplicate payment and proposed an original refund.",
+                tone: "success",
+                refs: ["RUN-2042"],
+              },
+              {
+                kind: "evidence",
+                label: "Evidence",
+                title: "Invoice and duplicate charge evidence",
+                body: "INV-2026-0418 has captured charges ch_2026_0418_A and ch_2026_0418_B for $1,248.00.",
+                tone: "info",
+                refs: ["INV-2026-0418", "ch_2026_0418_A", "ch_2026_0418_B"],
+              },
+              {
+                kind: "risk_gate",
+                label: "Risk gate",
+                title: "Refund blocked for approval",
+                body: "APR-2042 is pending human approval; no mock mutation has executed.",
+                tone: "warning",
+                refs: ["APR-2042"],
+              },
+              {
+                kind: "draft",
+                label: "Draft",
+                title: "Customer reply prepared",
+                body: "Draft only - not sent. We are sending the duplicate charge for approval.",
+                tone: "neutral",
+                refs: ["RUN-2042"],
+              },
+            ],
+          },
           traces: [
             {
               id: "trace-001",
@@ -199,7 +296,15 @@ describe("MeterDeskShell", () => {
       />,
     );
 
-    expect(screen.getByText("RUN-2042")).toBeInTheDocument();
+    expect(screen.getAllByText("RUN-2042").length).toBeGreaterThan(0);
+    expect(screen.getByRole("region", { name: "Agent Decision Summary" })).toBeInTheDocument();
+    expect(screen.getAllByText("Duplicate captured charge confirmed").length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(
+        "Agent confirmed a duplicate captured charge on INV-2026-0418 and prepared an original refund request. The $1,248.00 mutation remains blocked until human approval.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Refund blocked for approval")).toBeInTheDocument();
     expect(screen.getByText("Compliance: Passed")).toBeInTheDocument();
     expect(screen.getByText("5 governed actions verified")).toBeInTheDocument();
     expect(screen.getByText("1 high-risk gate")).toBeInTheDocument();

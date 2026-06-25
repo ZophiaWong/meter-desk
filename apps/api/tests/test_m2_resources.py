@@ -37,6 +37,7 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
         list_response = await client.get("/tickets")
         detail_response = await client.get("/tickets/TCK-1042")
         evidence_response = await client.get("/tickets/TCK-1042/billing-evidence")
+        summary_response = await client.get("/tickets/TCK-1042/decision-summary")
         runs_response = await client.get("/tickets/TCK-1042/agent-runs")
         approvals_response = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         mutations_response = await client.get("/mock-mutations?ticket_id=TCK-1042")
@@ -58,6 +59,35 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
         "ch_2026_0418_B",
     ]
     assert evidence["policy"]["id"] == "REFUND-DUP-001"
+
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    assert summary["ticket_id"] == "TCK-1042"
+    assert summary["state"] == "pending_approval"
+    assert summary["decision_label"] == "Duplicate captured charge confirmed"
+    assert "INV-2026-0418" in summary["rationale"]
+    assert "blocked until human approval" in summary["rationale"]
+    assert summary["run_id"] == "RUN-2042"
+    assert summary["approval_id"] == "APR-2042"
+    assert summary["mutation_id"] is None
+    assert summary["policy_citation"] == "REFUND-DUP-001 v2026.02"
+    assert summary["compliance_status"] == "passed"
+    assert [tile["kind"] for tile in summary["tiles"]] == [
+        "decision",
+        "evidence",
+        "risk_gate",
+        "draft",
+    ]
+    tile_by_kind = {tile["kind"]: tile for tile in summary["tiles"]}
+    assert tile_by_kind["evidence"]["refs"] == [
+        "INV-2026-0418",
+        "ch_2026_0418_A",
+        "ch_2026_0418_B",
+        "REFUND-DUP-001 v2026.02",
+    ]
+    assert "APR-2042" in tile_by_kind["risk_gate"]["refs"]
+    assert tile_by_kind["risk_gate"]["tone"] == "warning"
+    assert "Draft only" in tile_by_kind["draft"]["body"]
 
     assert runs_response.status_code == 200
     runs = runs_response.json()
@@ -84,10 +114,12 @@ async def test_missing_resource_returns_404_and_empty_collections_return_arrays(
         base_url="http://testserver",
     ) as client:
         missing_ticket = await client.get("/tickets/TCK-0000")
+        missing_summary = await client.get("/tickets/TCK-0000/decision-summary")
         missing_traces = await client.get("/agent-runs/RUN-0000/traces")
         mutations = await client.get("/mock-mutations")
 
     assert missing_ticket.status_code == 404
+    assert missing_summary.status_code == 404
     assert missing_traces.status_code == 404
     assert mutations.status_code == 200
     assert isinstance(mutations.json(), list)

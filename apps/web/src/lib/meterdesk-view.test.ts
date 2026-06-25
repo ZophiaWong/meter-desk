@@ -42,6 +42,22 @@ describe("meterdesk-view", () => {
     expect(scenario.approval?.actionFingerprint).toBe(
       "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
     );
+    expect(scenario.decisionSummary).toMatchObject({
+      ticketId: "TCK-1042",
+      state: "pending_approval",
+      decisionLabel: "Duplicate captured charge confirmed",
+      runId: "RUN-2042",
+      approvalId: "APR-2042",
+      mutationId: null,
+      policyCitation: "REFUND-DUP-001 v2026.02",
+      complianceStatus: "Passed",
+    });
+    expect(scenario.decisionSummary.tiles.map((tile) => tile.kind)).toEqual([
+      "decision",
+      "evidence",
+      "risk_gate",
+      "draft",
+    ]);
   });
 });
 
@@ -113,6 +129,52 @@ const payloads: Record<string, unknown> = {
       title: "Duplicate captured payment",
       reason: "Two captured charges qualify for review.",
     },
+  },
+  "/tickets/TCK-1042/decision-summary": {
+    ticket_id: "TCK-1042",
+    state: "pending_approval",
+    decision_label: "Duplicate captured charge confirmed",
+    rationale:
+      "Agent confirmed a duplicate captured charge on INV-2026-0418 and prepared an original refund request. The $1,248.00 mutation remains blocked until human approval.",
+    run_id: "RUN-2042",
+    approval_id: "APR-2042",
+    mutation_id: null,
+    policy_citation: "REFUND-DUP-001 v2026.02",
+    compliance_status: "passed",
+    tiles: [
+      {
+        kind: "decision",
+        label: "Decision",
+        title: "Duplicate captured charge confirmed",
+        body: "The governed decision tool classified the duplicate payment.",
+        tone: "success",
+        refs: ["RUN-2042"],
+      },
+      {
+        kind: "evidence",
+        label: "Evidence",
+        title: "Invoice and duplicate charge evidence",
+        body: "INV-2026-0418 has duplicate captured charges.",
+        tone: "info",
+        refs: ["INV-2026-0418", "ch_2026_0418_B"],
+      },
+      {
+        kind: "risk_gate",
+        label: "Risk gate",
+        title: "Refund blocked for approval",
+        body: "APR-2042 is pending human approval.",
+        tone: "warning",
+        refs: ["APR-2042"],
+      },
+      {
+        kind: "draft",
+        label: "Draft",
+        title: "Customer reply prepared",
+        body: "Draft only - not sent.",
+        tone: "neutral",
+        refs: ["RUN-2042"],
+      },
+    ],
   },
   "/tickets/TCK-1042/agent-runs": [
     {
