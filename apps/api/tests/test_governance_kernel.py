@@ -18,10 +18,13 @@ def test_tool_policy_registry_exposes_current_golden_path_matrix() -> None:
     assert [policy.id for policy in policies] == [
         "read.billing_evidence",
         "read.prior_financial_actions",
+        "read.credit_refund_evidence",
         "decision.refund_eligibility",
+        "decision.credit_refund_eligibility",
         "draft.resolution",
         "approval.create_request",
         "mutation.mock_refund",
+        "mutation.mock_credit_or_refund",
     ]
     mutation_policy = policies[-1]
     assert mutation_policy.risk == "High"
@@ -260,7 +263,7 @@ async def test_governance_tool_policy_api_returns_read_only_matrix() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload) == 6
-    assert payload[-1]["id"] == "mutation.mock_refund"
+    assert len(payload) == 9
+    assert payload[-1]["id"] == "mutation.mock_credit_or_refund"
     assert payload[-1]["risk"] == "High"
     assert payload[-1]["requires_approval_ref"] is True

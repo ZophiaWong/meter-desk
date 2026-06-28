@@ -26,6 +26,7 @@ const scenario: WorkbenchScenario = {
       status: "Ready for approval",
       summary: "Two captured charges are attached to INV-2026-0418.",
       isActive: true,
+      href: "/?ticket=TCK-1042",
     },
     {
       id: "TCK-1098",
@@ -34,6 +35,7 @@ const scenario: WorkbenchScenario = {
       status: "Seeded support scenario",
       summary: "May token usage increased after a batch import job.",
       isActive: false,
+      href: "/?ticket=TCK-1098",
     },
   ],
   ticket: {
@@ -185,6 +187,11 @@ describe("MeterDeskShell", () => {
     expect(screen.getByText("Risk gate pending")).toBeInTheDocument();
     expect(screen.getByText("No customer draft yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: /Usage Spike/ })).toHaveAttribute(
+      "href",
+      "/?ticket=TCK-1098",
+    );
+    expect(document.querySelector('input[name="ticketId"]')).toHaveAttribute("value", "TCK-1042");
     expect(screen.getByText("No agent run yet")).toBeInTheDocument();
     expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
 

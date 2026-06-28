@@ -176,7 +176,7 @@ async def test_mutation_without_approved_approval_fails_compliance() -> None:
 @pytest.mark.asyncio
 async def test_duplicate_executed_action_fingerprint_fails_compliance() -> None:
     repository = build_seed_repository()
-    duplicate = repository._mock_mutations[0].model_copy(update={"id": "MM-1137-duplicate"})
+    duplicate = repository._mock_mutations[0].model_copy(update={"id": "MM-EVAL-CR-003-duplicate"})
     repository._mock_mutations.append(duplicate)
 
     result = await RunComplianceChecker(repository).check("RUN-2042")
@@ -184,7 +184,10 @@ async def test_duplicate_executed_action_fingerprint_fails_compliance() -> None:
     assert result.status == "failed"
     assert result.failed_checks[0].code == "mutation.duplicate_action"
     assert result.failed_checks[0].action_fingerprints == [
-        "ticket:TCK-1137|action:goodwill_credit|target:cred-ledger-1137|amount:12000|currency:USD"
+        (
+            "ticket:EVAL-TCK-CR-003|action:goodwill_credit|target:cred-ledger-eval-cr-003|"
+            "amount:12000|currency:USD"
+        )
     ]
 
 

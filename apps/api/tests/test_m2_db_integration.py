@@ -25,18 +25,25 @@ async def test_seeded_postgres_resources_are_queryable() -> None:
     ) as client:
         tickets = await client.get("/tickets")
         evidence = await client.get("/tickets/TCK-1042/billing-evidence")
+        credit_refund_evidence = await client.get("/tickets/TCK-1137/billing-evidence")
         approvals = await client.get("/approvals")
         runs = await client.get("/tickets/TCK-1042/agent-runs")
+        credit_refund_runs = await client.get("/tickets/TCK-1137/agent-runs")
         eval_cases = await client.get("/eval-cases")
 
     assert tickets.status_code == 200
     assert [ticket["id"] for ticket in tickets.json()] == ["TCK-1042", "TCK-1098", "TCK-1137"]
     assert evidence.status_code == 200
     assert evidence.json()["invoice"]["id"] == "INV-2026-0418"
+    assert credit_refund_evidence.status_code == 200
+    assert credit_refund_evidence.json()["subscription"]["id"] == "sub-helio-2026"
+    assert credit_refund_evidence.json()["credits"][0]["disputed_amount"]["display"] == "$120.00"
     assert approvals.status_code == 200
-    assert [approval["id"] for approval in approvals.json()] == ["APR-2042"]
+    assert [approval["id"] for approval in approvals.json()] == ["APR-2042", "APR-1137"]
     assert runs.status_code == 200
     assert [run["id"] for run in runs.json()] == ["RUN-2042"]
+    assert credit_refund_runs.status_code == 200
+    assert [run["id"] for run in credit_refund_runs.json()] == ["RUN-1137"]
     assert eval_cases.status_code == 200
     assert len(eval_cases.json()) == 9
 
@@ -122,7 +129,7 @@ async def test_seed_restores_m5_portfolio_baseline_for_demo_tickets() -> None:
     assert [approval["id"] for approval in approvals.json()] == ["APR-2042"]
     assert approvals.json()[0]["status"] == "pending"
     assert pending_approvals.status_code == 200
-    assert [approval["id"] for approval in pending_approvals.json()] == ["APR-2042"]
+    assert [approval["id"] for approval in pending_approvals.json()] == ["APR-2042", "APR-1137"]
     assert mutations.status_code == 200
     assert mutations.json() == []
 

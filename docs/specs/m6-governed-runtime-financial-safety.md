@@ -9,8 +9,9 @@ The goal is not broader chatbot autonomy. The goal is to ensure each governed ag
 action is executed through one policy-aware path with evidence requirements, approval gates,
 financial safety checks, and auditable trace metadata.
 
-M6 stays focused on the existing Duplicate Charge flow. Usage Spike and Credit/Refund Dispute remain
-supporting scenarios until their governed loops are explicitly designed and implemented.
+M6 stayed focused on the existing Duplicate Charge flow. A later implementation unblocked
+Credit/Refund Dispute as the second governed workflow; Usage Spike remains a supporting scenario
+until its governed loop is explicitly designed and implemented.
 
 ## Current Baseline And Required Delta
 
@@ -184,4 +185,3 @@ Tests should cover:
 - `action_fingerprint` generation and duplicate prevention.
 - DB uniqueness conflicts translated to stable errors.
 - Workbench drawer compatibility with the policy matrix.
-

@@ -82,6 +82,10 @@ class CreditEvidence(BaseModel):
     label: str
     detail: str
     amount: MoneyAmount | None = None
+    granted_amount: MoneyAmount | None = None
+    consumed_amount: MoneyAmount | None = None
+    remaining_amount: MoneyAmount | None = None
+    disputed_amount: MoneyAmount | None = None
 
 
 class UsageEvidence(BaseModel):
@@ -100,6 +104,17 @@ class PolicyEvidence(BaseModel):
     reason: str
 
 
+class SubscriptionEvidence(BaseModel):
+    id: str
+    label: str
+    status: str
+    trial_started_at_display: str
+    trial_ended_at_display: str
+    canceled_at_display: str | None = None
+    renewal_captured_at_display: str | None = None
+    canceled_before_renewal_capture: bool = False
+
+
 class BillingEvidence(BaseModel):
     account: CustomerSummary
     invoice: InvoiceEvidence
@@ -107,6 +122,8 @@ class BillingEvidence(BaseModel):
     credits: list[CreditEvidence]
     usage: list[UsageEvidence]
     policy: PolicyEvidence
+    policies: list[PolicyEvidence] = Field(default_factory=list)
+    subscription: SubscriptionEvidence | None = None
 
 
 class AgentDecisionSummaryTile(BaseModel):

@@ -54,6 +54,17 @@ TOOL_POLICIES: tuple[ToolPolicy, ...] = (
         eval_dimensions=["mutation_safety", "approval_routing"],
     ),
     ToolPolicy(
+        id="read.credit_refund_evidence",
+        label="Collect credit/refund dispute evidence",
+        category="read",
+        risk="Low",
+        executor="backend_read_tool",
+        gate="Always allowed; trace required",
+        required_evidence_refs=["invoice", "charge", "credit", "subscription"],
+        requires_policy_refs=True,
+        eval_dimensions=["required_evidence", "policy_compliance"],
+    ),
+    ToolPolicy(
         id="decision.refund_eligibility",
         label="Evaluate duplicate-charge refund eligibility",
         category="decision",
@@ -65,13 +76,24 @@ TOOL_POLICIES: tuple[ToolPolicy, ...] = (
         eval_dimensions=["outcome_correctness", "policy_compliance", "approval_routing"],
     ),
     ToolPolicy(
+        id="decision.credit_refund_eligibility",
+        label="Evaluate credit/refund dispute eligibility",
+        category="decision",
+        risk="Medium",
+        executor="backend_decision_tool",
+        gate="Backend deterministic decision; trace required",
+        required_evidence_refs=["invoice", "credit", "subscription"],
+        requires_policy_refs=True,
+        eval_dimensions=["outcome_correctness", "policy_compliance", "approval_routing"],
+    ),
+    ToolPolicy(
         id="draft.resolution",
         label="Draft governed resolution",
         category="draft",
         risk="Low",
         executor="provider_draft_tool",
         gate="Provider output validation; draft-only",
-        required_evidence_refs=["invoice", "charge"],
+        required_evidence_refs=["invoice"],
         requires_policy_refs=True,
         eval_dimensions=["draft_safety", "draft_quality"],
     ),
@@ -82,7 +104,7 @@ TOOL_POLICIES: tuple[ToolPolicy, ...] = (
         risk="Medium",
         executor="backend_approval_service",
         gate="Creates human approval gate; no mutation",
-        required_evidence_refs=["invoice", "charge"],
+        required_evidence_refs=["invoice"],
         requires_policy_refs=True,
         requires_approval_ref=True,
         eval_dimensions=["approval_routing", "mutation_safety"],
@@ -95,6 +117,18 @@ TOOL_POLICIES: tuple[ToolPolicy, ...] = (
         executor="backend_mutation_service",
         gate="Requires approved approval request",
         required_evidence_refs=["invoice", "charge"],
+        requires_policy_refs=True,
+        requires_approval_ref=True,
+        eval_dimensions=["approval_routing", "mutation_safety"],
+    ),
+    ToolPolicy(
+        id="mutation.mock_credit_or_refund",
+        label="Execute approved mock credit or refund",
+        category="mutation",
+        risk="High",
+        executor="backend_mutation_service",
+        gate="Requires approved approval request",
+        required_evidence_refs=["invoice"],
         requires_policy_refs=True,
         requires_approval_ref=True,
         eval_dimensions=["approval_routing", "mutation_safety"],
@@ -347,6 +381,19 @@ class GovernanceKernel:
         decided_by: str,
         decision_note: str | None,
     ) -> ApprovalDecisionResponse:
+        return await self.execute_approved_mock_financial_action(
+            approval_id=approval_id,
+            decided_by=decided_by,
+            decision_note=decision_note,
+        )
+
+    async def execute_approved_mock_financial_action(
+        self,
+        approval_id: str,
+        *,
+        decided_by: str,
+        decision_note: str | None,
+    ) -> ApprovalDecisionResponse:
         approval = await self._repository.get_approval(approval_id)
         if approval is None:
             raise MeterDeskAPIError(
@@ -365,6 +412,7 @@ class GovernanceKernel:
             return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
 
         existing_mutation = await self._repository.get_mock_mutation_by_approval(approval_id)
+        mutation_policy_id = _mutation_policy_id(approval.action_type)
         try:
             approval, mutation = await self._repository.approve_request(
                 approval_id=approval_id,
@@ -375,7 +423,7 @@ class GovernanceKernel:
             if approval.agent_run_id is not None:
                 await self._record_financial_block(
                     agent_run_id=approval.agent_run_id,
-                    policy_id="mutation.mock_refund",
+                    policy_id=mutation_policy_id,
                     label="Blocked duplicate mock financial mutation",
                     input_summary=f"Attempted to execute approved request {approval.id}.",
                     output_summary=error.message,
@@ -388,7 +436,7 @@ class GovernanceKernel:
         if existing_mutation is None and approval.agent_run_id is not None:
             await self.record_action(
                 agent_run_id=approval.agent_run_id,
-                policy_id="mutation.mock_refund",
+                policy_id=mutation_policy_id,
                 label="Executed approved mock financial mutation",
                 input_summary=f"Executed approved request {approval.id}.",
                 output_summary=f"Created mock mutation {mutation.id}.",
@@ -603,6 +651,12 @@ def _unknown_policy_metadata(policy_id: str, reason_code: str) -> dict[str, obje
     ).model_dump()
 
 
+def _mutation_policy_id(action_type: str) -> str:
+    if action_type == "original_refund":
+        return "mutation.mock_refund"
+    return "mutation.mock_credit_or_refund"
+
+
 def _evidence_ref_categories(evidence_refs: list[str]) -> set[str]:
     categories: set[str] = set()
     for evidence_ref in evidence_refs:
@@ -615,6 +669,10 @@ def _evidence_ref_categories(evidence_refs: list[str]) -> set[str]:
             categories.add("credit")
         if normalized.startswith("usage "):
             categories.add("usage")
+        if normalized.startswith("subscription "):
+            categories.add("subscription")
+        if normalized.startswith("prior_adjustment "):
+            categories.add("prior_adjustment")
         if normalized.startswith("ticket "):
             categories.add("ticket")
         if normalized.startswith("policy "):

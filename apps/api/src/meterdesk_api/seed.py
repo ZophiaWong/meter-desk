@@ -4,7 +4,6 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from meterdesk_api.db import create_engine
-from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.models import (
     AgentRun,
     ApprovalRequest,
@@ -16,6 +15,7 @@ from meterdesk_api.models import (
     Invoice,
     MockMutation,
     PolicyRule,
+    SubscriptionEvidenceRecord,
     Ticket,
     TicketPolicyLink,
     ToolTrace,
@@ -47,6 +47,7 @@ DELETE_ORDER = [
     AgentRun,
     Charge,
     CreditLedgerEntry,
+    SubscriptionEvidenceRecord,
     UsageRecord,
     TicketPolicyLink,
     Invoice,
@@ -152,10 +153,10 @@ async def seed_demo_data() -> None:
                 )
                 await session.flush()
 
-                policies = {
-                    evidence.policy.id: evidence.policy
-                    for evidence in all_billing_evidence.values()
-                }
+                policies = {}
+                for evidence in all_billing_evidence.values():
+                    for policy in _policies_for_evidence(evidence):
+                        policies[policy.id] = policy
                 session.add_all(
                     PolicyRule(
                         id=policy.id,
@@ -173,10 +174,11 @@ async def seed_demo_data() -> None:
                 session.add_all(
                     TicketPolicyLink(
                         ticket_id=ticket_id,
-                        policy_rule_id=evidence.policy.id,
+                        policy_rule_id=policy.id,
                         seed_marker=DEMO_SEED_MARKER,
                     )
                     for ticket_id, evidence in all_billing_evidence.items()
+                    for policy in _policies_for_evidence(evidence)
                 )
 
                 session.add_all(
@@ -240,10 +242,71 @@ async def seed_demo_data() -> None:
                         amount_cents=credit.amount.amount_cents if credit.amount else None,
                         amount_display=credit.amount.display if credit.amount else None,
                         currency=credit.amount.currency if credit.amount else None,
+                        granted_amount_cents=(
+                            credit.granted_amount.amount_cents if credit.granted_amount else None
+                        ),
+                        granted_amount_display=(
+                            credit.granted_amount.display if credit.granted_amount else None
+                        ),
+                        granted_currency=(
+                            credit.granted_amount.currency if credit.granted_amount else None
+                        ),
+                        consumed_amount_cents=(
+                            credit.consumed_amount.amount_cents if credit.consumed_amount else None
+                        ),
+                        consumed_amount_display=(
+                            credit.consumed_amount.display if credit.consumed_amount else None
+                        ),
+                        consumed_currency=(
+                            credit.consumed_amount.currency if credit.consumed_amount else None
+                        ),
+                        remaining_amount_cents=(
+                            credit.remaining_amount.amount_cents
+                            if credit.remaining_amount
+                            else None
+                        ),
+                        remaining_amount_display=(
+                            credit.remaining_amount.display if credit.remaining_amount else None
+                        ),
+                        remaining_currency=(
+                            credit.remaining_amount.currency if credit.remaining_amount else None
+                        ),
+                        disputed_amount_cents=(
+                            credit.disputed_amount.amount_cents if credit.disputed_amount else None
+                        ),
+                        disputed_amount_display=(
+                            credit.disputed_amount.display if credit.disputed_amount else None
+                        ),
+                        disputed_currency=(
+                            credit.disputed_amount.currency if credit.disputed_amount else None
+                        ),
                         seed_marker=DEMO_SEED_MARKER,
                     )
                     for ticket_id, evidence in all_billing_evidence.items()
                     for credit in evidence.credits
+                )
+                await session.flush()
+
+                session.add_all(
+                    SubscriptionEvidenceRecord(
+                        id=evidence.subscription.id,
+                        ticket_id=ticket_id,
+                        account_id=evidence.account.id,
+                        label=evidence.subscription.label,
+                        status=evidence.subscription.status,
+                        trial_started_at_display=evidence.subscription.trial_started_at_display,
+                        trial_ended_at_display=evidence.subscription.trial_ended_at_display,
+                        canceled_at_display=evidence.subscription.canceled_at_display,
+                        renewal_captured_at_display=(
+                            evidence.subscription.renewal_captured_at_display
+                        ),
+                        canceled_before_renewal_capture=(
+                            evidence.subscription.canceled_before_renewal_capture
+                        ),
+                        seed_marker=DEMO_SEED_MARKER,
+                    )
+                    for ticket_id, evidence in all_billing_evidence.items()
+                    if evidence.subscription is not None
                 )
                 await session.flush()
 
@@ -296,60 +359,24 @@ async def seed_demo_data() -> None:
                         agent_run_id=approval.agent_run_id,
                         title=approval.title,
                         status=approval.status,
-                        action_type="original_refund",
+                        action_type=approval.action_type,
                         amount_cents=approval.amount.amount_cents,
                         amount_display=approval.amount.display,
                         currency=approval.amount.currency,
                         reason=approval.reason,
                         blocker=approval.blocker,
                         policy_citation=approval.policy_citation,
-                        evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+                        evidence_refs=approval.evidence_refs,
                         action_metadata=approval.action_metadata,
                         action_fingerprint=approval.action_fingerprint,
                         created_at=utc(2026, 6, 5, 12, 6),
+                        decided_at=approval.decided_at,
+                        decision=approval.decision,
                         decided_by=approval.decided_by,
                         decision_note=approval.decision_note,
                         seed_marker=DEMO_SEED_MARKER,
                     )
                     for approval in APPROVALS
-                )
-                await session.flush()
-
-                session.add(
-                    ApprovalRequest(
-                        id="APR-1137-HIST",
-                        ticket_id="TCK-1137",
-                        agent_run_id=None,
-                        title="Historical goodwill credit approved",
-                        status="approved",
-                        action_type="goodwill_credit",
-                        amount_cents=12000,
-                        amount_display="$120.00",
-                        currency="USD",
-                        reason=(
-                            "Historical read-only goodwill credit for trial cancellation dispute."
-                        ),
-                        blocker="Approved historical mock mutation",
-                        policy_citation="TRIAL-CREDIT-003 v2026.03",
-                        evidence_refs=["credit ledger cred-ledger-1137"],
-                        action_metadata={
-                            "action_type": "goodwill_credit",
-                            "credit_ledger_entry_id": "cred-ledger-1137",
-                        },
-                        action_fingerprint=build_action_fingerprint(
-                            ticket_id="TCK-1137",
-                            action_type="goodwill_credit",
-                            amount_cents=12000,
-                            currency="USD",
-                            action_metadata={"credit_ledger_entry_id": "cred-ledger-1137"},
-                        ),
-                        created_at=utc(2026, 5, 28, 15, 40),
-                        decided_at=utc(2026, 5, 28, 15, 44),
-                        decision="approved",
-                        decided_by="Demo Operator",
-                        decision_note="Historical seeded approval.",
-                        seed_marker=DEMO_SEED_MARKER,
-                    )
                 )
                 await session.flush()
 
@@ -421,6 +448,10 @@ async def seed_demo_data() -> None:
 
 def main() -> None:
     asyncio.run(seed_demo_data())
+
+
+def _policies_for_evidence(evidence):
+    return list({policy.id: policy for policy in [evidence.policy, *evidence.policies]}.values())
 
 
 if __name__ == "__main__":

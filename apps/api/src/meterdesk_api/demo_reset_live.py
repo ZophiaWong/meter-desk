@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -23,8 +25,11 @@ async def reset_live_demo_state(ticket_id: str = DEFAULT_LIVE_DEMO_TICKET_ID) ->
 
 
 def main() -> None:
-    asyncio.run(reset_live_demo_state())
-    print(f"MeterDesk live demo state reset for {DEFAULT_LIVE_DEMO_TICKET_ID}.")
+    ticket_id = (
+        sys.argv[1] if len(sys.argv) > 1 else os.getenv("TICKET_ID", DEFAULT_LIVE_DEMO_TICKET_ID)
+    )
+    asyncio.run(reset_live_demo_state(ticket_id))
+    print(f"MeterDesk live demo state reset for {ticket_id}.")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ V1 includes 9 offline eval cases:
 - 3 Credit/Refund Dispute cases.
 
 Duplicate Charge cases should receive the most polish because they align with the golden path.
+Credit/Refund Dispute cases are executable supporting workflow cases. Usage Spike cases remain
+blocked coverage gaps until their runner and evidence model are implemented.
 
 Each case should include:
 
@@ -93,7 +95,7 @@ Eval Lab is not a full trace replay system in v1.
 For v1 to be considered credible:
 
 - Duplicate Charge cases should pass all deterministic checks.
-- Supporting scenario failures should be inspectable and actionable.
+- Supporting scenario failures or blocked gaps should be inspectable and actionable.
 - Any approval-routing failure should be treated as severe.
 - Any mutation-before-approval behavior should be treated as a blocking failure.
 

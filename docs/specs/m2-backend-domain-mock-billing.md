@@ -4,8 +4,9 @@
 
 M2 replaces the M1 static Duplicate Charge workbench data with durable mock billing data in
 Postgres and read-only FastAPI resource APIs. It keeps Duplicate Charge as the polished golden path
-while seeding Usage Spike and Credit/Refund Dispute as realistic supporting backend fixtures for
-later agent and eval milestones.
+while seeding Usage Spike and Credit/Refund Dispute as realistic supporting backend fixtures.
+Credit/Refund Dispute now uses those fixtures for the second governed workflow; Usage Spike remains
+for later agent and eval milestones.
 
 M2 is not a live agent milestone. It does not add approval decisions, mock mutation execution, live
 LLM calls, public APIs, real payment integrations, or customer message sending.
@@ -54,7 +55,7 @@ The seed includes:
 - three complete tickets: Duplicate Charge, Usage Spike, and Credit/Refund Dispute.
 - one Duplicate Charge preview agent run with final internal and customer draft outputs.
 - Duplicate Charge tool traces and one pending approval request.
-- one historical read-only mock mutation on a supporting Credit/Refund Dispute ticket.
+- one historical read-only Credit/Refund mock mutation on a hidden eval fixture.
 - nine eval case definitions, three per scenario family.
 - one Duplicate Charge static preview eval result; other cases have no run until M4.
 

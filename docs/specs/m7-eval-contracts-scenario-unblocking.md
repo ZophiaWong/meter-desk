@@ -9,8 +9,9 @@ The eval system should remain deterministic for governance-critical checks. LLM-
 with draft quality and human-readable summaries, but it must not decide whether evidence, policy,
 approval, mutation, or governance requirements passed.
 
-M7 also defines how Usage Spike and Credit/Refund Dispute can move from blocked coverage gaps to
-executable governed scenarios without turning MeterDesk into a broad billing CRM.
+M7 also defines how supporting scenarios can move from blocked coverage gaps to executable governed
+scenarios without turning MeterDesk into a broad billing CRM. Credit/Refund Dispute now follows this
+path; Usage Spike remains blocked.
 
 ## Run Compliance Check
 
@@ -111,15 +112,16 @@ governance, evidence, policy, approval routing, mutation safety, or action finge
 ## Scenario Readiness Matrix
 
 Supporting scenarios should remain blocked until they meet explicit readiness gates. The matrix
-should list candidate governed actions, but should not define detailed tool JSON schemas before a
-focused agent/tool spec is requested.
+lists governed action categories, but does not define detailed tool JSON schemas before a focused
+agent/tool spec is requested.
 
 ### Credit/Refund Dispute
 
-Credit/Refund Dispute is the preferred next expansion candidate because it reuses the existing
-refund, credit, approval, and mutation safety semantics.
+Credit/Refund Dispute is the second executable governed workflow. It stays a v1 supporting scenario
+because it reuses the existing refund, credit, approval, and mutation safety semantics instead of
+creating a separate billing CRM path.
 
-Required readiness:
+Implemented readiness:
 
 - evidence model for trial credit grants, credit consumption, credit expiry, cancellation timing,
   prior adjustments, invoices, and charges.
@@ -134,8 +136,8 @@ Required readiness:
   - `mutation.mock_credit_or_refund`
 - deterministic decision tool that owns outcome category, amount, target credit or charge, required
   evidence refs, policy refs, and approval requirement.
-- eval fixtures that cover eligible refund or credit, policy-denied dispute, and insufficient
-  evidence.
+- eval fixtures that cover goodwill credit approval, cancellation refund approval, and prior
+  adjustment already applied.
 - acceptance gates for governance metadata, approval routing, mutation safety, and draft safety.
 
 ### Usage Spike
@@ -164,13 +166,8 @@ Required readiness:
 
 ## Expansion Priority
 
-The recommended order is:
-
-1. Credit/Refund Dispute.
-2. Usage Spike.
-
-This order keeps the next expansion close to the current refund and credit governance path before
-adding the more complex usage-meter and pricing explanation surface.
+Credit/Refund Dispute has been unblocked. The remaining recommended expansion is Usage Spike,
+because it adds the more complex usage-meter and pricing explanation surface.
 
 ## Verification Expectations
 
@@ -184,7 +181,6 @@ Tests should cover:
 - duplicate action fingerprint fails compliance.
 - eval `governance_compliance` is blocking.
 - provider missing remains blocked, not failed.
-- supporting scenario runner absence remains blocked, not failed.
+- Usage Spike runner absence remains blocked, not failed.
 - Workbench compact compliance status and drawer details.
 - Eval Lab compliance details and failed checks.
-

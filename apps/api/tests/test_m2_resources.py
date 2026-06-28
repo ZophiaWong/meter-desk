@@ -139,7 +139,10 @@ async def test_m5_seed_starts_with_portfolio_baseline_governance_artifacts() -> 
         write_response = await client.post("/tickets/TCK-1042/agent-runs")
 
     assert approvals_response.status_code == 200
-    assert [approval["id"] for approval in approvals_response.json()] == ["APR-2042"]
+    assert [approval["id"] for approval in approvals_response.json()] == [
+        "APR-2042",
+        "APR-1137",
+    ]
 
     assert traces_response.status_code == 200
     traces = traces_response.json()

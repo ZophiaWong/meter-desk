@@ -29,6 +29,7 @@ export type TicketListItem = {
   customer: string;
   status: string;
   summary: string;
+  href: string;
   isActive: boolean;
 };
 
@@ -227,15 +228,21 @@ export const NAV_ITEMS: ServiceSurface[] = [
 const DEFAULT_TICKET_ID = "TCK-1042";
 
 export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> {
+  return getWorkbenchScenario(DEFAULT_TICKET_ID);
+}
+
+export async function getWorkbenchScenario(
+  ticketId = DEFAULT_TICKET_ID,
+): Promise<WorkbenchScenario> {
   const [tickets, ticket, evidence, decisionSummary, runs, approvals, mutations, toolPolicies] =
     await Promise.all([
       getTickets(),
-      getTicket(DEFAULT_TICKET_ID),
-      getBillingEvidence(DEFAULT_TICKET_ID),
-      getDecisionSummary(DEFAULT_TICKET_ID),
-      getAgentRuns(DEFAULT_TICKET_ID),
-      getApprovalsByStatus("all", DEFAULT_TICKET_ID),
-      getMockMutations(DEFAULT_TICKET_ID),
+      getTicket(ticketId),
+      getBillingEvidence(ticketId),
+      getDecisionSummary(ticketId),
+      getAgentRuns(ticketId),
+      getApprovalsByStatus("all", ticketId),
+      getMockMutations(ticketId),
       getGovernanceToolPolicies(),
     ]);
   const run = runs.at(-1) ?? null;
@@ -245,7 +252,7 @@ export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> 
 
   return {
     nav: NAV_ITEMS,
-    tickets: mapTickets(tickets),
+    tickets: mapTickets(tickets, ticket.id),
     ticket: {
       id: ticket.id,
       title: ticket.title,
@@ -429,14 +436,15 @@ function mapDecisionSummary(summary: AgentDecisionSummaryResource): AgentDecisio
   };
 }
 
-function mapTickets(tickets: TicketSummaryResource[]): TicketListItem[] {
+function mapTickets(tickets: TicketSummaryResource[], activeTicketId: string): TicketListItem[] {
   return tickets.map((ticket) => ({
     id: ticket.id,
     title: ticket.title,
     customer: ticket.customer,
     status: ticket.status,
     summary: ticket.summary,
-    isActive: ticket.is_active,
+    href: `/?ticket=${encodeURIComponent(ticket.id)}`,
+    isActive: ticket.id === activeTicketId,
   }));
 }
 

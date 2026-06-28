@@ -16,6 +16,18 @@ V1 tools should be described by category until a detailed tool schema spec is re
 
 Tool names, JSON schemas, and exact payloads are deferred. The category boundaries are not deferred.
 
+Current governed action ids include Duplicate Charge and Credit/Refund Dispute paths:
+
+- `read.billing_evidence`
+- `read.credit_refund_evidence`
+- `read.prior_financial_actions`
+- `decision.refund_eligibility`
+- `decision.credit_refund_eligibility`
+- `draft.resolution`
+- `approval.create_request`
+- `mutation.mock_refund`
+- `mutation.mock_credit_or_refund`
+
 ## Risk Levels
 
 - **Low risk**: read evidence, summarize evidence, cite policy, draft internal notes, and draft customer replies. These actions do not require approval but must be traced.

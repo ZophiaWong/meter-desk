@@ -102,7 +102,7 @@ async def start_agent_run(
 ) -> AgentRunSummary:
     orchestrator = AgentRunOrchestrator(repository=repository, provider=provider)
     try:
-        run = await orchestrator.run_duplicate_charge(ticket_id)
+        run = await orchestrator.run_ticket(ticket_id)
     except AgentLoopError as error:
         raise error
     if run is None:

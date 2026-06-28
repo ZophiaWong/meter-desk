@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getDefaultWorkbenchScenario } from "./meterdesk-view";
+import { getDefaultWorkbenchScenario, getWorkbenchScenario } from "./meterdesk-view";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -58,6 +58,46 @@ describe("meterdesk-view", () => {
       "risk_gate",
       "draft",
     ]);
+  });
+
+  it("loads a ticket-scoped Credit/Refund Workbench scenario", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const rawUrl = input instanceof Request ? input.url : input.toString();
+        const url = new URL(rawUrl);
+        const payload = {
+          ...payloads,
+          ...creditRefundPayloads,
+        }[url.pathname];
+        if (payload === undefined) {
+          return new Response("Not found", { status: 404 });
+        }
+        return new Response(JSON.stringify(payload), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }),
+    );
+
+    const scenario = await getWorkbenchScenario("TCK-1137");
+
+    expect(scenario.ticket.id).toBe("TCK-1137");
+    expect(scenario.ticket.title).toBe("Credit and refund dispute");
+    expect(scenario.tickets.map((ticket) => [ticket.id, ticket.href, ticket.isActive])).toEqual([
+      ["TCK-1042", "/?ticket=TCK-1042", false],
+      ["TCK-1137", "/?ticket=TCK-1137", true],
+    ]);
+    expect(scenario.run?.promptVersion).toBe("m8-credit-refund-v1");
+    expect(scenario.approval?.actionFingerprint).toBe(
+      "ticket:TCK-1137|action:goodwill_credit|target:cred-ledger-1137|amount:12000|currency:USD",
+    );
+    expect(scenario.decisionSummary).toMatchObject({
+      ticketId: "TCK-1137",
+      decisionLabel: "Goodwill credit pending approval",
+      policyCitation: "TRIAL-CREDIT-003 v2026.03",
+    });
+    expect(scenario.traces[0].category).toBe("read.credit_refund_evidence");
   });
 });
 
@@ -257,4 +297,183 @@ const payloads: Record<string, unknown> = {
     high_risk_gate_count: 1,
     verified_governed_action_count: 5,
   },
+};
+
+const creditRefundFingerprint =
+  "ticket:TCK-1137|action:goodwill_credit|target:cred-ledger-1137|amount:12000|currency:USD";
+
+const creditRefundPayloads: Record<string, unknown> = {
+  "/tickets": [
+    {
+      id: "TCK-1042",
+      title: "Same invoice charged twice",
+      customer: "Northstar Compute",
+      status: "Ready for approval",
+      summary: "Two captured charges are attached to INV-2026-0418.",
+      scenario: "duplicate_charge",
+      is_active: false,
+    },
+    {
+      id: "TCK-1137",
+      title: "Credit/Refund Dispute",
+      customer: "Helio SDK",
+      status: "Ready for approval",
+      summary: "Trial credit and cancellation timing are disputed.",
+      scenario: "credit_refund_dispute",
+      is_active: true,
+    },
+  ],
+  "/tickets/TCK-1137": {
+    id: "TCK-1137",
+    title: "Credit and refund dispute",
+    scenario: "credit_refund_dispute",
+    status: "Ready for approval",
+    severity: "Billing dispute",
+    opened_at: "2026-06-07T10:00:00Z",
+    opened_at_display: "Jun 7, 2026",
+    summary: "Customer disputes how a trial credit was consumed before cancellation.",
+    outcome: "Goodwill credit pending human approval.",
+    customer: {
+      id: "acct_helio",
+      name: "Helio SDK",
+      plan: "Startup API Platform",
+      owner: "ops@helio.example",
+      status: "Canceled after trial conversion",
+    },
+  },
+  "/tickets/TCK-1137/billing-evidence": {
+    account: {
+      id: "acct_helio",
+      name: "Helio SDK",
+      plan: "Startup API Platform",
+      owner: "ops@helio.example",
+      status: "Canceled after trial conversion",
+    },
+    invoice: {
+      id: "INV-2026-0312",
+      period_start: "2026-03-01",
+      period_end: "2026-03-31",
+      period_display: "Mar 1-31, 2026",
+      total: { amount_cents: 79000, currency: "USD", display: "$790.00" },
+      status: "Paid",
+    },
+    charges: [
+      {
+        id: "ch_2026_0312_A",
+        status: "Captured",
+        amount: { amount_cents: 79000, currency: "USD", display: "$790.00" },
+        captured_at: "2026-04-01T11:02:00Z",
+        captured_at_display: "Apr 1, 2026 11:02 UTC",
+        processor_state: "Linked to INV-2026-0312",
+      },
+    ],
+    credits: [
+      {
+        id: "cred-ledger-1137",
+        label: "Trial credit consumed before cancellation",
+        detail: "$120.00 remaining trial credit is disputed.",
+        amount: { amount_cents: 50000, currency: "USD", display: "$500.00" },
+        disputed_amount: { amount_cents: 12000, currency: "USD", display: "$120.00" },
+      },
+    ],
+    usage: [],
+    policy: {
+      id: "TRIAL-CREDIT-003",
+      version: "v2026.03",
+      citation: "TRIAL-CREDIT-003 v2026.03",
+      title: "Trial credit and cancellation timing",
+      reason: "Disputed remaining trial credits require approval.",
+    },
+    subscription: {
+      id: "sub-helio-2026",
+      label: "Trial converted before cancellation request",
+      status: "Canceled after trial conversion",
+      trial_started_at_display: "Feb 20, 2026",
+      trial_ended_at_display: "Mar 1, 2026",
+      canceled_at_display: "Mar 10, 2026",
+      renewal_captured_at_display: "Apr 1, 2026 11:02 UTC",
+      canceled_before_renewal_capture: false,
+    },
+  },
+  "/tickets/TCK-1137/decision-summary": {
+    ticket_id: "TCK-1137",
+    state: "pending_approval",
+    decision_label: "Goodwill credit pending approval",
+    rationale: "The governed decision tool proposed a $120.00 goodwill credit.",
+    run_id: "RUN-1137",
+    approval_id: "APR-1137",
+    mutation_id: null,
+    policy_citation: "TRIAL-CREDIT-003 v2026.03",
+    compliance_status: "passed",
+    tiles: [],
+  },
+  "/tickets/TCK-1137/agent-runs": [
+    {
+      id: "RUN-1137",
+      ticket_id: "TCK-1137",
+      status: "completed",
+      source: "seeded",
+      final_outcome: "goodwill_credit_requires_approval",
+      internal_resolution: "Recommend goodwill credit after approval.",
+      customer_reply: "A goodwill credit request is pending approval.",
+      error_state: null,
+      model: "seeded-demo",
+      prompt_version: "m8-credit-refund-v1",
+    },
+  ],
+  "/agent-runs/RUN-1137/traces": [
+    {
+      id: "trace-1137-read-evidence",
+      agent_run_id: "RUN-1137",
+      sequence: 1,
+      category: "read.credit_refund_evidence",
+      risk: "Low",
+      label: "Collected Credit/Refund dispute evidence",
+      input_summary: "Read evidence.",
+      output_summary: "Found trial credit evidence.",
+      evidence_refs: ["credit cred-ledger-1137", "subscription sub-helio-2026"],
+      policy_refs: ["TRIAL-CREDIT-003 v2026.03"],
+      approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
+  ],
+  "/agent-runs/RUN-1137/compliance": {
+    status: "passed",
+    checked_at: "2026-06-23T00:00:00Z",
+    failed_checks: [],
+    reason_codes: [],
+    affected_trace_ids: [],
+    missing_ref_categories: [],
+    policy_versions_seen: {
+      "read.credit_refund_evidence": "1.0.0",
+    },
+    high_risk_gate_count: 1,
+    verified_governed_action_count: 5,
+  },
+  "/approvals": [
+    {
+      id: "APR-1137",
+      ticket_id: "TCK-1137",
+      agent_run_id: "RUN-1137",
+      title: "Goodwill credit pending approval",
+      status: "pending",
+      action_type: "goodwill_credit",
+      amount: { amount_cents: 12000, currency: "USD", display: "$120.00" },
+      reason: "Create a goodwill credit after approval.",
+      policy_citation: "TRIAL-CREDIT-003 v2026.03",
+      blocker: "Mutation blocked until human approval",
+      evidence_refs: ["credit cred-ledger-1137"],
+      action_metadata: { credit_ledger_entry_id: "cred-ledger-1137" },
+      action_fingerprint: creditRefundFingerprint,
+      decided_at: null,
+      decision: null,
+      decided_by: null,
+      decision_note: null,
+    },
+  ],
+  "/mock-mutations": [],
 };

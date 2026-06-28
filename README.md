@@ -15,7 +15,7 @@ The v1 golden path is **Duplicate Charge**:
 5. An approved action executes only as a mock mutation.
 6. The full run is available as an audit trail and offline eval target.
 
-Supporting scenarios are **Usage Spike** and **Credit/Refund Dispute**. They reuse the same workbench, governance, trace, approval, and eval patterns without becoming separate product lines in v1.
+Supporting scenarios are **Usage Spike** and **Credit/Refund Dispute**. Credit/Refund Dispute now has a runnable governed workflow for `TCK-1137`; Usage Spike remains an explicit coverage gap. Both reuse the same workbench, governance, trace, approval, and eval patterns without becoming separate product lines in v1.
 
 ## Key Signals
 
@@ -47,7 +47,7 @@ Start with these documents before implementation:
 - [Implementation Roadmap](docs/specs/implementation-roadmap.md) - milestone sequence for building the v1 system
 - [M2 Backend Domain + Mock Billing](docs/specs/m2-backend-domain-mock-billing.md) - durable mock billing data, read APIs, seed behavior, and DB checks
 - [M3 Governed Agent Loop](docs/specs/m3-governed-agent-loop.md) - constrained agent orchestration, provider boundary, approval writes, and mock mutation execution
-- [M4 Eval Lab](docs/specs/m4-eval-lab.md) - deterministic eval runner, Duplicate Charge fixtures, and supporting scenario blocked gaps
+- [M4 Eval Lab](docs/specs/m4-eval-lab.md) - deterministic eval runner, Duplicate Charge and Credit/Refund fixtures, and Usage Spike blocked gaps
 - [M5 Polish + Portfolio Readiness](docs/specs/m5-polish-portfolio-readiness.md) - seeded demo baseline, live reset, and interview walkthrough expectations
 - [M6 Governed Runtime + Financial Safety](docs/specs/m6-governed-runtime-financial-safety.md) - planned upgrade from trace kernel to governed action runtime
 - [M7 Eval Contracts + Scenario Unblocking](docs/specs/m7-eval-contracts-scenario-unblocking.md) - planned compliance checks and supporting scenario readiness gates
@@ -92,12 +92,13 @@ make test-db
 make lint
 make seed
 make demo-reset-live
+make demo-reset-live TICKET_ID=TCK-1137
 make db-down
 ```
 
-`make seed` runs migrations and resets the demo-owned mock billing rows. It preserves unrelated local domain rows, rebuilds the Duplicate Charge, Usage Spike, Credit/Refund Dispute, historical mock mutation, eval case fixtures, and a completed Duplicate Charge portfolio baseline with a pending approval and no mock mutation.
+`make seed` runs migrations and resets the demo-owned mock billing rows. It preserves unrelated local domain rows, rebuilds the Duplicate Charge, Usage Spike, Credit/Refund Dispute, historical eval mock mutation, eval case fixtures, a completed Duplicate Charge portfolio baseline, and a completed Credit/Refund baseline. Both visible baselines stop at pending approval with no visible mock mutation.
 
-`make demo-reset-live` clears only `TCK-1042` runtime state so a configured OpenAI-compatible provider can run the live Duplicate Charge agent path from the Workbench.
+`make demo-reset-live` clears only `TCK-1042` runtime state by default so a configured OpenAI-compatible provider can run the live Duplicate Charge agent path from the Workbench. Use `make demo-reset-live TICKET_ID=TCK-1137` to reset the Credit/Refund Dispute path.
 
 `make test-db` starts local Postgres, runs migrations, seeds demo data, and verifies key M3 seed and run-preflight APIs against the real database. The default `make test` remains fast and does not require Docker/Postgres.
 
@@ -123,7 +124,8 @@ The interview demo centers on the Duplicate Charge golden path. The short flow i
 3. Review the draft-only internal resolution and customer reply.
 4. Approve or reject the proposed refund.
 5. Inspect the mock mutation and audit trace.
-6. Run Eval Lab and review Duplicate Charge scores plus supporting scenario coverage gaps.
+6. Open `/?ticket=TCK-1137` to review the Credit/Refund governed workflow.
+7. Run Eval Lab and review Duplicate Charge and Credit/Refund scores plus the Usage Spike coverage gap.
 
 For the full interview script, including the no-key baseline, live provider reset path, architecture talking points, and likely interview questions, see [MeterDesk Interview Demo Walkthrough](intv/meterdesk-demo-walkthrough.md).
 

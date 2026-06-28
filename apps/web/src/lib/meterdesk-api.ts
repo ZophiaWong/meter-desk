@@ -60,6 +60,10 @@ export type BillingEvidenceResource = {
     label: string;
     detail: string;
     amount: MoneyAmount | null;
+    granted_amount?: MoneyAmount | null;
+    consumed_amount?: MoneyAmount | null;
+    remaining_amount?: MoneyAmount | null;
+    disputed_amount?: MoneyAmount | null;
   }>;
   usage: Array<{
     id: string;
@@ -75,6 +79,23 @@ export type BillingEvidenceResource = {
     title: string;
     reason: string;
   };
+  policies?: Array<{
+    id: string;
+    version: string;
+    citation: string;
+    title: string;
+    reason: string;
+  }>;
+  subscription?: {
+    id: string;
+    label: string;
+    status: string;
+    trial_started_at_display: string;
+    trial_ended_at_display: string;
+    canceled_at_display: string | null;
+    renewal_captured_at_display: string | null;
+    canceled_before_renewal_capture: boolean;
+  } | null;
 };
 
 export type DecisionSummaryState =

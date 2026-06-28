@@ -17,9 +17,9 @@ export async function EvalLab() {
           </Link>
           <h1 className="mt-4 text-3xl font-semibold">Eval Lab</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            Run offline evals against governed agent traces. Duplicate Charge cases execute through
-            the M3 loop; supporting scenarios show explicit blocked coverage gaps until their
-            runners exist.
+            Run offline evals against governed agent traces. Duplicate Charge and Credit/Refund
+            cases execute through governed loops; Usage Spike remains an explicit blocked coverage
+            gap until its runner exists.
           </p>
           <form action={runAllEvalCasesAction} className="mt-5">
             <button

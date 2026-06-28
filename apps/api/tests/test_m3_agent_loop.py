@@ -137,6 +137,66 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
 
 
 @pytest.mark.asyncio
+async def test_start_agent_run_supports_credit_refund_goodwill_credit_workflow() -> None:
+    repository = build_seed_repository()
+    await repository.reset_demo_live_state("TCK-1137")
+    provider = FakeProvider()
+
+    async def repository_override():
+        return repository
+
+    async def provider_override():
+        return provider
+
+    app.dependency_overrides[get_repository] = repository_override
+    app.dependency_overrides[get_agent_provider] = provider_override
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        start_response = await client.post("/tickets/TCK-1137/agent-runs")
+        approvals_response = await client.get("/approvals?ticket_id=TCK-1137&status=all")
+        run = start_response.json()
+        trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
+
+    assert start_response.status_code == 201
+    assert run["ticket_id"] == "TCK-1137"
+    assert run["status"] == "completed"
+    assert run["prompt_version"] == "m8-credit-refund-v1"
+    assert run["final_outcome"] == "goodwill_credit_requires_approval"
+    assert provider.calls[0].action_type == "goodwill_credit"
+    assert provider.calls[0].target_credit_id == "cred-ledger-1137"
+
+    assert [trace["category"] for trace in trace_response.json()] == [
+        "read.credit_refund_evidence",
+        "read.prior_financial_actions",
+        "decision.credit_refund_eligibility",
+        "draft.resolution",
+        "approval.create_request",
+    ]
+    assert trace_response.json()[2]["governance_metadata"]["policy_id"] == (
+        "decision.credit_refund_eligibility"
+    )
+
+    approvals = approvals_response.json()
+    assert len(approvals) == 1
+    assert approvals[0]["status"] == "pending"
+    assert approvals[0]["action_type"] == "goodwill_credit"
+    assert approvals[0]["amount"]["display"] == "$120.00"
+    assert approvals[0]["policy_citation"] == "TRIAL-CREDIT-003 v2026.03"
+    assert approvals[0]["action_metadata"] == {
+        "action_type": "goodwill_credit",
+        "credit_ledger_entry_id": "cred-ledger-1137",
+        "subscription_id": "sub-helio-2026",
+        "action_basis": "goodwill_credit_requires_approval",
+    }
+    assert approvals[0]["action_fingerprint"] == (
+        "ticket:TCK-1137|action:goodwill_credit|target:cred-ledger-1137|amount:12000|currency:USD"
+    )
+
+
+@pytest.mark.asyncio
 async def test_agent_run_final_outcome_comes_from_backend_decision() -> None:
     repository = build_seed_repository()
     orchestrator = AgentRunOrchestrator(repository, DraftOnlyProvider())

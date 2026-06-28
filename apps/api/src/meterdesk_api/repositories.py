@@ -252,11 +252,26 @@ class InMemoryMeterDeskRepository:
         ]
         for run_id in run_ids:
             self._traces.pop(run_id, None)
+        removed_approval_ids = {
+            approval.id
+            for approval in self._approvals
+            if approval.ticket_id == fixture_ticket_id and approval.agent_run_id in run_ids
+        }
         self._approvals = [
-            approval for approval in self._approvals if approval.ticket_id != fixture_ticket_id
+            approval
+            for approval in self._approvals
+            if not (approval.ticket_id == fixture_ticket_id and approval.agent_run_id in run_ids)
         ]
         self._mock_mutations = [
-            mutation for mutation in self._mock_mutations if mutation.ticket_id != fixture_ticket_id
+            mutation
+            for mutation in self._mock_mutations
+            if not (
+                mutation.ticket_id == fixture_ticket_id
+                and (
+                    mutation.agent_run_id in run_ids
+                    or mutation.approval_request_id in removed_approval_ids
+                )
+            )
         ]
 
     async def reset_demo_live_state(self, ticket_id: str) -> None:
@@ -640,6 +655,7 @@ class SqlAlchemyMeterDeskRepository:
             CustomerAccount,
             Invoice,
             PolicyRule,
+            SubscriptionEvidenceRecord,
             Ticket,
             TicketPolicyLink,
             UsageRecord,
@@ -651,6 +667,7 @@ class SqlAlchemyMeterDeskRepository:
             InvoiceEvidence,
             MoneyAmount,
             PolicyEvidence,
+            SubscriptionEvidence,
             UsageEvidence,
         )
 
@@ -688,14 +705,22 @@ class SqlAlchemyMeterDeskRepository:
                 .order_by(UsageRecord.id)
             )
         ).scalars()
-        policy = (
+        policy_result = await self._session.execute(
+            select(PolicyRule)
+            .join(TicketPolicyLink, TicketPolicyLink.policy_rule_id == PolicyRule.id)
+            .where(TicketPolicyLink.ticket_id == ticket.id)
+            .order_by(PolicyRule.id)
+        )
+        policies = list(policy_result.scalars())
+        policy = _primary_policy_for_scenario(ticket.scenario, policies)
+        subscription = (
             await self._session.execute(
-                select(PolicyRule)
-                .join(TicketPolicyLink, TicketPolicyLink.policy_rule_id == PolicyRule.id)
-                .where(TicketPolicyLink.ticket_id == ticket.id)
+                select(SubscriptionEvidenceRecord)
+                .where(SubscriptionEvidenceRecord.ticket_id == ticket.id)
+                .order_by(SubscriptionEvidenceRecord.id)
                 .limit(1)
             )
-        ).scalar_one()
+        ).scalar_one_or_none()
 
         return BillingEvidence(
             account=CustomerSummary(
@@ -737,14 +762,30 @@ class SqlAlchemyMeterDeskRepository:
                     id=credit.id,
                     label=credit.label,
                     detail=credit.detail,
-                    amount=(
-                        MoneyAmount(
-                            amount_cents=credit.amount_cents,
-                            currency=credit.currency,
-                            display=credit.amount_display,
-                        )
-                        if credit.amount_cents is not None
-                        else None
+                    amount=_optional_money(
+                        credit.amount_cents,
+                        credit.currency,
+                        credit.amount_display,
+                    ),
+                    granted_amount=_optional_money(
+                        credit.granted_amount_cents,
+                        credit.granted_currency,
+                        credit.granted_amount_display,
+                    ),
+                    consumed_amount=_optional_money(
+                        credit.consumed_amount_cents,
+                        credit.consumed_currency,
+                        credit.consumed_amount_display,
+                    ),
+                    remaining_amount=_optional_money(
+                        credit.remaining_amount_cents,
+                        credit.remaining_currency,
+                        credit.remaining_amount_display,
+                    ),
+                    disputed_amount=_optional_money(
+                        credit.disputed_amount_cents,
+                        credit.disputed_currency,
+                        credit.disputed_amount_display,
                     ),
                 )
                 for credit in credits
@@ -765,6 +806,30 @@ class SqlAlchemyMeterDeskRepository:
                 citation=policy.citation,
                 title=policy.title,
                 reason=policy.reason,
+            ),
+            policies=[
+                PolicyEvidence(
+                    id=policy_item.id,
+                    version=policy_item.version,
+                    citation=policy_item.citation,
+                    title=policy_item.title,
+                    reason=policy_item.reason,
+                )
+                for policy_item in policies
+            ],
+            subscription=(
+                SubscriptionEvidence(
+                    id=subscription.id,
+                    label=subscription.label,
+                    status=subscription.status,
+                    trial_started_at_display=subscription.trial_started_at_display,
+                    trial_ended_at_display=subscription.trial_ended_at_display,
+                    canceled_at_display=subscription.canceled_at_display,
+                    renewal_captured_at_display=subscription.renewal_captured_at_display,
+                    canceled_before_renewal_capture=(subscription.canceled_before_renewal_capture),
+                )
+                if subscription is not None
+                else None
             ),
         )
 
@@ -1291,17 +1356,30 @@ class SqlAlchemyMeterDeskRepository:
         )
 
         agent_run_ids = select(AgentRun.id).where(AgentRun.ticket_id == fixture_ticket_id)
+        approval_ids = select(ApprovalRequest.id).where(
+            ApprovalRequest.ticket_id == fixture_ticket_id,
+            ApprovalRequest.agent_run_id.in_(agent_run_ids),
+        )
         await self._session.execute(
             delete(EvalResult).where(EvalResult.agent_run_id.in_(agent_run_ids))
         )
         await self._session.execute(
-            delete(MockMutation).where(MockMutation.ticket_id == fixture_ticket_id)
+            delete(MockMutation).where(
+                MockMutation.ticket_id == fixture_ticket_id,
+                (
+                    MockMutation.agent_run_id.in_(agent_run_ids)
+                    | MockMutation.approval_request_id.in_(approval_ids)
+                ),
+            )
         )
         await self._session.execute(
             delete(ToolTrace).where(ToolTrace.agent_run_id.in_(agent_run_ids))
         )
         await self._session.execute(
-            delete(ApprovalRequest).where(ApprovalRequest.ticket_id == fixture_ticket_id)
+            delete(ApprovalRequest).where(
+                ApprovalRequest.ticket_id == fixture_ticket_id,
+                ApprovalRequest.agent_run_id.in_(agent_run_ids),
+            )
         )
         await self._session.execute(delete(AgentRun).where(AgentRun.ticket_id == fixture_ticket_id))
         await self._session.commit()
@@ -1337,6 +1415,30 @@ def _now() -> datetime:
 
 def _format_display_time(value: datetime) -> str:
     return value.strftime("%b %-d, %Y %H:%M UTC")
+
+
+def _optional_money(
+    amount_cents: int | None,
+    currency: str | None,
+    display: str | None,
+) -> MoneyAmount | None:
+    if amount_cents is None or currency is None or display is None:
+        return None
+    return MoneyAmount(amount_cents=amount_cents, currency=currency, display=display)
+
+
+def _primary_policy_for_scenario(scenario: str, policies: list) -> object:
+    preferred_by_scenario = {
+        "duplicate_charge": "REFUND-DUP-001",
+        "usage_spike": "USAGE-SPIKE-002",
+        "credit_refund_dispute": "TRIAL-CREDIT-003",
+    }
+    preferred = preferred_by_scenario.get(scenario)
+    if preferred is not None:
+        for policy in policies:
+            if policy.id == preferred:
+                return policy
+    return policies[0]
 
 
 def _run_to_summary(run) -> AgentRunSummary:

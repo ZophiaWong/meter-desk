@@ -101,6 +101,33 @@ class CreditLedgerEntry(SeededRow, Base):
     amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     amount_display: Mapped[str | None] = mapped_column(String(32), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    granted_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    granted_amount_display: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    granted_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    consumed_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consumed_amount_display: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    consumed_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    remaining_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    remaining_amount_display: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    remaining_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+    disputed_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disputed_amount_display: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    disputed_currency: Mapped[str | None] = mapped_column(String(3), nullable=True)
+
+
+class SubscriptionEvidenceRecord(SeededRow, Base):
+    __tablename__ = "subscription_evidence"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey("customer_accounts.id"), nullable=False)
+    label: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(160), nullable=False)
+    trial_started_at_display: Mapped[str] = mapped_column(String(80), nullable=False)
+    trial_ended_at_display: Mapped[str] = mapped_column(String(80), nullable=False)
+    canceled_at_display: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    renewal_captured_at_display: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    canceled_before_renewal_capture: Mapped[bool] = mapped_column(Boolean, nullable=False)
 
 
 class PolicyRule(SeededRow, Base):

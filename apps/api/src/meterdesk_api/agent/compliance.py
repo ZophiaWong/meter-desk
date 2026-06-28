@@ -19,7 +19,7 @@ from meterdesk_api.schemas import (
     ToolTraceSummary,
 )
 
-MANAGED_RUN_SOURCES = {"m5_seeded_demo", "m3_governed_loop"}
+MANAGED_RUN_SOURCES = {"m5_seeded_demo", "m3_governed_loop", "m8_credit_refund_loop"}
 REQUIRED_METADATA_FIELDS = {
     "schema_version",
     "policy_id",
@@ -57,11 +57,7 @@ class RunComplianceChecker:
 
         no_trace_failure = (
             _failure(
-                code=(
-                    "governance.trace_missing"
-                    if managed
-                    else "governance.metadata_unsupported"
-                ),
+                code=("governance.trace_missing" if managed else "governance.metadata_unsupported"),
                 message="No governed trace records are available for this run.",
             )
             if not traces
@@ -89,9 +85,7 @@ class RunComplianceChecker:
                 trace_id for failure in failures for trace_id in failure.affected_trace_ids
             ),
             missing_ref_categories=_unique(
-                category
-                for failure in failures
-                for category in failure.missing_ref_categories
+                category for failure in failures for category in failure.missing_ref_categories
             ),
             policy_versions_seen=policy_versions_seen,
             high_risk_gate_count=len(
@@ -295,7 +289,7 @@ class RunComplianceChecker:
         mutation_trace_refs = {
             approval_ref
             for trace in traces
-            if trace.category == "mutation.mock_refund"
+            if trace.category in {"mutation.mock_refund", "mutation.mock_credit_or_refund"}
             for approval_ref in trace.approval_refs
         }
 

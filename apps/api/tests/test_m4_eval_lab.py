@@ -106,10 +106,61 @@ async def test_supporting_scenario_eval_cases_are_blocked_coverage_gaps() -> Non
     assert result.dimension_scores["outcome_correctness"] == "blocked"
     assert result.dimension_scores["governance_compliance"] == "blocked"
     assert result.dimension_scores["draft_quality"] == "not_run"
-    assert result.details["blocked_reason"] == "Scenario runner is not implemented in M4"
+    assert (
+        result.details["blocked_reason"] == "Scenario runner is not implemented for this scenario"
+    )
     assert result.details["blocked_code"] == "scenario.runner_not_implemented"
-    assert result.details["recommended_next_scenario"] == "credit_refund_dispute"
+    assert result.details["recommended_next_scenario"] == "usage_spike"
     assert result.details["readiness_gaps"]
+
+
+@pytest.mark.asyncio
+async def test_credit_refund_eval_cases_run_real_governed_workflows() -> None:
+    repository = build_seed_repository()
+    runner = EvalRunner(repository=repository, provider=EchoProvider())
+
+    credit_result = await runner.run_case("eval-credit-refund-001")
+    refund_result = await runner.run_case("eval-credit-refund-002")
+    prior_adjustment_result = await runner.run_case("eval-credit-refund-003")
+
+    assert credit_result.status == "passed"
+    assert credit_result.dimension_scores["governance_compliance"] == "pass"
+    assert credit_result.details["missing_evidence"] == []
+    assert "TRIAL-CREDIT-003 v2026.03" in credit_result.details["policy_refs_seen"]
+    credit_approvals = await repository.list_approvals(
+        status="pending",
+        ticket_id="EVAL-TCK-CR-001",
+    )
+    assert credit_approvals[0].action_type == "goodwill_credit"
+    assert credit_approvals[0].amount.display == "$120.00"
+    assert await repository.list_mock_mutations("EVAL-TCK-CR-001") == []
+
+    assert refund_result.status == "passed"
+    assert "CANCEL-REFUND-004 v2026.03" in refund_result.details["policy_refs_seen"]
+    refund_approvals = await repository.list_approvals(
+        status="pending",
+        ticket_id="EVAL-TCK-CR-002",
+    )
+    assert refund_approvals[0].action_type == "original_refund"
+    assert refund_approvals[0].amount.display == "$790.00"
+    assert await repository.list_mock_mutations("EVAL-TCK-CR-002") == []
+
+    assert prior_adjustment_result.status == "passed"
+    assert prior_adjustment_result.dimension_scores["approval_routing"] == "pass"
+    assert "ADJUSTMENT-LIMIT-002 v2026.03" in prior_adjustment_result.details["policy_refs_seen"]
+    prior_approvals = await repository.list_approvals(
+        status=None,
+        ticket_id="EVAL-TCK-CR-003",
+    )
+    assert [approval.id for approval in prior_approvals] == ["APR-EVAL-CR-003-HIST"]
+    assert all(
+        approval.agent_run_id != prior_adjustment_result.agent_run_id
+        for approval in prior_approvals
+    )
+    prior_traces = await repository.list_traces(prior_adjustment_result.agent_run_id)
+    assert prior_traces is not None
+    assert prior_traces[1].governance_metadata["negative_evidence_refs"] == []
+    assert prior_traces[2].category == "decision.credit_refund_eligibility"
 
 
 @pytest.mark.asyncio

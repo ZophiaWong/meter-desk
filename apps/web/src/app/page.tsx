@@ -1,11 +1,19 @@
 import { MeterDeskShell } from "@/components/meterdesk-shell";
-import { getDefaultWorkbenchScenario } from "@/lib/meterdesk-view";
+import { getWorkbenchScenario } from "@/lib/meterdesk-view";
 import { getSystemStatus } from "@/lib/status";
 
-export default async function Home() {
+type HomeProps = {
+  searchParams?: Promise<{ ticket?: string }> | { ticket?: string };
+};
+
+export default async function Home({ searchParams }: HomeProps = {}) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const ticketId =
+    typeof resolvedSearchParams.ticket === "string" ? resolvedSearchParams.ticket : undefined;
+
   const [status, scenarioResult] = await Promise.all([
     getSystemStatus(),
-    getDefaultWorkbenchScenario()
+    getWorkbenchScenario(ticketId)
       .then((scenario) => ({ scenario }))
       .catch((error: unknown) => ({
         dataError: error instanceof Error ? error.message : "FastAPI domain data unavailable",

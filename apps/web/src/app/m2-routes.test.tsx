@@ -143,7 +143,7 @@ const evalResults = [
     case_id: "eval-usage-spike-001",
     agent_run_id: null,
     status: "blocked",
-    summary: "Scenario runner is not implemented in M4",
+    summary: "Scenario runner is not implemented for this scenario",
     dimension_scores: {
       outcome_correctness: "blocked",
       required_evidence: "blocked",
@@ -159,10 +159,10 @@ const evalResults = [
       missing_evidence: ["invoice", "policy"],
       policy_refs_seen: [],
       trace_refs: [],
-      blocked_reason: "Scenario runner is not implemented in M4",
+      blocked_reason: "Scenario runner is not implemented for this scenario",
       blocked_code: "scenario.runner_not_implemented",
       readiness_gaps: ["usage meter evidence model", "pricing evidence model"],
-      recommended_next_scenario: "credit_refund_dispute",
+      recommended_next_scenario: "usage_spike",
       judge_notes: [],
     },
   },
@@ -258,9 +258,9 @@ describe("M3 API-backed routes", () => {
     expect(screen.getByText("Passed")).toBeInTheDocument();
     expect(screen.getByText("Blocked")).toBeInTheDocument();
     expect(within(passedEval).getByText("Deterministic eval checks passed.")).toBeInTheDocument();
-    expect(within(blockedEval).getAllByText("Scenario runner is not implemented in M4")).toHaveLength(
-      2,
-    );
+    expect(
+      within(blockedEval).getAllByText("Scenario runner is not implemented for this scenario"),
+    ).toHaveLength(2);
     expect(within(blockedEval).getByText("Blocked reason")).toBeInTheDocument();
     expect(within(passedEval).getByText("outcome correctness: pass")).toBeInTheDocument();
     expect(within(passedEval).getByText("governance compliance: pass")).toBeInTheDocument();
@@ -276,7 +276,7 @@ describe("M3 API-backed routes", () => {
       within(blockedEval).getByText("Readiness gaps: usage meter evidence model, pricing evidence model"),
     ).toBeInTheDocument();
     expect(
-      within(blockedEval).getByText("Recommended next scenario: credit_refund_dispute"),
+      within(blockedEval).getByText("Recommended next scenario: usage_spike"),
     ).toBeInTheDocument();
   });
 });

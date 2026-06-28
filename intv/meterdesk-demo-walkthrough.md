@@ -11,7 +11,7 @@ v1 的主路径是 Duplicate Charge。
 演示分两层：
 
 - **无 key 基线**：`make seed` 会加载一条已经完成的 Duplicate Charge 样例。即使没有 OpenAI-compatible provider key，也能看完整的产品路径。
-- **真实 provider 路径**：`make demo-reset-live` 只清空 Duplicate Charge 主票据的运行态数据。配置 provider 后，可以在 Workbench 里跑真实 M3 agent loop。
+- **真实 provider 路径**：`make demo-reset-live` 默认只清空 Duplicate Charge 主票据的运行态数据；也可以用 `TICKET_ID=TCK-1137` 清空 Credit/Refund Dispute。配置 provider 后，可以在 Workbench 里跑真实 governed agent loop。
 
 无 key 基线不是“无 key 也真实跑 agent”。它是一条 seeded audit trail，用来稳定展示产品流程、治理模型和审批门。真实模型调用仍然走真实 provider 路径。
 
@@ -55,8 +55,15 @@ make dev
 再打开 Eval Lab：
 
 1. Duplicate Charge cases 是当前可执行的 golden-path eval。
-2. Usage Spike 和 Credit/Refund Dispute 仍然显示为 `blocked` coverage gaps。
-3. 这是刻意保留的。Eval Lab 应该诚实展示当前覆盖范围，而不是把没实现的 workflow runner 藏起来。
+2. Credit/Refund Dispute cases 也会通过 governed workflow 跑出 trace、approval 和 deterministic checks。
+3. Usage Spike 仍然显示为 `blocked` coverage gap。Eval Lab 应该诚实展示当前覆盖范围，而不是把没实现的 workflow runner 藏起来。
+
+然后打开 `http://localhost:3000/?ticket=TCK-1137`：
+
+1. 这是 supporting scenario，不是新的产品线。
+2. Agent 读取 trial credit、subscription/cancellation timing、prior adjustment 和 policy refs。
+3. Deterministic decision tool 计算剩余 disputed trial credit，而不是让 LLM 自己决定金额。
+4. `goodwill_credit` 会进入 pending approval；approval 前没有 mock mutation。
 
 ## 真实 Provider 路径
 
@@ -72,9 +79,11 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 
 ```bash
 make demo-reset-live
+# or
+make demo-reset-live TICKET_ID=TCK-1137
 ```
 
-刷新 Workbench。`TCK-1042` 应该回到 no-run 状态：没有 agent run、没有 approval、没有 trace entries，也没有 mock mutation。Billing evidence 和 policies 会保留。
+刷新 Workbench。对应 ticket 应该回到 no-run 状态：没有 agent run、没有 approval、没有 trace entries，也没有 mock mutation。Billing evidence 和 policies 会保留。
 
 点击 **Run investigation**。一次成功的 live run 应该：
 
@@ -101,7 +110,7 @@ MeterDesk 的 eval 是离线 eval，重点是治理行为，不是单纯比较�
 
 Deterministic checks 是主要信号。LLM-as-judge 只用于 draft quality，而且是 advisory，不会覆盖 deterministic pass/fail。
 
-Supporting scenario 的 blocked cases 不是 Duplicate Charge 路径的失败。它们是刻意列出来的 coverage gaps，说明 Usage Spike 和 Credit/Refund Dispute runner 还没有进入 M4/M5 范围。
+Usage Spike 的 blocked cases 不是 Duplicate Charge 或 Credit/Refund 路径的失败。它们是刻意列出来的 coverage gaps，说明 eval system 没有把尚未实现的 runner 藏起来。
 
 ## 架构讲法
 
@@ -122,9 +131,9 @@ Supporting scenario 的 blocked cases 不是 Duplicate Charge 路径的失败。
 
 M5 不想新增第二种运行模式。Seeded data 明确是 demo baseline；真实执行仍然走 live provider boundary。这样边界更容易解释，也少一个测试面。
 
-### 为什么 supporting eval cases 是 blocked？
+### 为什么 Usage Spike eval cases 是 blocked？
 
-因为它们是计划内覆盖，但 runner 还没有实现。M4 只实现 Duplicate Charge runner，因为 Duplicate Charge 是 v1 golden path。把 blocked cases 留在 Eval Lab 里，能说明 eval system 没有把缺口藏起来。
+因为 Usage Spike 是计划内覆盖，但 runner 还没有实现。Duplicate Charge 是 v1 golden path，Credit/Refund 是第二条 supporting governed workflow。把 Usage Spike blocked cases 留在 Eval Lab 里，能说明 eval system 没有把缺口藏起来。
 
 ### 什么机制阻止未授权退款？
 
@@ -132,4 +141,4 @@ Decision tool 可以提出 refund，但 FastAPI 创建的是 approval request，
 
 ### 下一步会做什么？
 
-下一步不应该先堆 UI 装饰。更有价值的方向有两个：实现一个 supporting scenario runner，或者把 tool boundary 扩展成更明确的 policy / eligibility engine，同时保留 approval 和 trace 约束。
+下一步不应该先堆 UI 装饰。更有价值的方向有两个：实现 Usage Spike runner，或者把 tool boundary 扩展成更明确的 policy / eligibility engine，同时保留 approval 和 trace 约束。

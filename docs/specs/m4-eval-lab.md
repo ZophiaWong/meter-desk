@@ -10,7 +10,7 @@ for governance-critical behavior and uses LLM-as-judge only as advisory draft-qu
 
 ## Scope
 
-M4 implements:
+M4 originally implemented:
 
 - three executable Duplicate Charge eval cases.
 - six supporting scenario cases shown as explicit blocked coverage gaps.
@@ -19,8 +19,10 @@ M4 implements:
 - latest-only eval results linked to agent runs and compact trace references.
 - Eval Lab controls for running all cases or rerunning one case.
 
-M4 does not implement Usage Spike or Credit/Refund Dispute agent workflows, async eval jobs, full
-trace replay, run history, large dataset management, online monitoring, or model comparison.
+The current implementation extends that baseline with three executable Credit/Refund Dispute eval
+cases. Usage Spike remains the only blocked supporting scenario. Eval Lab still does not implement
+async eval jobs, full trace replay, run history, large dataset management, online monitoring, or
+model comparison.
 
 ## Data Model
 
@@ -52,8 +54,14 @@ Duplicate Charge cases run through the real governed agent loop:
 - one captured charge with no second explainable payment event:
   `insufficient_evidence_human_review`, no mutation.
 
-Supporting Usage Spike and Credit/Refund Dispute cases remain in the case catalog but return
-`blocked` results because their scenario runners are intentionally deferred.
+Credit/Refund Dispute cases run through the same governed runner contract as Duplicate Charge:
+
+- disputed remaining trial credit: `goodwill_credit_requires_approval`, approval required.
+- cancellation timing issue: `refund_requires_approval`, approval required.
+- prior adjustment already applied: `prior_adjustment_already_applied`, no duplicate adjustment.
+
+Usage Spike cases remain in the case catalog but return `blocked` results because their scenario
+runner is intentionally deferred.
 
 ## Runner And Graders
 
@@ -65,9 +73,9 @@ Eval execution is synchronous:
 Each case writes an `EvalResultSummary`. One case failure or blocked state does not stop the rest of
 the run.
 
-Duplicate Charge evaluation uses the live M3 provider boundary by default. If provider configuration
-is missing or unavailable, executable Duplicate Charge cases return `blocked` instead of failing the
-API request. Tests may inject a fake provider.
+Executable scenario evaluation uses the live provider boundary by default. If provider configuration
+is missing or unavailable, executable Duplicate Charge and Credit/Refund cases return `blocked`
+instead of failing the API request. Tests may inject a fake provider.
 
 Requires-approval cases stop at pending approval. Eval Lab verifies that an approval request exists
 and that no mock mutation was created before approval. Approve/reject mutation behavior remains

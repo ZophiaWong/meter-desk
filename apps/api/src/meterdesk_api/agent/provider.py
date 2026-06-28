@@ -6,7 +6,7 @@ from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class AgentProviderError(Exception):
@@ -15,15 +15,19 @@ class AgentProviderError(Exception):
 
 class AgentProviderInput(BaseModel):
     ticket_id: str
+    scenario: str = "duplicate_charge"
     account_name: str
     invoice_id: str
     charge_ids: list[str]
     policy_citation: str
+    policy_citations: list[str] = Field(default_factory=list)
     decision_outcome: str
     decision_reason: str
     action_type: str | None = None
     amount_display: str | None = None
     target_charge_id: str | None = None
+    target_credit_id: str | None = None
+    target_subscription_id: str | None = None
 
 
 class AgentDraftOutput(BaseModel):

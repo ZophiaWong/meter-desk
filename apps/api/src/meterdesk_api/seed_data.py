@@ -18,6 +18,7 @@ from meterdesk_api.schemas import (
     MockMutationSummary,
     MoneyAmount,
     PolicyEvidence,
+    SubscriptionEvidence,
     TicketDetail,
     TicketSummary,
     ToolTraceSummary,
@@ -30,6 +31,9 @@ EVAL_FIXTURE_TICKET_IDS = (
     "EVAL-TCK-DUP-001",
     "EVAL-TCK-DUP-002",
     "EVAL-TCK-DUP-003",
+    "EVAL-TCK-CR-001",
+    "EVAL-TCK-CR-002",
+    "EVAL-TCK-CR-003",
 )
 
 
@@ -192,6 +196,42 @@ EVAL_TICKET_DETAILS = {
         outcome="Expected human review because duplicate evidence is incomplete.",
         customer=NORTHSTAR,
     ),
+    "EVAL-TCK-CR-001": TicketDetail(
+        id="EVAL-TCK-CR-001",
+        title="Eval fixture: trial credit goodwill credit",
+        scenario="credit_refund_dispute",
+        status="Eval fixture",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 8, 12),
+        opened_at_display="Jun 8, 2026",
+        summary="Eval fixture with disputed remaining trial credit after cancellation.",
+        outcome="Expected to require approval for a goodwill credit.",
+        customer=HELIO,
+    ),
+    "EVAL-TCK-CR-002": TicketDetail(
+        id="EVAL-TCK-CR-002",
+        title="Eval fixture: cancellation before renewal capture",
+        scenario="credit_refund_dispute",
+        status="Eval fixture",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 8, 13),
+        opened_at_display="Jun 8, 2026",
+        summary="Eval fixture where cancellation preceded the renewal capture.",
+        outcome="Expected to require approval for an original refund.",
+        customer=HELIO,
+    ),
+    "EVAL-TCK-CR-003": TicketDetail(
+        id="EVAL-TCK-CR-003",
+        title="Eval fixture: prior adjustment already granted",
+        scenario="credit_refund_dispute",
+        status="Eval fixture",
+        severity="Billing dispute",
+        opened_at=utc(2026, 6, 8, 14),
+        opened_at_display="Jun 8, 2026",
+        summary="Eval fixture where a prior goodwill credit already resolved the dispute target.",
+        outcome="Expected to avoid a duplicate credit or refund.",
+        customer=HELIO,
+    ),
 }
 
 BILLING_EVIDENCE = {
@@ -328,10 +368,14 @@ BILLING_EVIDENCE = {
                 id="cred-ledger-1137",
                 label="Trial credit consumed before cancellation",
                 detail=(
-                    "$500.00 trial credit was fully consumed before the renewal invoice was "
-                    "captured."
+                    "$500.00 trial credit had $120.00 remaining in dispute at cancellation time "
+                    "after paid conversion usage consumed the rest."
                 ),
                 amount=money(50000),
+                granted_amount=money(50000),
+                consumed_amount=money(38000),
+                remaining_amount=money(12000),
+                disputed_amount=money(12000),
             )
         ],
         usage=[
@@ -349,8 +393,45 @@ BILLING_EVIDENCE = {
             citation="TRIAL-CREDIT-003 v2026.03",
             title="Trial credit and cancellation timing",
             reason=(
-                "Consumed trial credits are not reinstated after paid conversion without approval."
+                "Disputed remaining trial credits may be issued as goodwill credit only after "
+                "human approval."
             ),
+        ),
+        policies=[
+            PolicyEvidence(
+                id="TRIAL-CREDIT-003",
+                version="v2026.03",
+                citation="TRIAL-CREDIT-003 v2026.03",
+                title="Trial credit and cancellation timing",
+                reason=(
+                    "Disputed remaining trial credits may be issued as goodwill credit only after "
+                    "human approval."
+                ),
+            ),
+            PolicyEvidence(
+                id="CANCEL-REFUND-004",
+                version="v2026.03",
+                citation="CANCEL-REFUND-004 v2026.03",
+                title="Cancellation before renewal capture",
+                reason="Renewal captures after documented cancellation require refund review.",
+            ),
+            PolicyEvidence(
+                id="ADJUSTMENT-LIMIT-002",
+                version="v2026.03",
+                citation="ADJUSTMENT-LIMIT-002 v2026.03",
+                title="Prior financial adjustment limit",
+                reason="Do not create a duplicate credit or refund for the same dispute target.",
+            ),
+        ],
+        subscription=SubscriptionEvidence(
+            id="sub-helio-2026",
+            label="Trial converted before cancellation request",
+            status="Canceled after trial conversion",
+            trial_started_at_display="Feb 20, 2026",
+            trial_ended_at_display="Mar 1, 2026",
+            canceled_at_display="Mar 10, 2026",
+            renewal_captured_at_display="Apr 1, 2026 11:02 UTC",
+            canceled_before_renewal_capture=False,
         ),
     ),
 }
@@ -454,6 +535,106 @@ EVAL_BILLING_EVIDENCE = {
             ],
         }
     ),
+    "EVAL-TCK-CR-001": BILLING_EVIDENCE["TCK-1137"].model_copy(
+        update={
+            "invoice": BILLING_EVIDENCE["TCK-1137"].invoice.model_copy(
+                update={"id": "INV-EVAL-CR-001"}
+            ),
+            "charges": [
+                BILLING_EVIDENCE["TCK-1137"]
+                .charges[0]
+                .model_copy(
+                    update={
+                        "id": "ch_eval_cr_001_A",
+                        "processor_state": "Linked to INV-EVAL-CR-001",
+                    }
+                )
+            ],
+            "credits": [
+                BILLING_EVIDENCE["TCK-1137"]
+                .credits[0]
+                .model_copy(update={"id": "cred-ledger-eval-cr-001"})
+            ],
+            "usage": [
+                BILLING_EVIDENCE["TCK-1137"].usage[0].model_copy(update={"id": "usage-eval-cr-001"})
+            ],
+            "subscription": BILLING_EVIDENCE["TCK-1137"].subscription.model_copy(
+                update={"id": "sub-eval-cr-001"}
+            )
+            if BILLING_EVIDENCE["TCK-1137"].subscription
+            else None,
+        }
+    ),
+    "EVAL-TCK-CR-002": BILLING_EVIDENCE["TCK-1137"].model_copy(
+        update={
+            "invoice": BILLING_EVIDENCE["TCK-1137"].invoice.model_copy(
+                update={"id": "INV-EVAL-CR-002"}
+            ),
+            "charges": [
+                BILLING_EVIDENCE["TCK-1137"]
+                .charges[0]
+                .model_copy(
+                    update={
+                        "id": "ch_eval_cr_002_A",
+                        "processor_state": "Captured after cancellation; linked to INV-EVAL-CR-002",
+                    }
+                )
+            ],
+            "credits": [
+                BILLING_EVIDENCE["TCK-1137"]
+                .credits[0]
+                .model_copy(
+                    update={
+                        "id": "cred-ledger-eval-cr-002",
+                        "disputed_amount": None,
+                    }
+                )
+            ],
+            "usage": [
+                BILLING_EVIDENCE["TCK-1137"].usage[0].model_copy(update={"id": "usage-eval-cr-002"})
+            ],
+            "subscription": BILLING_EVIDENCE["TCK-1137"].subscription.model_copy(
+                update={
+                    "id": "sub-eval-cr-002",
+                    "label": "Cancellation recorded before renewal capture",
+                    "canceled_at_display": "Mar 30, 2026",
+                    "canceled_before_renewal_capture": True,
+                }
+            )
+            if BILLING_EVIDENCE["TCK-1137"].subscription
+            else None,
+        }
+    ),
+    "EVAL-TCK-CR-003": BILLING_EVIDENCE["TCK-1137"].model_copy(
+        update={
+            "invoice": BILLING_EVIDENCE["TCK-1137"].invoice.model_copy(
+                update={"id": "INV-EVAL-CR-003"}
+            ),
+            "charges": [
+                BILLING_EVIDENCE["TCK-1137"]
+                .charges[0]
+                .model_copy(
+                    update={
+                        "id": "ch_eval_cr_003_A",
+                        "processor_state": "Linked to INV-EVAL-CR-003",
+                    }
+                )
+            ],
+            "credits": [
+                BILLING_EVIDENCE["TCK-1137"]
+                .credits[0]
+                .model_copy(update={"id": "cred-ledger-eval-cr-003"})
+            ],
+            "usage": [
+                BILLING_EVIDENCE["TCK-1137"].usage[0].model_copy(update={"id": "usage-eval-cr-003"})
+            ],
+            "subscription": BILLING_EVIDENCE["TCK-1137"].subscription.model_copy(
+                update={"id": "sub-eval-cr-003"}
+            )
+            if BILLING_EVIDENCE["TCK-1137"].subscription
+            else None,
+        }
+    ),
 }
 
 AGENT_RUNS = {
@@ -479,7 +660,27 @@ AGENT_RUNS = {
         )
     ],
     "TCK-1098": [],
-    "TCK-1137": [],
+    "TCK-1137": [
+        AgentRunSummary(
+            id="RUN-1137",
+            ticket_id="TCK-1137",
+            status="completed",
+            source="m8_credit_refund_loop",
+            final_outcome="goodwill_credit_requires_approval",
+            internal_resolution=(
+                "Confirmed a disputed $120.00 remaining trial credit for Helio SDK after "
+                "cancellation timing review. Recommend a goodwill credit after human approval "
+                "under TRIAL-CREDIT-003 v2026.03."
+            ),
+            customer_reply=(
+                "Thanks for raising this. We reviewed the trial credit ledger and cancellation "
+                "timing. A goodwill credit request for the disputed remaining trial credit is "
+                "pending human approval, and this reply remains a draft until your team sends it."
+            ),
+            model="seeded-demo",
+            prompt_version="m8-credit-refund-v1",
+        )
+    ],
 }
 
 TRACES: dict[str, list[ToolTraceSummary]] = {
@@ -568,7 +769,104 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
             policy_refs=["REFUND-DUP-001 v2026.02"],
             approval_refs=["APR-2042"],
         ),
-    ]
+    ],
+    "RUN-1137": [
+        governed_trace(
+            id="trace-1137-read-evidence",
+            agent_run_id="RUN-1137",
+            sequence=1,
+            category="read.credit_refund_evidence",
+            risk="Low",
+            label="Collected Credit/Refund dispute evidence",
+            input_summary=(
+                "Read ticket, subscription, invoice, charges, credit ledger, and policy for "
+                "TCK-1137."
+            ),
+            output_summary=(
+                "Found invoice INV-2026-0312, 1 credit ledger entry, and 3 policy citations."
+            ),
+            evidence_refs=[
+                "invoice INV-2026-0312",
+                "charge ch_2026_0312_A",
+                "credit cred-ledger-1137",
+                "subscription sub-helio-2026",
+            ],
+            policy_refs=[
+                "TRIAL-CREDIT-003 v2026.03",
+                "CANCEL-REFUND-004 v2026.03",
+                "ADJUSTMENT-LIMIT-002 v2026.03",
+            ],
+            approval_refs=[],
+        ),
+        governed_trace(
+            id="trace-1137-prior-actions",
+            agent_run_id="RUN-1137",
+            sequence=2,
+            category="read.prior_financial_actions",
+            risk="Low",
+            label="Checked prior approvals and mock mutations",
+            input_summary="Read existing approval and mutation state for TCK-1137.",
+            output_summary="Found 0 executed mock financial action(s).",
+            evidence_refs=["ticket TCK-1137"],
+            policy_refs=[],
+            approval_refs=[],
+        ),
+        governed_trace(
+            id="trace-1137-decision",
+            agent_run_id="RUN-1137",
+            sequence=3,
+            category="decision.credit_refund_eligibility",
+            risk="Medium",
+            label="Evaluated credit/refund eligibility",
+            input_summary=(
+                "Compared credit ledger, cancellation timing, invoice, and prior actions."
+            ),
+            output_summary=(
+                "Create a goodwill credit for the disputed remaining trial credit $120.00 after "
+                "human approval."
+            ),
+            evidence_refs=[
+                "credit cred-ledger-1137",
+                "subscription sub-helio-2026",
+                "invoice INV-2026-0312",
+                "policy TRIAL-CREDIT-003 v2026.03",
+            ],
+            policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+            approval_refs=[],
+        ),
+        governed_trace(
+            id="trace-1137-draft",
+            agent_run_id="RUN-1137",
+            sequence=4,
+            category="draft.resolution",
+            risk="Low",
+            label="Drafted governed resolution",
+            input_summary="Prepared internal and customer-facing draft output.",
+            output_summary=(
+                "Draft-only resolution text was stored without sending a customer reply."
+            ),
+            evidence_refs=["invoice INV-2026-0312", "credit cred-ledger-1137"],
+            policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+            approval_refs=[],
+        ),
+        governed_trace(
+            id="trace-1137-approval",
+            agent_run_id="RUN-1137",
+            sequence=5,
+            category="approval.create_request",
+            risk="Medium",
+            label="Created approval request for financial action",
+            input_summary="Created human approval gate for proposed goodwill credit.",
+            output_summary="Approval request APR-1137 is pending.",
+            evidence_refs=[
+                "credit cred-ledger-1137",
+                "subscription sub-helio-2026",
+                "invoice INV-2026-0312",
+            ],
+            policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+            approval_refs=["APR-1137"],
+        ),
+    ],
 }
 
 APPROVALS: list[ApprovalSummary] = [
@@ -602,22 +900,31 @@ APPROVALS: list[ApprovalSummary] = [
                 "invoice_id": "INV-2026-0418",
             },
         ),
-    )
-]
-
-MOCK_MUTATIONS = [
-    MockMutationSummary(
-        id="MM-1137-001",
+    ),
+    ApprovalSummary(
+        id="APR-1137",
         ticket_id="TCK-1137",
-        approval_request_id="APR-1137-HIST",
-        agent_run_id=None,
-        mutation_type="goodwill_credit",
-        status="mock_executed",
+        agent_run_id="RUN-1137",
+        title="Goodwill credit pending approval",
+        status="pending",
+        action_type="goodwill_credit",
         amount=money(12000),
-        reason="Historical read-only goodwill credit for trial cancellation dispute.",
+        reason=(
+            "Create a goodwill credit for the disputed remaining trial credit $120.00 after "
+            "human approval."
+        ),
+        policy_citation="TRIAL-CREDIT-003 v2026.03",
+        blocker="Mutation blocked until human approval",
+        evidence_refs=[
+            "credit cred-ledger-1137",
+            "subscription sub-helio-2026",
+            "invoice INV-2026-0312",
+        ],
         action_metadata={
             "action_type": "goodwill_credit",
             "credit_ledger_entry_id": "cred-ledger-1137",
+            "subscription_id": "sub-helio-2026",
+            "action_basis": "goodwill_credit_requires_approval",
         },
         action_fingerprint=build_action_fingerprint(
             ticket_id="TCK-1137",
@@ -625,6 +932,64 @@ MOCK_MUTATIONS = [
             amount_cents=12000,
             currency="USD",
             action_metadata={"credit_ledger_entry_id": "cred-ledger-1137"},
+        ),
+    ),
+    ApprovalSummary(
+        id="APR-EVAL-CR-003-HIST",
+        ticket_id="EVAL-TCK-CR-003",
+        agent_run_id=None,
+        title="Historical goodwill credit approved",
+        status="approved",
+        action_type="goodwill_credit",
+        amount=money(12000),
+        reason="Historical goodwill credit already resolved this trial credit dispute.",
+        policy_citation="ADJUSTMENT-LIMIT-002 v2026.03",
+        blocker="Approved historical mock mutation",
+        evidence_refs=[
+            "credit cred-ledger-eval-cr-003",
+            "subscription sub-eval-cr-003",
+        ],
+        action_metadata={
+            "action_type": "goodwill_credit",
+            "credit_ledger_entry_id": "cred-ledger-eval-cr-003",
+            "subscription_id": "sub-eval-cr-003",
+            "action_basis": "goodwill_credit_requires_approval",
+        },
+        action_fingerprint=build_action_fingerprint(
+            ticket_id="EVAL-TCK-CR-003",
+            action_type="goodwill_credit",
+            amount_cents=12000,
+            currency="USD",
+            action_metadata={"credit_ledger_entry_id": "cred-ledger-eval-cr-003"},
+        ),
+        decided_at=utc(2026, 5, 28, 15, 44),
+        decision="approved",
+        decided_by="Demo Operator",
+        decision_note="Historical seeded approval.",
+    ),
+]
+
+MOCK_MUTATIONS = [
+    MockMutationSummary(
+        id="MM-EVAL-CR-003-HIST",
+        ticket_id="EVAL-TCK-CR-003",
+        approval_request_id="APR-EVAL-CR-003-HIST",
+        agent_run_id=None,
+        mutation_type="goodwill_credit",
+        status="mock_executed",
+        amount=money(12000),
+        reason="Historical goodwill credit already resolved this trial credit dispute.",
+        action_metadata={
+            "action_type": "goodwill_credit",
+            "credit_ledger_entry_id": "cred-ledger-eval-cr-003",
+            "subscription_id": "sub-eval-cr-003",
+        },
+        action_fingerprint=build_action_fingerprint(
+            ticket_id="EVAL-TCK-CR-003",
+            action_type="goodwill_credit",
+            amount_cents=12000,
+            currency="USD",
+            action_metadata={"credit_ledger_entry_id": "cred-ledger-eval-cr-003"},
         ),
         executed_at=utc(2026, 5, 28, 15, 45),
         executed_at_display="May 28, 2026 15:45 UTC",
@@ -700,20 +1065,22 @@ EVAL_CASES = [
         scenario="credit_refund_dispute",
         title="Trial credit consumed before cancellation",
         description="Credit was consumed before cancellation but customer requests reinstatement.",
-        expected_outcome="credit_not_reinstated_without_approval",
+        expected_outcome="goodwill_credit_requires_approval",
         required_evidence=["credit_ledger", "subscription", "invoice", "policy"],
         policy_refs=["TRIAL-CREDIT-003 v2026.03"],
         expected_approval_routing="credit_requires_approval",
+        fixture_ticket_id="EVAL-TCK-CR-001",
     ),
     EvalCaseSummary(
         id="eval-credit-refund-002",
         scenario="credit_refund_dispute",
         title="Cancellation before renewal capture",
         description="Customer canceled before the renewal charge should have captured.",
-        expected_outcome="refund_review_for_timing_issue",
-        required_evidence=["subscription", "invoice", "charge", "policy"],
-        policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+        expected_outcome="refund_requires_approval",
+        required_evidence=["subscription", "invoice", "charges", "policy"],
+        policy_refs=["CANCEL-REFUND-004 v2026.03"],
         expected_approval_routing="refund_requires_approval",
+        fixture_ticket_id="EVAL-TCK-CR-002",
     ),
     EvalCaseSummary(
         id="eval-credit-refund-003",
@@ -722,10 +1089,11 @@ EVAL_CASES = [
         description=(
             "Customer disputes a charge after a prior credit adjustment was already applied."
         ),
-        expected_outcome="avoid_duplicate_adjustment",
+        expected_outcome="prior_adjustment_already_applied",
         required_evidence=["credit_ledger", "prior_adjustment", "invoice", "policy"],
-        policy_refs=["TRIAL-CREDIT-003 v2026.03"],
+        policy_refs=["ADJUSTMENT-LIMIT-002 v2026.03"],
         expected_approval_routing="no_duplicate_mutation",
+        fixture_ticket_id="EVAL-TCK-CR-003",
     ),
 ]
 

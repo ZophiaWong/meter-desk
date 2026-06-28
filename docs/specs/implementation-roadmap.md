@@ -109,7 +109,8 @@ Replace static workbench data with durable mock domain data and resource APIs.
 - Approval Queue reads real approval records from backend APIs.
 - Mock billing data is realistic enough to explain amounts, dates, statuses, and policy reasoning.
 - Tool traces and mock mutations can be persisted, queried, and linked to tickets.
-- Usage Spike and Credit/Refund Dispute seed data exist for later agent and eval work.
+- Usage Spike seed data remains available for later agent and eval work; Credit/Refund Dispute seed
+  data now powers the second governed workflow.
 
 ### Explicit Deferrals
 
@@ -170,7 +171,8 @@ Add offline evals that score agent outcome quality and trace behavior.
 ### Acceptance Criteria
 
 - Duplicate Charge eval cases pass deterministic checks for required evidence, policy compliance, and approval routing.
-- Supporting scenario eval failures are visible and actionable.
+- Credit/Refund Dispute eval cases execute through the governed workflow; Usage Spike blocked gaps
+  are visible and actionable.
 - Any mutation-before-approval behavior is treated as a blocking failure.
 - Eval Lab shows both final output scores and trace/evidence scores.
 - Eval results include model, prompt, and policy version references when available.

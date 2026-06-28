@@ -27,7 +27,7 @@ help:
 	@printf "  make test-db   Run Postgres-backed M3 migration/seed/API checks\n"
 	@printf "  make lint      Run API and Web lint/type checks\n"
 	@printf "  make seed      Reset and load M5 portfolio baseline data\n"
-	@printf "  make demo-reset-live Reset TCK-1042 runtime state for a live provider demo\n"
+	@printf "  make demo-reset-live Reset live runtime state; override with TICKET_ID=TCK-1137\n"
 
 install: install-api install-web
 
@@ -86,7 +86,7 @@ seed: db-migrate
 	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run python -m meterdesk_api.seed
 
 demo-reset-live: db-migrate
-	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run python -m meterdesk_api.demo_reset_live
+	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run python -m meterdesk_api.demo_reset_live $(TICKET_ID)
 
 health:
 	curl --fail --silent http://localhost:$(API_PORT)/health

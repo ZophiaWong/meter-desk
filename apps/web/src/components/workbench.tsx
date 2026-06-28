@@ -2,8 +2,9 @@ import type { WorkbenchScenario } from "@/lib/meterdesk-view";
 import {
   approveRequestAction,
   rejectRequestAction,
-  startDefaultAgentRunAction,
+  startAgentRunAction,
 } from "@/lib/meterdesk-actions";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 type TicketWorkbenchProps = {
@@ -22,12 +23,13 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         </div>
         <div className="mt-4 space-y-3">
           {scenario.tickets.map((ticket) => (
-            <article
-              className={`rounded-md border p-3 ${
+            <Link
+              className={`block rounded-md border p-3 ${
                 ticket.isActive
                   ? "border-meter-blue bg-[#f7fbff]"
                   : "border-meter-line bg-[#f8fafc] text-slate-500"
               }`}
+              href={ticket.href}
               key={ticket.id}
             >
               <div className="flex items-start justify-between gap-3">
@@ -37,7 +39,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
               <p className="mt-2 text-sm">{ticket.customer}</p>
               <p className="mt-3 text-xs font-medium uppercase text-slate-500">{ticket.status}</p>
               <p className="mt-2 text-xs leading-5 text-slate-500">{ticket.summary}</p>
-            </article>
+            </Link>
           ))}
         </div>
       </aside>
@@ -307,6 +309,7 @@ function ApprovalCard({ scenario }: TicketWorkbenchProps) {
       <div className="mt-4 grid grid-cols-2 gap-2">
         <form action={approveRequestAction}>
           <input name="approvalId" type="hidden" value={scenario.approval.id} />
+          <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
             className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:text-slate-400"
             disabled={!isPending}
@@ -317,6 +320,7 @@ function ApprovalCard({ scenario }: TicketWorkbenchProps) {
         </form>
         <form action={rejectRequestAction}>
           <input name="approvalId" type="hidden" value={scenario.approval.id} />
+          <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
             className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:text-slate-400"
             disabled={!isPending}
@@ -360,7 +364,8 @@ function RunStateCard({ scenario }: TicketWorkbenchProps) {
         <p className="mt-3 text-sm font-medium text-meter-amber">{scenario.run.errorState}</p>
       ) : null}
       {!scenario.run ? (
-        <form action={startDefaultAgentRunAction} className="mt-4">
+        <form action={startAgentRunAction} className="mt-4">
+          <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
             className="h-10 rounded-md bg-meter-blue px-4 text-sm font-semibold text-white"
             type="submit"
