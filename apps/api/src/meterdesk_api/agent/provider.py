@@ -8,6 +8,12 @@ from urllib.request import Request, urlopen
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from meterdesk_api.agent.planning import (
+    InvestigationPlan,
+    InvestigationPlannerInput,
+    PlanVerifierFeedbackItem,
+)
+
 
 class AgentProviderError(Exception):
     pass
@@ -41,6 +47,12 @@ class AgentDraftOutput(BaseModel):
 class AgentResolutionProvider(Protocol):
     model: str
 
+    async def create_investigation_plan(
+        self,
+        planner_input: InvestigationPlannerInput,
+        verifier_feedback: list[PlanVerifierFeedbackItem] | None = None,
+    ) -> InvestigationPlan: ...
+
     async def create_resolution(self, provider_input: AgentProviderInput) -> AgentDraftOutput: ...
 
 
@@ -49,6 +61,58 @@ class OpenAICompatibleProvider:
         self._api_key = api_key
         self.model = model
         self._base_url = base_url.rstrip("/")
+
+    async def create_investigation_plan(
+        self,
+        planner_input: InvestigationPlannerInput,
+        verifier_feedback: list[PlanVerifierFeedbackItem] | None = None,
+    ) -> InvestigationPlan:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You plan governed billing-support investigations for MeterDesk. "
+                        "Return only allowed action IDs and evidence targets from the provided "
+                        "contract. Do not include draft, approval, mutation, external support, "
+                        "or payment-provider actions. Include every schema field; use [] when "
+                        "there are no dependencies, evidence gaps, or stop conditions. Each "
+                        "step's evidence_targets must include every target listed in "
+                        "required_targets_by_action for that action_id; decision steps must not "
+                        "use [] when their action has required targets."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "planner_input": planner_input.model_dump(),
+                            "verifier_feedback": [
+                                item.model_dump(exclude_none=True)
+                                for item in verifier_feedback or []
+                            ],
+                        }
+                    ),
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "meterdesk_investigation_plan",
+                    "strict": True,
+                    "schema": InvestigationPlan.model_json_schema(),
+                },
+            },
+        }
+
+        response_body = await asyncio.to_thread(self._post_chat_completion, payload)
+        try:
+            data = json.loads(response_body)
+            content = data["choices"][0]["message"]["content"]
+            return InvestigationPlan.model_validate_json(content)
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError, ValidationError) as error:
+            raise AgentProviderError("invalid structured investigation plan") from error
 
     async def create_resolution(self, provider_input: AgentProviderInput) -> AgentDraftOutput:
         payload = {

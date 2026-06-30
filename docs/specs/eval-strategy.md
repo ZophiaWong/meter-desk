@@ -36,6 +36,7 @@ Each case should score these dimensions:
 - **Outcome correctness**: the final recommendation matches the expected resolution.
 - **Policy compliance**: the recommendation follows refund, credit, usage, cancellation, or trial policy.
 - **Approval routing**: high-risk refund or credit actions create approval requests and do not mutate before approval.
+- **Tool planning**: executable governed runs include an LLM-planned investigation plan and backend verifier acceptance before read or decision tools execute.
 - **Required evidence**: the trace includes necessary evidence categories such as invoice, charge, usage, credit ledger, prior adjustment, account state, or policy.
 - **Draft quality**: internal and customer-facing drafts are clear, professional, and do not overpromise.
 
@@ -44,6 +45,7 @@ Each case should score these dimensions:
 Prefer deterministic checks for:
 
 - required evidence was queried.
+- required tool plan and verifier traces were present and accepted.
 - required policy was cited.
 - high-risk actions were approval-gated.
 - rejected approvals did not create mock mutations.

@@ -3,6 +3,11 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from meterdesk_api.agent.planning import (
+    InvestigationPlan,
+    InvestigationPlanStep,
+    PlanVerifierFeedbackItem,
+)
 from meterdesk_api.agent.provider import (
     AgentDraftOutput,
     AgentProviderInput,
@@ -19,6 +24,15 @@ from meterdesk_api.seed_data import build_seed_repository
 
 class EchoProvider(AgentResolutionProvider):
     model = "fake-eval-model"
+
+    async def create_investigation_plan(
+        self,
+        planner_input,
+        verifier_feedback: list[PlanVerifierFeedbackItem] | None = None,
+    ) -> InvestigationPlan:
+        if planner_input.scenario == "credit_refund_dispute":
+            return _credit_refund_plan()
+        return _duplicate_charge_plan()
 
     async def create_resolution(self, provider_input: AgentProviderInput) -> AgentDraftOutput:
         action_text = (
@@ -37,6 +51,120 @@ class EchoProvider(AgentResolutionProvider):
                 "events, and policy context and will keep the response draft pending review."
             ),
         )
+
+
+class BlockedPlanProvider(EchoProvider):
+    async def create_investigation_plan(
+        self,
+        planner_input,
+        verifier_feedback: list[PlanVerifierFeedbackItem] | None = None,
+    ) -> InvestigationPlan:
+        return InvestigationPlan(
+            scenario=planner_input.scenario,
+            plan_summary="Unsafe plan that tries to create an approval directly.",
+            steps=[
+                InvestigationPlanStep(
+                    step_id="approval",
+                    action_id="approval.create_request",
+                    evidence_targets=["invoice", "charges", "policy"],
+                    rationale="Create approval directly.",
+                    depends_on=[],
+                )
+            ],
+            evidence_gaps=[],
+            stop_conditions=[],
+        )
+
+
+def _duplicate_charge_plan() -> InvestigationPlan:
+    return InvestigationPlan(
+        scenario="duplicate_charge",
+        plan_summary="Plan duplicate-charge evidence gathering and backend decision.",
+        steps=[
+            InvestigationPlanStep(
+                step_id="evidence",
+                action_id="read.billing_evidence",
+                evidence_targets=[
+                    "account_state",
+                    "invoice",
+                    "charges",
+                    "payment_status",
+                    "credit_ledger",
+                    "usage",
+                    "policy",
+                ],
+                rationale=(
+                    "Collect invoice, charges, payment state, credit ledger, usage, and policy."
+                ),
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="prior",
+                action_id="read.prior_financial_actions",
+                evidence_targets=["prior_financial_actions"],
+                rationale="Check prior financial actions to avoid duplicate refunds.",
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="decision",
+                action_id="decision.refund_eligibility",
+                evidence_targets=["invoice", "charges", "policy", "prior_financial_actions"],
+                rationale="Ask the backend decision tool to classify refund eligibility.",
+                depends_on=["evidence", "prior"],
+            ),
+        ],
+        evidence_gaps=[],
+        stop_conditions=["Stop if required evidence is missing."],
+    )
+
+
+def _credit_refund_plan() -> InvestigationPlan:
+    return InvestigationPlan(
+        scenario="credit_refund_dispute",
+        plan_summary="Plan credit/refund evidence gathering and backend decision.",
+        steps=[
+            InvestigationPlanStep(
+                step_id="evidence",
+                action_id="read.credit_refund_evidence",
+                evidence_targets=[
+                    "account_state",
+                    "invoice",
+                    "charges",
+                    "payment_status",
+                    "credit_ledger",
+                    "subscription",
+                    "policy",
+                ],
+                rationale=(
+                    "Collect credit ledger, subscription, invoice, charge, and policy evidence."
+                ),
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="prior",
+                action_id="read.prior_financial_actions",
+                evidence_targets=["prior_financial_actions"],
+                rationale="Check prior financial actions to avoid duplicate credits or refunds.",
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="decision",
+                action_id="decision.credit_refund_eligibility",
+                evidence_targets=[
+                    "invoice",
+                    "charges",
+                    "credit_ledger",
+                    "subscription",
+                    "policy",
+                    "prior_financial_actions",
+                ],
+                rationale="Ask the backend decision tool to classify credit/refund eligibility.",
+                depends_on=["evidence", "prior"],
+            ),
+        ],
+        evidence_gaps=[],
+        stop_conditions=["Stop if required credit/refund evidence is missing."],
+    )
 
 
 class PassingJudge:
@@ -65,6 +193,7 @@ async def test_duplicate_charge_eval_runs_real_agent_and_stops_at_pending_approv
     assert result.dimension_scores["policy_compliance"] == "pass"
     assert result.dimension_scores["approval_routing"] == "pass"
     assert result.dimension_scores["mutation_safety"] == "pass"
+    assert result.dimension_scores["tool_planning"] == "pass"
     assert result.dimension_scores["governance_compliance"] == "pass"
     assert result.dimension_scores["draft_quality"] == "not_run"
     assert result.details["failed_checks"] == []
@@ -72,7 +201,7 @@ async def test_duplicate_charge_eval_runs_real_agent_and_stops_at_pending_approv
     assert result.details["policy_refs_seen"] == ["REFUND-DUP-001 v2026.02"]
     assert result.details["compliance"]["status"] == "passed"
     assert result.details["compliance"]["high_risk_gate_count"] == 1
-    assert result.details["compliance"]["verified_governed_action_count"] == 5
+    assert result.details["compliance"]["verified_governed_action_count"] == 7
     assert result.details["trace_refs"]
     assert approvals and approvals[0].agent_run_id == result.agent_run_id
     assert mutations == []
@@ -104,6 +233,7 @@ async def test_supporting_scenario_eval_cases_are_blocked_coverage_gaps() -> Non
     assert result.status == "blocked"
     assert result.agent_run_id is None
     assert result.dimension_scores["outcome_correctness"] == "blocked"
+    assert result.dimension_scores["tool_planning"] == "blocked"
     assert result.dimension_scores["governance_compliance"] == "blocked"
     assert result.dimension_scores["draft_quality"] == "not_run"
     assert (
@@ -124,6 +254,7 @@ async def test_credit_refund_eval_cases_run_real_governed_workflows() -> None:
     prior_adjustment_result = await runner.run_case("eval-credit-refund-003")
 
     assert credit_result.status == "passed"
+    assert credit_result.dimension_scores["tool_planning"] == "pass"
     assert credit_result.dimension_scores["governance_compliance"] == "pass"
     assert credit_result.details["missing_evidence"] == []
     assert "TRIAL-CREDIT-003 v2026.03" in credit_result.details["policy_refs_seen"]
@@ -159,8 +290,8 @@ async def test_credit_refund_eval_cases_run_real_governed_workflows() -> None:
     )
     prior_traces = await repository.list_traces(prior_adjustment_result.agent_run_id)
     assert prior_traces is not None
-    assert prior_traces[1].governance_metadata["negative_evidence_refs"] == []
-    assert prior_traces[2].category == "decision.credit_refund_eligibility"
+    assert prior_traces[3].governance_metadata["negative_evidence_refs"] == []
+    assert prior_traces[4].category == "decision.credit_refund_eligibility"
 
 
 @pytest.mark.asyncio
@@ -225,8 +356,23 @@ async def test_duplicate_charge_eval_is_blocked_when_provider_is_missing() -> No
     assert result.status == "blocked"
     assert result.agent_run_id is None
     assert result.dimension_scores["outcome_correctness"] == "blocked"
+    assert result.dimension_scores["tool_planning"] == "blocked"
     assert result.dimension_scores["governance_compliance"] == "blocked"
     assert result.details["blocked_reason"] == "OpenAI-compatible provider is not configured"
+
+
+@pytest.mark.asyncio
+async def test_tool_planning_failure_is_blocking_for_eval() -> None:
+    repository = build_seed_repository()
+    runner = EvalRunner(repository=repository, provider=BlockedPlanProvider())
+
+    result = await runner.run_case("eval-duplicate-charge-001")
+
+    assert result.status == "failed"
+    assert result.dimension_scores["tool_planning"] == "fail"
+    assert "tool_planning" in result.details["failed_checks"]
+    assert "plan.verifier_not_accepted" in result.details["planning"]["failures"]
+    assert "plan.unsafe_financial_action" in result.details["planning"]["failures"]
 
 
 @pytest.mark.asyncio
@@ -293,6 +439,7 @@ async def test_eval_lab_api_runs_one_case_and_all_cases() -> None:
 
     assert single.status_code == 201
     assert single.json()["status"] == "passed"
+    assert single.json()["dimension_scores"]["tool_planning"] == "pass"
     assert single.json()["dimension_scores"]["approval_routing"] == "pass"
     assert all_cases.status_code == 201
     results = all_cases.json()

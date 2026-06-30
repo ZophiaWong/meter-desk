@@ -4,6 +4,11 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from meterdesk_api.agent.orchestrator import AgentRunOrchestrator
+from meterdesk_api.agent.planning import (
+    InvestigationPlan,
+    InvestigationPlanStep,
+    PlanVerifierFeedbackItem,
+)
 from meterdesk_api.agent.provider import (
     AgentDraftOutput,
     AgentProviderError,
@@ -20,9 +25,32 @@ from meterdesk_api.seed_data import build_seed_repository
 class FakeProvider(AgentResolutionProvider):
     model = "fake-m3-model"
 
-    def __init__(self, outputs: list[AgentDraftOutput | Exception] | None = None) -> None:
+    def __init__(
+        self,
+        outputs: list[AgentDraftOutput | Exception] | None = None,
+        plan_outputs: list[InvestigationPlan | Exception] | None = None,
+    ) -> None:
         self.outputs = outputs
+        self.plan_outputs = plan_outputs
         self.calls: list[AgentProviderInput] = []
+        self.plan_calls: list[object] = []
+
+    async def create_investigation_plan(
+        self,
+        planner_input,
+        verifier_feedback: list[PlanVerifierFeedbackItem] | None = None,
+    ) -> InvestigationPlan:
+        self.plan_calls.append(
+            {"planner_input": planner_input, "verifier_feedback": verifier_feedback or []}
+        )
+        output = (
+            self.plan_outputs.pop(0)
+            if self.plan_outputs is not None
+            else self._default_plan(planner_input.scenario)
+        )
+        if isinstance(output, Exception):
+            raise output
+        return output
 
     async def create_resolution(self, provider_input: AgentProviderInput) -> AgentDraftOutput:
         self.calls.append(provider_input)
@@ -30,6 +58,11 @@ class FakeProvider(AgentResolutionProvider):
         if isinstance(output, Exception):
             raise output
         return output
+
+    def _default_plan(self, scenario: str) -> InvestigationPlan:
+        if scenario == "credit_refund_dispute":
+            return credit_refund_plan()
+        return duplicate_charge_plan()
 
     def _default_output(self) -> AgentDraftOutput:
         return AgentDraftOutput(
@@ -49,6 +82,15 @@ class FakeProvider(AgentResolutionProvider):
 class DraftOnlyProvider(AgentResolutionProvider):
     model = "draft-only-model"
 
+    async def create_investigation_plan(
+        self,
+        planner_input,
+        verifier_feedback: list[PlanVerifierFeedbackItem] | None = None,
+    ) -> InvestigationPlan:
+        if planner_input.scenario == "credit_refund_dispute":
+            return credit_refund_plan()
+        return duplicate_charge_plan()
+
     async def create_resolution(self, provider_input: AgentProviderInput) -> AgentDraftOutput:
         return AgentDraftOutput(
             recommendation=provider_input.decision_reason,
@@ -61,6 +103,111 @@ class DraftOnlyProvider(AgentResolutionProvider):
                 "second matching event was an authorization, not a captured charge."
             ),
         )
+
+
+def duplicate_charge_plan() -> InvestigationPlan:
+    return InvestigationPlan(
+        scenario="duplicate_charge",
+        plan_summary="Investigate duplicate-charge evidence and backend refund eligibility.",
+        steps=[
+            InvestigationPlanStep(
+                step_id="evidence",
+                action_id="read.billing_evidence",
+                evidence_targets=[
+                    "account_state",
+                    "invoice",
+                    "charges",
+                    "payment_status",
+                    "credit_ledger",
+                    "usage",
+                    "policy",
+                ],
+                rationale="Read invoice, charge, credit, usage, and policy evidence.",
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="prior",
+                action_id="read.prior_financial_actions",
+                evidence_targets=["prior_financial_actions"],
+                rationale="Check prior financial actions to avoid duplicate refunds.",
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="decision",
+                action_id="decision.refund_eligibility",
+                evidence_targets=["invoice", "charges", "policy", "prior_financial_actions"],
+                rationale="Ask the backend decision tool to classify refund eligibility.",
+                depends_on=["evidence", "prior"],
+            ),
+        ],
+        evidence_gaps=[],
+        stop_conditions=["Stop if required billing evidence is missing."],
+    )
+
+
+def credit_refund_plan() -> InvestigationPlan:
+    return InvestigationPlan(
+        scenario="credit_refund_dispute",
+        plan_summary="Investigate credit/refund evidence and backend eligibility.",
+        steps=[
+            InvestigationPlanStep(
+                step_id="evidence",
+                action_id="read.credit_refund_evidence",
+                evidence_targets=[
+                    "account_state",
+                    "invoice",
+                    "charges",
+                    "payment_status",
+                    "credit_ledger",
+                    "subscription",
+                    "policy",
+                ],
+                rationale="Read credit ledger, subscription, invoice, charge, and policy evidence.",
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="prior",
+                action_id="read.prior_financial_actions",
+                evidence_targets=["prior_financial_actions"],
+                rationale="Check prior financial actions to avoid duplicate credits or refunds.",
+                depends_on=[],
+            ),
+            InvestigationPlanStep(
+                step_id="decision",
+                action_id="decision.credit_refund_eligibility",
+                evidence_targets=[
+                    "invoice",
+                    "charges",
+                    "credit_ledger",
+                    "subscription",
+                    "policy",
+                    "prior_financial_actions",
+                ],
+                rationale="Ask the backend decision tool to classify credit/refund eligibility.",
+                depends_on=["evidence", "prior"],
+            ),
+        ],
+        evidence_gaps=[],
+        stop_conditions=["Stop if required credit or subscription evidence is missing."],
+    )
+
+
+def unsafe_approval_plan() -> InvestigationPlan:
+    return InvestigationPlan(
+        scenario="duplicate_charge",
+        plan_summary="Unsafe plan that attempts to create approval directly.",
+        steps=[
+            InvestigationPlanStep(
+                step_id="approval",
+                action_id="approval.create_request",
+                evidence_targets=["invoice", "charges", "policy"],
+                rationale="Create approval directly.",
+                depends_on=[],
+            )
+        ],
+        evidence_gaps=[],
+        stop_conditions=[],
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +231,10 @@ async def m3_dependency_overrides():
 
 
 @pytest.mark.asyncio
-async def test_start_agent_run_creates_traces_provider_output_and_pending_approval() -> None:
+async def test_start_agent_run_creates_traces_provider_output_and_pending_approval(
+    m3_dependency_overrides,
+) -> None:
+    _, provider = m3_dependency_overrides
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
@@ -105,6 +255,8 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
 
     assert trace_response.status_code == 200
     assert [trace["category"] for trace in trace_response.json()] == [
+        "plan.investigation",
+        "plan.verify",
         "read.billing_evidence",
         "read.prior_financial_actions",
         "decision.refund_eligibility",
@@ -117,10 +269,19 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
         "allowed",
         "allowed",
         "allowed",
+        "allowed",
+        "allowed",
     ]
-    assert trace_response.json()[2]["governance_metadata"]["policy_id"] == (
+    assert trace_response.json()[1]["governance_metadata"]["planning"]["status"] == "accepted"
+    assert trace_response.json()[1]["governance_metadata"]["planning"]["normalized_action_ids"] == [
+        "read.billing_evidence",
+        "read.prior_financial_actions",
+        "decision.refund_eligibility",
+    ]
+    assert trace_response.json()[4]["governance_metadata"]["policy_id"] == (
         "decision.refund_eligibility"
     )
+    assert len(provider.plan_calls) == 1
 
     assert approvals_response.status_code == 200
     approvals = approvals_response.json()
@@ -131,7 +292,7 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
     assert approvals[0]["action_fingerprint"] == (
         "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD"
     )
-    assert trace_response.json()[1]["governance_metadata"]["negative_evidence_refs"] == [
+    assert trace_response.json()[3]["governance_metadata"]["negative_evidence_refs"] == [
         "no_prior_mock_mutation"
     ]
 
@@ -169,13 +330,16 @@ async def test_start_agent_run_supports_credit_refund_goodwill_credit_workflow()
     assert provider.calls[0].target_credit_id == "cred-ledger-1137"
 
     assert [trace["category"] for trace in trace_response.json()] == [
+        "plan.investigation",
+        "plan.verify",
         "read.credit_refund_evidence",
         "read.prior_financial_actions",
         "decision.credit_refund_eligibility",
         "draft.resolution",
         "approval.create_request",
     ]
-    assert trace_response.json()[2]["governance_metadata"]["policy_id"] == (
+    assert trace_response.json()[1]["governance_metadata"]["planning"]["status"] == "accepted"
+    assert trace_response.json()[4]["governance_metadata"]["policy_id"] == (
         "decision.credit_refund_eligibility"
     )
 
@@ -266,6 +430,107 @@ async def test_provider_validation_failure_retries_once_then_persists_failed_run
     assert run["internal_resolution"] is None
     assert approvals.json() == []
     assert len(provider.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_planner_verifier_retries_once_then_runs_accepted_plan() -> None:
+    provider = FakeProvider(plan_outputs=[unsafe_approval_plan(), duplicate_charge_plan()])
+
+    async def provider_override():
+        return provider
+
+    app.dependency_overrides[get_agent_provider] = provider_override
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post("/tickets/TCK-1042/agent-runs")
+        run = response.json()
+        trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
+
+    assert response.status_code == 201
+    assert run["status"] == "completed"
+    assert len(provider.plan_calls) == 2
+    assert [
+        item.model_dump(exclude_none=True) for item in provider.plan_calls[1]["verifier_feedback"]
+    ] == [
+        {
+            "reason_code": "plan.unsafe_financial_action",
+            "action_id": "approval.create_request",
+            "missing_targets": [],
+        },
+        {
+            "reason_code": "plan.missing_required_action",
+            "action_id": "read.billing_evidence",
+            "missing_targets": [],
+        },
+        {
+            "reason_code": "plan.missing_required_action",
+            "action_id": "read.prior_financial_actions",
+            "missing_targets": [],
+        },
+        {
+            "reason_code": "plan.missing_required_action",
+            "action_id": "decision.refund_eligibility",
+            "missing_targets": [],
+        },
+        {
+            "reason_code": "plan.missing_required_target",
+            "missing_targets": [
+                "account_state",
+                "invoice",
+                "charges",
+                "payment_status",
+                "credit_ledger",
+                "usage",
+                "policy",
+                "prior_financial_actions",
+            ],
+        },
+    ]
+    verify_metadata = trace_response.json()[1]["governance_metadata"]["planning"]
+    assert verify_metadata["status"] == "accepted"
+    assert verify_metadata["attempt_count"] == 2
+    assert verify_metadata["blocked_attempt_reason_codes"] == [
+        [
+            "plan.unsafe_financial_action",
+            "plan.missing_required_action",
+            "plan.missing_required_target",
+        ]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_planner_verifier_blocks_run_after_two_invalid_plans() -> None:
+    provider = FakeProvider(plan_outputs=[unsafe_approval_plan(), unsafe_approval_plan()])
+
+    async def provider_override():
+        return provider
+
+    app.dependency_overrides[get_agent_provider] = provider_override
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.post("/tickets/TCK-1042/agent-runs")
+        approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
+        run = response.json()
+        trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
+
+    assert response.status_code == 201
+    assert run["status"] == "failed"
+    assert run["error_state"] == "Plan verifier blocked investigation plan"
+    assert approvals.json() == []
+    assert [trace["category"] for trace in trace_response.json()] == [
+        "plan.investigation",
+        "plan.verify",
+    ]
+    assert trace_response.json()[1]["error_state"] == "plan.unsafe_financial_action"
+    assert trace_response.json()[1]["governance_metadata"]["planning"]["status"] == "blocked"
+    assert len(provider.calls) == 0
+    assert len(provider.plan_calls) == 2
 
 
 @pytest.mark.asyncio

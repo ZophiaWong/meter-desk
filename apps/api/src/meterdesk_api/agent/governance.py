@@ -33,6 +33,26 @@ class ToolPolicy(BaseModel):
 
 TOOL_POLICIES: tuple[ToolPolicy, ...] = (
     ToolPolicy(
+        id="plan.investigation",
+        label="Plan governed investigation",
+        category="plan",
+        risk="Low",
+        executor="provider_planner",
+        gate="Provider structured plan; backend verifier required before execution",
+        required_evidence_refs=["ticket"],
+        eval_dimensions=["tool_planning"],
+    ),
+    ToolPolicy(
+        id="plan.verify",
+        label="Verify investigation plan contract",
+        category="plan",
+        risk="Low",
+        executor="backend_plan_verifier",
+        gate="Backend contract verifier accepts or blocks planned actions",
+        required_evidence_refs=["ticket"],
+        eval_dimensions=["tool_planning"],
+    ),
+    ToolPolicy(
         id="read.billing_evidence",
         label="Collect billing evidence",
         category="read",
@@ -192,6 +212,7 @@ class GovernanceKernel:
         approval_refs: list[str],
         negative_evidence_refs: list[str] | None = None,
         error_state: str | None = None,
+        governance_metadata_extra: dict[str, object] | None = None,
     ):
         policy = get_tool_policy(policy_id)
         if policy is None:
@@ -223,6 +244,8 @@ class GovernanceKernel:
             approval_refs=approval_refs,
             negative_evidence_refs=negative_evidence_refs or [],
         )
+        if governance_metadata_extra:
+            metadata = {**metadata, **governance_metadata_extra}
         if metadata["missing_ref_categories"]:
             error = GovernanceViolation(
                 status_code=409,

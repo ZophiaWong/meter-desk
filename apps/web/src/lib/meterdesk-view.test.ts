@@ -26,18 +26,22 @@ describe("meterdesk-view", () => {
 
     const scenario = await getDefaultWorkbenchScenario();
 
+    expect(scenario.traces[0].category).toBe("plan.verify");
     expect(scenario.traces[0].governance).toBe(
+      "Allowed by plan.verify - Low risk - governance.allowed",
+    );
+    expect(scenario.traces[1].governance).toBe(
       "Allowed by read.prior_financial_actions - Low risk - governance.allowed",
     );
     expect(scenario.compliance).toEqual({
       status: "Passed",
       checkedAt: "2026-06-23T00:00:00Z",
       highRiskGateCount: 1,
-      verifiedGovernedActionCount: 5,
+      verifiedGovernedActionCount: 7,
       reasonCodes: null,
       affectedTraceIds: null,
       missingRefs: null,
-      policyVersions: "read.prior_financial_actions 1.0.0",
+      policyVersions: "plan.verify 1.0.0, read.prior_financial_actions 1.0.0",
     });
     expect(scenario.approval?.actionFingerprint).toBe(
       "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
@@ -97,7 +101,7 @@ describe("meterdesk-view", () => {
       decisionLabel: "Goodwill credit pending approval",
       policyCitation: "TRIAL-CREDIT-003 v2026.03",
     });
-    expect(scenario.traces[0].category).toBe("read.credit_refund_evidence");
+    expect(scenario.traces[0].category).toBe("plan.verify");
   });
 });
 
@@ -255,6 +259,35 @@ const payloads: Record<string, unknown> = {
   "/governance/tool-policies": [],
   "/agent-runs/RUN-2042/traces": [
     {
+      id: "trace-plan-verify",
+      agent_run_id: "RUN-2042",
+      sequence: 1,
+      category: "plan.verify",
+      risk: "Low",
+      label: "Backend verified investigation plan contract",
+      input_summary: "Checked plan.",
+      output_summary: "Plan verifier accepted the investigation plan.",
+      evidence_refs: ["ticket TCK-1042"],
+      policy_refs: [],
+      approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        schema_version: "1.0.0",
+        policy_id: "plan.verify",
+        policy_version: "1.0.0",
+        risk: "Low",
+        gate: "Backend contract verifier accepts or blocks planned actions",
+        gate_result: "allowed",
+        enforcement_outcome: "trace_recorded",
+        required_ref_categories: ["ticket"],
+        satisfied_ref_categories: ["ticket"],
+        missing_ref_categories: [],
+        negative_evidence_refs: [],
+        trace_required: true,
+        reason_code: "governance.allowed",
+      },
+    },
+    {
       id: "trace-prior",
       agent_run_id: "RUN-2042",
       sequence: 1,
@@ -292,10 +325,11 @@ const payloads: Record<string, unknown> = {
     affected_trace_ids: [],
     missing_ref_categories: [],
     policy_versions_seen: {
+      "plan.verify": "1.0.0",
       "read.prior_financial_actions": "1.0.0",
     },
     high_risk_gate_count: 1,
-    verified_governed_action_count: 5,
+    verified_governed_action_count: 7,
   },
 };
 
@@ -423,6 +457,24 @@ const creditRefundPayloads: Record<string, unknown> = {
   ],
   "/agent-runs/RUN-1137/traces": [
     {
+      id: "trace-1137-plan-verify",
+      agent_run_id: "RUN-1137",
+      sequence: 1,
+      category: "plan.verify",
+      risk: "Low",
+      label: "Backend verified investigation plan contract",
+      input_summary: "Checked plan.",
+      output_summary: "Plan verifier accepted the investigation plan.",
+      evidence_refs: ["ticket TCK-1137"],
+      policy_refs: [],
+      approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
+    {
       id: "trace-1137-read-evidence",
       agent_run_id: "RUN-1137",
       sequence: 1,
@@ -449,10 +501,11 @@ const creditRefundPayloads: Record<string, unknown> = {
     affected_trace_ids: [],
     missing_ref_categories: [],
     policy_versions_seen: {
+      "plan.verify": "1.0.0",
       "read.credit_refund_evidence": "1.0.0",
     },
     high_risk_gate_count: 1,
-    verified_governed_action_count: 5,
+    verified_governed_action_count: 7,
   },
   "/approvals": [
     {

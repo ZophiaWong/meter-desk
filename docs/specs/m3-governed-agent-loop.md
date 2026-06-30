@@ -7,9 +7,10 @@ the workflow, backend-controlled tools, trace persistence, approval gates, and m
 execution. The live OpenAI-compatible provider produces strict structured recommendation and draft
 text only; it does not choose tools or decide refund amount.
 
-M3 does not introduce LangGraph, LLM-directed tool choice, real payment mutations, customer message
-sending, MCP server runtime, auth, or multi-provider routing. LLM-directed tool choice is deferred
-beyond the current v1 roadmap unless a later approved spec changes scope.
+M3 did not introduce LangGraph, LLM-directed tool choice, real payment mutations, customer message
+sending, MCP server runtime, auth, or multi-provider routing. M9 later adds bounded LLM
+investigation planning for read and decision-request actions only; deterministic decisions,
+approval creation, and mutation safety remain backend-owned.
 
 ## Architecture
 

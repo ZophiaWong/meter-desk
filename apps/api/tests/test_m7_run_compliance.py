@@ -22,11 +22,13 @@ async def test_seeded_duplicate_charge_baseline_passes_run_compliance() -> None:
     assert result.failed_checks == []
     assert result.reason_codes == []
     assert result.high_risk_gate_count == 1
-    assert result.verified_governed_action_count == 5
+    assert result.verified_governed_action_count == 7
     assert result.policy_versions_seen == {
         "approval.create_request": "1.0.0",
         "decision.refund_eligibility": "1.0.0",
         "draft.resolution": "1.0.0",
+        "plan.investigation": "1.0.0",
+        "plan.verify": "1.0.0",
         "read.billing_evidence": "1.0.0",
         "read.prior_financial_actions": "1.0.0",
     }
@@ -213,6 +215,6 @@ async def test_run_compliance_api_returns_result_shape_and_404_for_unknown_run()
     payload = response.json()
     assert payload["status"] == "passed"
     assert payload["high_risk_gate_count"] == 1
-    assert payload["verified_governed_action_count"] == 5
+    assert payload["verified_governed_action_count"] == 7
     assert payload["checked_at"]
     assert missing.status_code == 404

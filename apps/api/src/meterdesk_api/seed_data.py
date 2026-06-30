@@ -51,15 +51,54 @@ def utc(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> date
 
 
 def governed_trace(**kwargs) -> ToolTraceSummary:
+    governance_metadata_extra = kwargs.pop("governance_metadata_extra", None)
+    governance_metadata = build_governance_metadata_for_trace(
+        policy_id=kwargs["category"],
+        evidence_refs=kwargs["evidence_refs"],
+        policy_refs=kwargs["policy_refs"],
+        approval_refs=kwargs["approval_refs"],
+    )
+    if governance_metadata_extra:
+        governance_metadata = {**governance_metadata, **governance_metadata_extra}
     return ToolTraceSummary(
         **kwargs,
-        governance_metadata=build_governance_metadata_for_trace(
-            policy_id=kwargs["category"],
-            evidence_refs=kwargs["evidence_refs"],
-            policy_refs=kwargs["policy_refs"],
-            approval_refs=kwargs["approval_refs"],
-        ),
+        governance_metadata=governance_metadata,
     )
+
+
+def plan_investigation_metadata(
+    *,
+    plan_summary: str,
+    steps: list[dict[str, object]],
+) -> dict[str, object]:
+    return {
+        "planning": {
+            "status": "proposed",
+            "attempt_count": 1,
+            "plan_summary": plan_summary,
+            "steps": steps,
+            "evidence_gaps": [],
+            "stop_conditions": ["Stop if required evidence is missing."],
+            "blocked_attempt_reason_codes": [],
+        }
+    }
+
+
+def plan_verify_metadata(
+    *,
+    normalized_action_ids: list[str],
+    required_targets_seen: list[str],
+) -> dict[str, object]:
+    return {
+        "planning": {
+            "status": "accepted",
+            "attempt_count": 1,
+            "normalized_action_ids": normalized_action_ids,
+            "required_targets_seen": required_targets_seen,
+            "reason_codes": [],
+            "blocked_attempt_reason_codes": [],
+        }
+    }
 
 
 NORTHSTAR = CustomerSummary(
@@ -686,9 +725,99 @@ AGENT_RUNS = {
 TRACES: dict[str, list[ToolTraceSummary]] = {
     "RUN-2042": [
         governed_trace(
-            id="trace-2042-read-evidence",
+            id="trace-2042-plan",
             agent_run_id="RUN-2042",
             sequence=1,
+            category="plan.investigation",
+            risk="Low",
+            label="LLM proposed investigation tool plan",
+            input_summary=(
+                "Requested investigation plan for TCK-1042 before reading billing evidence."
+            ),
+            output_summary="Investigate duplicate-charge evidence and backend refund eligibility.",
+            evidence_refs=["ticket TCK-1042"],
+            policy_refs=[],
+            approval_refs=[],
+            governance_metadata_extra=plan_investigation_metadata(
+                plan_summary=(
+                    "Investigate duplicate-charge evidence and backend refund eligibility."
+                ),
+                steps=[
+                    {
+                        "step_id": "evidence",
+                        "action_id": "read.billing_evidence",
+                        "evidence_targets": [
+                            "account_state",
+                            "invoice",
+                            "charges",
+                            "payment_status",
+                            "credit_ledger",
+                            "usage",
+                            "policy",
+                        ],
+                        "rationale": ("Read invoice, charge, credit, usage, and policy evidence."),
+                        "depends_on": [],
+                    },
+                    {
+                        "step_id": "prior",
+                        "action_id": "read.prior_financial_actions",
+                        "evidence_targets": ["prior_financial_actions"],
+                        "rationale": ("Check prior financial actions to avoid duplicate refunds."),
+                        "depends_on": [],
+                    },
+                    {
+                        "step_id": "decision",
+                        "action_id": "decision.refund_eligibility",
+                        "evidence_targets": [
+                            "invoice",
+                            "charges",
+                            "policy",
+                            "prior_financial_actions",
+                        ],
+                        "rationale": (
+                            "Ask the backend decision tool to classify refund eligibility."
+                        ),
+                        "depends_on": ["evidence", "prior"],
+                    },
+                ],
+            ),
+        ),
+        governed_trace(
+            id="trace-2042-plan-verify",
+            agent_run_id="RUN-2042",
+            sequence=2,
+            category="plan.verify",
+            risk="Low",
+            label="Backend verified investigation plan contract",
+            input_summary=(
+                "Checked planned actions, evidence targets, dependencies, and safety scope."
+            ),
+            output_summary="Plan verifier accepted the investigation plan.",
+            evidence_refs=["ticket TCK-1042"],
+            policy_refs=[],
+            approval_refs=[],
+            governance_metadata_extra=plan_verify_metadata(
+                normalized_action_ids=[
+                    "read.billing_evidence",
+                    "read.prior_financial_actions",
+                    "decision.refund_eligibility",
+                ],
+                required_targets_seen=[
+                    "account_state",
+                    "invoice",
+                    "charges",
+                    "payment_status",
+                    "credit_ledger",
+                    "usage",
+                    "policy",
+                    "prior_financial_actions",
+                ],
+            ),
+        ),
+        governed_trace(
+            id="trace-2042-read-evidence",
+            agent_run_id="RUN-2042",
+            sequence=3,
             category="read.billing_evidence",
             risk="Low",
             label="Collected Duplicate Charge billing evidence",
@@ -710,7 +839,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-2042-prior-actions",
             agent_run_id="RUN-2042",
-            sequence=2,
+            sequence=4,
             category="read.prior_financial_actions",
             risk="Low",
             label="Checked prior approvals and mock mutations",
@@ -723,7 +852,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-2042-decision",
             agent_run_id="RUN-2042",
-            sequence=3,
+            sequence=5,
             category="decision.refund_eligibility",
             risk="Medium",
             label="Evaluated duplicate-charge refund eligibility",
@@ -744,7 +873,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-2042-draft",
             agent_run_id="RUN-2042",
-            sequence=4,
+            sequence=6,
             category="draft.resolution",
             risk="Low",
             label="Drafted governed resolution",
@@ -759,7 +888,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-2042-approval",
             agent_run_id="RUN-2042",
-            sequence=5,
+            sequence=7,
             category="approval.create_request",
             risk="Medium",
             label="Created approval request for financial action",
@@ -772,9 +901,104 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
     ],
     "RUN-1137": [
         governed_trace(
-            id="trace-1137-read-evidence",
+            id="trace-1137-plan",
             agent_run_id="RUN-1137",
             sequence=1,
+            category="plan.investigation",
+            risk="Low",
+            label="LLM proposed investigation tool plan",
+            input_summary=(
+                "Requested investigation plan for TCK-1137 before reading billing evidence."
+            ),
+            output_summary="Investigate credit/refund evidence and backend eligibility.",
+            evidence_refs=["ticket TCK-1137"],
+            policy_refs=[],
+            approval_refs=[],
+            governance_metadata_extra=plan_investigation_metadata(
+                plan_summary="Investigate credit/refund evidence and backend eligibility.",
+                steps=[
+                    {
+                        "step_id": "evidence",
+                        "action_id": "read.credit_refund_evidence",
+                        "evidence_targets": [
+                            "account_state",
+                            "invoice",
+                            "charges",
+                            "payment_status",
+                            "credit_ledger",
+                            "subscription",
+                            "policy",
+                        ],
+                        "rationale": (
+                            "Read credit ledger, subscription, invoice, charge, and "
+                            "policy evidence."
+                        ),
+                        "depends_on": [],
+                    },
+                    {
+                        "step_id": "prior",
+                        "action_id": "read.prior_financial_actions",
+                        "evidence_targets": ["prior_financial_actions"],
+                        "rationale": (
+                            "Check prior financial actions to avoid duplicate credits or refunds."
+                        ),
+                        "depends_on": [],
+                    },
+                    {
+                        "step_id": "decision",
+                        "action_id": "decision.credit_refund_eligibility",
+                        "evidence_targets": [
+                            "invoice",
+                            "charges",
+                            "credit_ledger",
+                            "subscription",
+                            "policy",
+                            "prior_financial_actions",
+                        ],
+                        "rationale": (
+                            "Ask the backend decision tool to classify credit/refund eligibility."
+                        ),
+                        "depends_on": ["evidence", "prior"],
+                    },
+                ],
+            ),
+        ),
+        governed_trace(
+            id="trace-1137-plan-verify",
+            agent_run_id="RUN-1137",
+            sequence=2,
+            category="plan.verify",
+            risk="Low",
+            label="Backend verified investigation plan contract",
+            input_summary=(
+                "Checked planned actions, evidence targets, dependencies, and safety scope."
+            ),
+            output_summary="Plan verifier accepted the investigation plan.",
+            evidence_refs=["ticket TCK-1137"],
+            policy_refs=[],
+            approval_refs=[],
+            governance_metadata_extra=plan_verify_metadata(
+                normalized_action_ids=[
+                    "read.credit_refund_evidence",
+                    "read.prior_financial_actions",
+                    "decision.credit_refund_eligibility",
+                ],
+                required_targets_seen=[
+                    "account_state",
+                    "invoice",
+                    "charges",
+                    "payment_status",
+                    "credit_ledger",
+                    "subscription",
+                    "policy",
+                    "prior_financial_actions",
+                ],
+            ),
+        ),
+        governed_trace(
+            id="trace-1137-read-evidence",
+            agent_run_id="RUN-1137",
+            sequence=3,
             category="read.credit_refund_evidence",
             risk="Low",
             label="Collected Credit/Refund dispute evidence",
@@ -801,7 +1025,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-1137-prior-actions",
             agent_run_id="RUN-1137",
-            sequence=2,
+            sequence=4,
             category="read.prior_financial_actions",
             risk="Low",
             label="Checked prior approvals and mock mutations",
@@ -814,7 +1038,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-1137-decision",
             agent_run_id="RUN-1137",
-            sequence=3,
+            sequence=5,
             category="decision.credit_refund_eligibility",
             risk="Medium",
             label="Evaluated credit/refund eligibility",
@@ -837,7 +1061,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-1137-draft",
             agent_run_id="RUN-1137",
-            sequence=4,
+            sequence=6,
             category="draft.resolution",
             risk="Low",
             label="Drafted governed resolution",
@@ -852,7 +1076,7 @@ TRACES: dict[str, list[ToolTraceSummary]] = {
         governed_trace(
             id="trace-1137-approval",
             agent_run_id="RUN-1137",
-            sequence=5,
+            sequence=7,
             category="approval.create_request",
             risk="Medium",
             label="Created approval request for financial action",

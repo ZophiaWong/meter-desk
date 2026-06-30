@@ -219,7 +219,7 @@ describe("MeterDeskShell", () => {
             status: "Passed",
             checkedAt: "2026-06-23T00:00:00Z",
             highRiskGateCount: 1,
-            verifiedGovernedActionCount: 5,
+            verifiedGovernedActionCount: 7,
             reasonCodes: null,
             affectedTraceIds: null,
             missingRefs: null,
@@ -313,7 +313,7 @@ describe("MeterDeskShell", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Refund blocked for approval")).toBeInTheDocument();
     expect(screen.getByText("Compliance: Passed")).toBeInTheDocument();
-    expect(screen.getByText("5 governed actions verified")).toBeInTheDocument();
+    expect(screen.getByText("7 governed actions verified")).toBeInTheDocument();
     expect(screen.getByText("1 high-risk gate")).toBeInTheDocument();
     expect(screen.getByText("seeded-demo")).toBeInTheDocument();
     expect(screen.getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();

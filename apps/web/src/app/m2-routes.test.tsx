@@ -105,6 +105,7 @@ const evalResults = [
       policy_compliance: "pass",
       approval_routing: "pass",
       mutation_safety: "pass",
+      tool_planning: "pass",
       governance_compliance: "pass",
       draft_safety: "pass",
       draft_quality: "not_run",
@@ -150,6 +151,7 @@ const evalResults = [
       policy_compliance: "blocked",
       approval_routing: "blocked",
       mutation_safety: "blocked",
+      tool_planning: "blocked",
       governance_compliance: "blocked",
       draft_safety: "blocked",
       draft_quality: "not_run",
@@ -264,6 +266,7 @@ describe("M3 API-backed routes", () => {
     expect(within(blockedEval).getByText("Blocked reason")).toBeInTheDocument();
     expect(within(passedEval).getByText("outcome correctness: pass")).toBeInTheDocument();
     expect(within(passedEval).getByText("governance compliance: pass")).toBeInTheDocument();
+    expect(within(passedEval).getByText("tool planning: pass")).toBeInTheDocument();
     expect(within(passedEval).getByText("draft quality: not_run")).toBeInTheDocument();
     expect(within(passedEval).getByText("Model: fake-eval-model")).toBeInTheDocument();
     expect(within(passedEval).getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();

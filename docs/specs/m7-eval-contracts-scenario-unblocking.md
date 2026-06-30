@@ -101,13 +101,16 @@ checks failed and which traces or records caused the failure.
 
 ## LLM Boundary
 
-LLM use in M7 is limited to:
+M7 itself limits LLM use to:
 
 - draft quality review for clarity, tone, and unsupported promises.
 - optional human-readable summaries of deterministic failed checks.
 
 LLM output may explain deterministic failures, but it must not generate the pass or fail result for
 governance, evidence, policy, approval routing, mutation safety, or action fingerprint checks.
+
+M9 adds a separate bounded planner before governed reads and decisions. Its plan is evaluated by
+deterministic `tool_planning` checks and does not decide outcomes, approvals, or mutations.
 
 ## Scenario Readiness Matrix
 

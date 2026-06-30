@@ -226,6 +226,29 @@ Turn the working system into a coherent portfolio-ready project.
 - Keep MCP adapter readiness at the tool-layer boundary without requiring a real MCP server.
 - Avoid pgvector, large-scale RAG, multi-provider gateways, and enterprise multi-tenancy unless a later approved spec changes scope.
 
+## M9: LLM-Planned Tool Plan
+
+Focused implementation spec: `docs/specs/m9-llm-planned-tool-plan.md`.
+
+### Goal
+
+Add bounded LLM investigation planning before governed read and decision tools execute, while keeping
+backend verification, deterministic outcomes, approval gates, and mutation safety authoritative.
+
+### Deliverables
+
+- Strict provider output for investigation plans.
+- Backend Plan Contract Verifier for supported scenario contracts.
+- `plan.investigation` and `plan.verify` governed traces.
+- Blocking deterministic `tool_planning` eval dimension.
+- Seeded no-key baseline traces for Duplicate Charge and Credit/Refund Dispute.
+
+### Explicit Deferrals
+
+- Do not split existing coarse read tools into granular tool schemas.
+- Do not let the planner drive draft, approval, or mutation actions.
+- Do not add Usage Spike planning until its governed runner is implemented.
+
 ## When To Add More Specs
 
 Add a focused spec before implementing any of these:

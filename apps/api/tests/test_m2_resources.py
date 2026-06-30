@@ -147,6 +147,8 @@ async def test_m5_seed_starts_with_portfolio_baseline_governance_artifacts() -> 
     assert traces_response.status_code == 200
     traces = traces_response.json()
     assert [trace["category"] for trace in traces] == [
+        "plan.investigation",
+        "plan.verify",
         "read.billing_evidence",
         "read.prior_financial_actions",
         "decision.refund_eligibility",

@@ -51,6 +51,7 @@ Start with these documents before implementation:
 - [M5 Polish + Portfolio Readiness](docs/specs/m5-polish-portfolio-readiness.md) - seeded demo baseline, live reset, and interview walkthrough expectations
 - [M6 Governed Runtime + Financial Safety](docs/specs/m6-governed-runtime-financial-safety.md) - planned upgrade from trace kernel to governed action runtime
 - [M7 Eval Contracts + Scenario Unblocking](docs/specs/m7-eval-contracts-scenario-unblocking.md) - planned compliance checks and supporting scenario readiness gates
+- [M9 LLM-Planned Tool Plan](docs/specs/m9-llm-planned-tool-plan.md) - LLM investigation planning with backend contract verification
 
 ## Local Setup
 

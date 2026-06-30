@@ -18,6 +18,8 @@ Tool names, JSON schemas, and exact payloads are deferred. The category boundari
 
 Current governed action ids include Duplicate Charge and Credit/Refund Dispute paths:
 
+- `plan.investigation`
+- `plan.verify`
 - `read.billing_evidence`
 - `read.credit_refund_evidence`
 - `read.prior_financial_actions`
@@ -77,6 +79,7 @@ Every agent run should preserve enough trace context for audit and eval:
 - agent run identifier.
 - ticket identifier.
 - model and prompt version when available.
+- LLM investigation plan, tool rationale, evidence targets, and verifier accept/block result.
 - tool category and permission level.
 - input summary.
 - output summary.

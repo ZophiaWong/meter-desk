@@ -7,6 +7,13 @@ from meterdesk_api.agent.decision import (
     DuplicateChargeDecisionTool,
 )
 from meterdesk_api.agent.governance import GovernanceKernel
+from meterdesk_api.agent.planning import (
+    InvestigationPlan,
+    PlanContractVerifier,
+    PlanVerifierFeedbackItem,
+    VerifiedInvestigationPlan,
+    build_planner_input,
+)
 from meterdesk_api.agent.provider import (
     AgentDraftOutput,
     AgentProviderError,
@@ -20,6 +27,7 @@ from meterdesk_api.schemas import AgentRunSummary
 
 DUPLICATE_CHARGE_PROMPT_VERSION = "m3-duplicate-charge-v1"
 CREDIT_REFUND_PROMPT_VERSION = "m8-credit-refund-v1"
+PLAN_VERIFIER_BLOCKED_ERROR = "Plan verifier blocked investigation plan"
 
 
 class AgentLoopError(MeterDeskAPIError):
@@ -59,6 +67,7 @@ class AgentRunOrchestrator:
         self._decision_tool = DuplicateChargeDecisionTool()
         self._credit_refund_decision_tool = CreditRefundDecisionTool()
         self._governance = GovernanceKernel(repository)
+        self._plan_verifier = PlanContractVerifier()
 
     async def run_ticket(self, ticket_id: str) -> AgentRunSummary | None:
         ticket = await self._repository.get_ticket(ticket_id)
@@ -86,16 +95,26 @@ class AgentRunOrchestrator:
                 details={"action_fingerprint": pending_approval.action_fingerprint}
             )
 
-        evidence = await self._repository.get_billing_evidence(ticket_id)
-        if evidence is None:
-            return None
-
         run = await self._repository.create_agent_run(
             ticket_id=ticket_id,
             source="m3_governed_loop",
             model=self._provider.model,
             prompt_version=DUPLICATE_CHARGE_PROMPT_VERSION,
         )
+        verified_plan, planning_error = await self._create_verified_investigation_plan(
+            ticket=ticket,
+            agent_run_id=run.id,
+        )
+        if verified_plan is None:
+            return await self._repository.fail_agent_run(
+                run.id,
+                planning_error or PLAN_VERIFIER_BLOCKED_ERROR,
+            )
+
+        evidence = await self._repository.get_billing_evidence(ticket_id)
+        if evidence is None:
+            return await self._repository.fail_agent_run(run.id, "Billing evidence was not found.")
+
         await self._governance.record_action(
             agent_run_id=run.id,
             policy_id="read.billing_evidence",
@@ -229,16 +248,26 @@ class AgentRunOrchestrator:
                 "Credit/Refund runner only supports Credit/Refund tickets."
             )
 
-        evidence = await self._repository.get_billing_evidence(ticket_id)
-        if evidence is None:
-            return None
-
         run = await self._repository.create_agent_run(
             ticket_id=ticket_id,
             source="m8_credit_refund_loop",
             model=self._provider.model,
             prompt_version=CREDIT_REFUND_PROMPT_VERSION,
         )
+        verified_plan, planning_error = await self._create_verified_investigation_plan(
+            ticket=ticket,
+            agent_run_id=run.id,
+        )
+        if verified_plan is None:
+            return await self._repository.fail_agent_run(
+                run.id,
+                planning_error or PLAN_VERIFIER_BLOCKED_ERROR,
+            )
+
+        evidence = await self._repository.get_billing_evidence(ticket_id)
+        if evidence is None:
+            return await self._repository.fail_agent_run(run.id, "Billing evidence was not found.")
+
         policy_refs = [policy.citation for policy in evidence.policies] or [
             evidence.policy.citation
         ]
@@ -378,6 +407,136 @@ class AgentRunOrchestrator:
             )
 
         return run
+
+    async def _create_verified_investigation_plan(
+        self,
+        *,
+        ticket,
+        agent_run_id: str,
+    ) -> tuple[VerifiedInvestigationPlan | None, str | None]:
+        planner_input = build_planner_input(ticket)
+        verifier_feedback: list[PlanVerifierFeedbackItem] = []
+        blocked_attempt_reason_codes: list[list[str]] = []
+        blocked_attempt_feedback: list[list[dict[str, object]]] = []
+        last_plan: InvestigationPlan | None = None
+        last_result: VerifiedInvestigationPlan | None = None
+
+        for attempt_index in range(2):
+            try:
+                plan = await self._provider.create_investigation_plan(
+                    planner_input,
+                    verifier_feedback=verifier_feedback,
+                )
+            except AgentProviderError as error:
+                return None, f"Provider failed to create investigation plan: {error}"
+
+            result = self._plan_verifier.verify(ticket, plan)
+            last_plan = plan
+            last_result = result
+            if result.status == "accepted":
+                await self._record_plan_traces(
+                    agent_run_id=agent_run_id,
+                    ticket_id=ticket.id,
+                    plan=plan,
+                    result=result,
+                    attempt_count=attempt_index + 1,
+                    blocked_attempt_reason_codes=blocked_attempt_reason_codes,
+                    blocked_attempt_feedback=blocked_attempt_feedback,
+                )
+                return result, None
+
+            blocked_attempt_reason_codes.append(result.reason_codes)
+            blocked_attempt_feedback.append(
+                [item.model_dump(exclude_none=True) for item in result.feedback_items]
+            )
+            verifier_feedback = result.feedback_items
+
+        assert last_plan is not None
+        assert last_result is not None
+        await self._record_plan_traces(
+            agent_run_id=agent_run_id,
+            ticket_id=ticket.id,
+            plan=last_plan,
+            result=last_result,
+            attempt_count=2,
+            blocked_attempt_reason_codes=blocked_attempt_reason_codes,
+            blocked_attempt_feedback=blocked_attempt_feedback,
+        )
+        return None, PLAN_VERIFIER_BLOCKED_ERROR
+
+    async def _record_plan_traces(
+        self,
+        *,
+        agent_run_id: str,
+        ticket_id: str,
+        plan: InvestigationPlan,
+        result: VerifiedInvestigationPlan,
+        attempt_count: int,
+        blocked_attempt_reason_codes: list[list[str]],
+        blocked_attempt_feedback: list[list[dict[str, object]]],
+    ) -> None:
+        plan_metadata = {
+            "planning": {
+                "status": "proposed",
+                "attempt_count": attempt_count,
+                "plan_summary": plan.plan_summary,
+                "steps": [step.model_dump() for step in plan.steps],
+                "evidence_gaps": plan.evidence_gaps,
+                "stop_conditions": plan.stop_conditions,
+                "blocked_attempt_reason_codes": blocked_attempt_reason_codes,
+                "blocked_attempt_feedback": blocked_attempt_feedback,
+            }
+        }
+        await self._governance.record_action(
+            agent_run_id=agent_run_id,
+            policy_id="plan.investigation",
+            label="LLM proposed investigation tool plan",
+            input_summary=(
+                f"Requested investigation plan for {ticket_id} before reading billing evidence."
+            ),
+            output_summary=plan.plan_summary,
+            evidence_refs=[f"ticket {ticket_id}"],
+            policy_refs=[],
+            approval_refs=[],
+            governance_metadata_extra=plan_metadata,
+        )
+
+        verify_error_state = result.reason_codes[0] if result.status == "blocked" else None
+        verify_metadata = {
+            "planning": {
+                "status": result.status,
+                "attempt_count": attempt_count,
+                "normalized_action_ids": result.normalized_action_ids,
+                "required_targets_seen": result.required_targets_seen,
+                "reason_codes": result.reason_codes,
+                "blocked_attempt_reason_codes": blocked_attempt_reason_codes,
+                "feedback_items": [
+                    item.model_dump(exclude_none=True) for item in result.feedback_items
+                ],
+                "blocked_attempt_feedback": blocked_attempt_feedback,
+            }
+        }
+        if verify_error_state is not None:
+            verify_metadata["reason_code"] = verify_error_state
+
+        await self._governance.record_action(
+            agent_run_id=agent_run_id,
+            policy_id="plan.verify",
+            label="Backend verified investigation plan contract",
+            input_summary=(
+                "Checked planned actions, evidence targets, dependencies, and safety scope."
+            ),
+            output_summary=(
+                "Plan verifier accepted the investigation plan."
+                if result.status == "accepted"
+                else "Plan verifier blocked the investigation plan."
+            ),
+            evidence_refs=[f"ticket {ticket_id}"],
+            policy_refs=[],
+            approval_refs=[],
+            error_state=verify_error_state,
+            governance_metadata_extra=verify_metadata,
+        )
 
     async def _create_resolution_with_retry(
         self,

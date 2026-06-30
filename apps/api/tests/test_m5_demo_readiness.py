@@ -52,7 +52,11 @@ async def test_seeded_duplicate_charge_baseline_traces_include_governance_metada
         "allowed",
         "allowed",
         "allowed",
+        "allowed",
+        "allowed",
     ]
+    assert [trace.category for trace in traces[:2]] == ["plan.investigation", "plan.verify"]
+    assert traces[1].governance_metadata["planning"]["status"] == "accepted"
     assert traces[-1].governance_metadata["policy_id"] == "approval.create_request"
 
 
@@ -72,6 +76,8 @@ async def test_seeded_credit_refund_baseline_passes_compliance_with_pending_cred
     assert runs[0].final_outcome == "goodwill_credit_requires_approval"
     assert traces is not None
     assert [trace.category for trace in traces] == [
+        "plan.investigation",
+        "plan.verify",
         "read.credit_refund_evidence",
         "read.prior_financial_actions",
         "decision.credit_refund_eligibility",
@@ -90,4 +96,4 @@ async def test_seeded_credit_refund_baseline_passes_compliance_with_pending_cred
     assert compliance is not None
     assert compliance.status == "passed"
     assert compliance.high_risk_gate_count == 1
-    assert compliance.verified_governed_action_count == 5
+    assert compliance.verified_governed_action_count == 7
