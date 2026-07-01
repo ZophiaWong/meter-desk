@@ -170,6 +170,23 @@ const evalResults = [
   },
 ];
 
+const evalRegressionSummary = {
+  baseline_run_id: "EVAL-RUN-BASELINE-M10",
+  baseline_name: "M10 seeded canonical baseline",
+  latest_run_id: null,
+  latest_run_type: null,
+  latest_run_completed_at: null,
+  counts: {
+    regressed: 0,
+    improved: 0,
+    unchanged: 0,
+    incomparable: 0,
+    coverage_gap: 0,
+  },
+  blocking_pass_rate: "0/0",
+  cases: [],
+};
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -235,6 +252,7 @@ describe("M3 API-backed routes", () => {
     mockApi({
       "/eval-cases": evalCases,
       "/eval-results": [],
+      "/eval-regression/summary": evalRegressionSummary,
     });
 
     render(await EvalLabPage());
@@ -250,6 +268,7 @@ describe("M3 API-backed routes", () => {
     mockApi({
       "/eval-cases": evalCases,
       "/eval-results": evalResults,
+      "/eval-regression/summary": evalRegressionSummary,
     });
 
     render(await EvalLabPage());
