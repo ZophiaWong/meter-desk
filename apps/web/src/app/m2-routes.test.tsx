@@ -218,7 +218,7 @@ describe("M3 API-backed routes", () => {
       "/tickets": tickets,
     });
 
-    render(await ApprovalsPage());
+    render(await ApprovalsPage({}));
 
     expect(screen.getByRole("heading", { name: "Approval Queue" })).toBeInTheDocument();
     expect(screen.getByText("Original refund pending approval")).toBeInTheDocument();
@@ -236,7 +236,7 @@ describe("M3 API-backed routes", () => {
       "/tickets": tickets,
     });
 
-    render(await ApprovalsPage({ searchParams: { status: "all" } }));
+    render(await ApprovalsPage({ searchParams: Promise.resolve({ status: "all" }) }));
 
     expect(screen.getByText("Approved; mock mutation executed")).toBeInTheDocument();
     expect(

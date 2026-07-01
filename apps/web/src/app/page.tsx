@@ -3,10 +3,10 @@ import { getWorkbenchScenario } from "@/lib/meterdesk-view";
 import { getSystemStatus } from "@/lib/status";
 
 type HomeProps = {
-  searchParams?: Promise<{ ticket?: string }> | { ticket?: string };
+  searchParams?: Promise<{ ticket?: string }>;
 };
 
-export default async function Home({ searchParams }: HomeProps = {}) {
+export default async function Home({ searchParams }: HomeProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const ticketId =
     typeof resolvedSearchParams.ticket === "string" ? resolvedSearchParams.ticket : undefined;

@@ -2,12 +2,12 @@ import { ApprovalQueue } from "@/components/approval-queue";
 import type { ApprovalQueueStatus } from "@/lib/meterdesk-view";
 
 type ApprovalsPageProps = {
-  searchParams?: Promise<{ status?: string }> | { status?: string };
+  searchParams?: Promise<{ status?: string }>;
 };
 
 const VALID_STATUSES = new Set(["pending", "approved", "rejected", "all"]);
 
-export default async function ApprovalsPage({ searchParams }: ApprovalsPageProps = {}) {
+export default async function ApprovalsPage({ searchParams }: ApprovalsPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const status = normalizeStatus(resolvedSearchParams.status);
   return ApprovalQueue({ status });

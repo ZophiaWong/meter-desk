@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getEvalRunComparison, type EvalRegressionCaseResource } from "@/lib/meterdesk-api";
 
 type PageProps = {
-  params: Promise<{ runId: string }> | { runId: string };
+  params: Promise<{ runId: string }>;
 };
 
 export default async function EvalRunDiffPage({ params }: PageProps) {
