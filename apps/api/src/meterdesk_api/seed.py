@@ -12,6 +12,8 @@ from meterdesk_api.models import (
     CustomerAccount,
     EvalCase,
     EvalResult,
+    EvalResultSnapshot,
+    EvalSuiteRun,
     Invoice,
     MockMutation,
     PolicyRule,
@@ -30,7 +32,9 @@ from meterdesk_api.seed_data import (
     EVAL_BILLING_EVIDENCE,
     EVAL_CASES,
     EVAL_FIXTURE_TICKET_IDS,
+    EVAL_RESULT_SNAPSHOTS,
     EVAL_RESULTS,
+    EVAL_RUNS,
     EVAL_TICKET_DETAILS,
     MOCK_MUTATIONS,
     TICKET_DETAILS,
@@ -40,6 +44,8 @@ from meterdesk_api.seed_data import (
 )
 
 DELETE_ORDER = [
+    EvalResultSnapshot,
+    EvalSuiteRun,
     EvalResult,
     MockMutation,
     ToolTrace,
@@ -75,6 +81,14 @@ async def seed_demo_data() -> None:
                     delete(EvalResult).where(
                         EvalResult.case_id.in_([case.id for case in EVAL_CASES])
                     )
+                )
+                await session.execute(
+                    delete(EvalResultSnapshot).where(
+                        EvalResultSnapshot.case_id.in_([case.id for case in EVAL_CASES])
+                    )
+                )
+                await session.execute(
+                    delete(EvalSuiteRun).where(EvalSuiteRun.seed_marker == DEMO_SEED_MARKER)
                 )
                 await session.execute(
                     delete(EvalResult).where(EvalResult.agent_run_id.in_(demo_agent_run_ids))
@@ -439,6 +453,42 @@ async def seed_demo_data() -> None:
                         seed_marker=DEMO_SEED_MARKER,
                     )
                     for result in EVAL_RESULTS
+                )
+                session.add_all(
+                    EvalSuiteRun(
+                        id=run.id,
+                        run_type=run.run_type,
+                        status=run.status,
+                        summary=run.summary,
+                        baseline_name=run.baseline_name,
+                        case_id=run.case_id,
+                        started_at=run.started_at,
+                        completed_at=run.completed_at,
+                        seed_marker=DEMO_SEED_MARKER,
+                    )
+                    for run in EVAL_RUNS
+                )
+                await session.flush()
+
+                session.add_all(
+                    EvalResultSnapshot(
+                        id=snapshot.id,
+                        eval_run_id=snapshot.eval_run_id,
+                        result_id=snapshot.result_id,
+                        case_id=snapshot.case_id,
+                        agent_run_id=snapshot.agent_run_id,
+                        snapshot_type=snapshot.snapshot_type,
+                        status=snapshot.status,
+                        summary=snapshot.summary,
+                        dimension_scores=snapshot.dimension_scores,
+                        details=snapshot.details,
+                        trace_signature=snapshot.trace_signature,
+                        version_snapshot=snapshot.version_snapshot,
+                        explanations=snapshot.explanations,
+                        created_at=snapshot.created_at,
+                        seed_marker=DEMO_SEED_MARKER,
+                    )
+                    for snapshot in EVAL_RESULT_SNAPSHOTS
                 )
     finally:
         await engine.dispose()

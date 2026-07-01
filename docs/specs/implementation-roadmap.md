@@ -249,6 +249,32 @@ backend verification, deterministic outcomes, approval gates, and mutation safet
 - Do not let the planner drive draft, approval, or mutation actions.
 - Do not add Usage Spike planning until its governed runner is implemented.
 
+## M10: Eval Regression History + Model/Prompt Diff
+
+Focused implementation spec: `docs/specs/m10-eval-regression-history.md`.
+
+### Goal
+
+Make Eval Lab answer whether governed agent quality improved, regressed, or became incomparable
+against a seeded canonical baseline.
+
+### Deliverables
+
+- Immutable eval run and case result snapshots.
+- Seeded canonical baseline snapshots for all eval cases.
+- Backend-computed latest-vs-baseline comparison labels and aggregate counts.
+- Compact model, prompt fingerprint, policy, tool-policy, governance-schema, and grader-version
+  diffs.
+- Eval Lab overview summary and focused run diff route.
+
+### Explicit Deferrals
+
+- Do not add arbitrary pairwise run comparison.
+- Do not add manual baseline promotion.
+- Do not store or render full prompt text diffs.
+- Do not build full trace replay, model leaderboards, multi-provider benchmarking, or online
+  monitoring.
+
 ## When To Add More Specs
 
 Add a focused spec before implementing any of these:

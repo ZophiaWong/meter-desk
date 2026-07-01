@@ -14,6 +14,7 @@ from meterdesk_api.agent.runtime import (
 )
 from meterdesk_api.decision_summary import build_agent_decision_summary
 from meterdesk_api.eval.judge import EvalDraftJudge
+from meterdesk_api.eval.regression import EvalRegressionService
 from meterdesk_api.eval.runner import EvalCaseNotFound, EvalRunner
 from meterdesk_api.repositories import get_repository
 from meterdesk_api.schemas import (
@@ -24,7 +25,10 @@ from meterdesk_api.schemas import (
     ApprovalSummary,
     BillingEvidence,
     EvalCaseSummary,
+    EvalRegressionSummary,
+    EvalResultSnapshotSummary,
     EvalResultSummary,
+    EvalRunSummary,
     MockMutationSummary,
     RunComplianceResult,
     TicketDetail,
@@ -201,6 +205,41 @@ async def list_eval_results(
     repository=REPOSITORY_DEPENDENCY,
 ) -> list[EvalResultSummary]:
     return await repository.list_eval_results()
+
+
+@router.get("/eval-runs", response_model=list[EvalRunSummary])
+async def list_eval_runs(
+    repository=REPOSITORY_DEPENDENCY,
+) -> list[EvalRunSummary]:
+    return await repository.list_eval_runs()
+
+
+@router.get("/eval-regression/summary", response_model=EvalRegressionSummary)
+async def get_eval_regression_summary(
+    repository=REPOSITORY_DEPENDENCY,
+) -> EvalRegressionSummary:
+    return await EvalRegressionService(repository).latest_summary()
+
+
+@router.get("/eval-runs/{eval_run_id}/comparison", response_model=EvalRegressionSummary)
+async def get_eval_run_comparison(
+    eval_run_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+) -> EvalRegressionSummary:
+    if await repository.get_eval_run(eval_run_id) is None:
+        raise HTTPException(status_code=404, detail="Eval run not found")
+    return await EvalRegressionService(repository).summary_for_run(eval_run_id)
+
+
+@router.get("/eval-cases/{case_id}/history", response_model=list[EvalResultSnapshotSummary])
+async def list_eval_case_history(
+    case_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+) -> list[EvalResultSnapshotSummary]:
+    if await repository.get_eval_case(case_id) is None:
+        raise HTTPException(status_code=404, detail="Eval case not found")
+    snapshots = await repository.list_eval_result_snapshots(case_id=case_id)
+    return list(reversed(snapshots))
 
 
 @router.post(

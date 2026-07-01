@@ -298,6 +298,60 @@ export type EvalResultResource = {
   details: EvalResultDetailsResource;
 };
 
+export type EvalRunResource = {
+  id: string;
+  run_type: "baseline" | "suite" | "case_rerun";
+  status: string;
+  summary: string;
+  baseline_name: string | null;
+  case_id: string | null;
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type EvalResultSnapshotResource = {
+  id: string;
+  eval_run_id: string;
+  result_id: string;
+  case_id: string;
+  agent_run_id: string | null;
+  snapshot_type: "baseline" | "current";
+  status: string;
+  summary: string;
+  dimension_scores: Record<string, string>;
+  details: EvalResultDetailsResource;
+  trace_signature: Record<string, unknown>;
+  version_snapshot: Record<string, unknown>;
+  explanations: string[];
+  created_at: string;
+};
+
+export type EvalRegressionCaseResource = {
+  case_id: string;
+  scenario: Scenario;
+  title: string;
+  label: "regressed" | "improved" | "unchanged" | "incomparable" | "coverage_gap";
+  baseline_status: string | null;
+  current_status: string | null;
+  baseline_snapshot_id: string | null;
+  current_snapshot_id: string | null;
+  dimension_diffs: Array<{ dimension: string; baseline: string | null; current: string | null }>;
+  version_diffs: Array<{ field: string; baseline: unknown; current: unknown }>;
+  trace_diff: Record<string, unknown>;
+  explanations: string[];
+};
+
+export type EvalRegressionSummaryResource = {
+  baseline_run_id: string | null;
+  baseline_name: string | null;
+  latest_run_id: string | null;
+  latest_run_type: "baseline" | "suite" | "case_rerun" | null;
+  latest_run_completed_at: string | null;
+  counts: Record<"regressed" | "improved" | "unchanged" | "incomparable" | "coverage_gap", number>;
+  blocking_pass_rate: string;
+  cases: EvalRegressionCaseResource[];
+};
+
 export class MeterDeskApiError extends Error {
   constructor(
     message: string,
@@ -455,6 +509,25 @@ export async function getEvalCases(apiBaseUrl?: string) {
 
 export async function getEvalResults(apiBaseUrl?: string) {
   return fetchApi<EvalResultResource[]>("/eval-results", apiBaseUrl);
+}
+
+export async function getEvalRegressionSummary(apiBaseUrl?: string) {
+  return fetchApi<EvalRegressionSummaryResource>("/eval-regression/summary", apiBaseUrl);
+}
+
+export async function getEvalRuns(apiBaseUrl?: string) {
+  return fetchApi<EvalRunResource[]>("/eval-runs", apiBaseUrl);
+}
+
+export async function getEvalRunComparison(evalRunId: string, apiBaseUrl?: string) {
+  return fetchApi<EvalRegressionSummaryResource>(
+    `/eval-runs/${evalRunId}/comparison`,
+    apiBaseUrl,
+  );
+}
+
+export async function getEvalCaseHistory(caseId: string, apiBaseUrl?: string) {
+  return fetchApi<EvalResultSnapshotResource[]>(`/eval-cases/${caseId}/history`, apiBaseUrl);
 }
 
 export async function runEvalCase(caseId: string, apiBaseUrl?: string) {

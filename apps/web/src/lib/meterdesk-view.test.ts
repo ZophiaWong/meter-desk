@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getDefaultWorkbenchScenario, getWorkbenchScenario } from "./meterdesk-view";
+import { getDefaultWorkbenchScenario, getEvalLabView, getWorkbenchScenario } from "./meterdesk-view";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -102,6 +102,41 @@ describe("meterdesk-view", () => {
       policyCitation: "TRIAL-CREDIT-003 v2026.03",
     });
     expect(scenario.traces[0].category).toBe("plan.verify");
+  });
+
+  it("maps Eval Lab regression summary into compact overview and case labels", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const rawUrl = input instanceof Request ? input.url : input.toString();
+        const url = new URL(rawUrl);
+        const payload = evalLabPayloads[url.pathname];
+        if (payload === undefined) {
+          return new Response("Not found", { status: 404 });
+        }
+        return new Response(JSON.stringify(payload), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }),
+    );
+
+    const view = await getEvalLabView();
+
+    expect(view.regressionSummary).toEqual({
+      baselineName: "M10 seeded canonical baseline",
+      latestRunId: "eval-run-latest",
+      latestRunHref: "/eval-lab/runs/eval-run-latest",
+      blockingPassRate: "1/1",
+      counts: "0 regressed, 0 improved, 1 unchanged, 5 incomparable, 3 coverage gaps",
+    });
+    expect(view.cases[0]).toMatchObject({
+      id: "eval-duplicate-charge-001",
+      regressionLabel: "Unchanged",
+      regressionTone: "success",
+      regressionSummary: "No blocking regression versus seeded baseline.",
+      runDetailHref: "/eval-lab/runs/eval-run-latest",
+    });
   });
 });
 
@@ -529,4 +564,70 @@ const creditRefundPayloads: Record<string, unknown> = {
     },
   ],
   "/mock-mutations": [],
+};
+
+const evalLabPayloads: Record<string, unknown> = {
+  "/eval-cases": [
+    {
+      id: "eval-duplicate-charge-001",
+      scenario: "duplicate_charge",
+      title: "Duplicate Charge golden path",
+      description: "Same invoice has two captured charges.",
+      expected_outcome: "confirmed_duplicate_charge",
+      required_evidence: ["invoice", "charges", "policy"],
+      policy_refs: ["REFUND-DUP-001 v2026.02"],
+      expected_approval_routing: "refund_requires_approval",
+      fixture_ticket_id: "EVAL-TCK-DUP-001",
+    },
+  ],
+  "/eval-results": [
+    {
+      id: "EVAL-RESULT-1",
+      case_id: "eval-duplicate-charge-001",
+      agent_run_id: "RUN-EVAL-1",
+      status: "passed",
+      summary: "Deterministic eval checks passed.",
+      dimension_scores: { outcome_correctness: "pass" },
+      details: {
+        failed_checks: [],
+        missing_evidence: [],
+        trace_refs: [{ id: "trace-1", category: "plan.verify" }],
+        model: "fake-eval-model",
+        prompt_version: "m3-duplicate-charge-v1",
+      },
+    },
+  ],
+  "/eval-regression/summary": {
+    baseline_run_id: "EVAL-RUN-BASELINE-M10",
+    baseline_name: "M10 seeded canonical baseline",
+    latest_run_id: "eval-run-latest",
+    latest_run_type: "case_rerun",
+    latest_run_completed_at: "2026-07-01T00:00:00Z",
+    counts: {
+      regressed: 0,
+      improved: 0,
+      unchanged: 1,
+      incomparable: 5,
+      coverage_gap: 3,
+    },
+    blocking_pass_rate: "1/1",
+    cases: [
+      {
+        case_id: "eval-duplicate-charge-001",
+        scenario: "duplicate_charge",
+        title: "Duplicate Charge golden path",
+        label: "unchanged",
+        baseline_status: "passed",
+        current_status: "passed",
+        baseline_snapshot_id: "EVS-BASELINE",
+        current_snapshot_id: "EVS-CURRENT",
+        dimension_diffs: [],
+        version_diffs: [
+          { field: "model", baseline: "seeded-demo", current: "fake-eval-model" },
+        ],
+        trace_diff: { added_categories: [], removed_categories: [] },
+        explanations: ["No blocking regression versus seeded baseline."],
+      },
+    ],
+  },
 };

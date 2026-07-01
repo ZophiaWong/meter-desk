@@ -4,6 +4,7 @@ import {
   getBillingEvidence,
   getDecisionSummary,
   getEvalCases,
+  getEvalRegressionSummary,
   getEvalResults,
   getGovernanceToolPolicies,
   getMockMutations,
@@ -14,6 +15,7 @@ import {
   type ApprovalResource,
   type AgentDecisionSummaryResource,
   type EvalCaseResource,
+  type EvalRegressionCaseResource,
   type RunComplianceResource,
   type TicketSummaryResource,
 } from "@/lib/meterdesk-api";
@@ -217,6 +219,23 @@ export type EvalCaseView = {
   judgeNotes: string | null;
   model: string | null;
   promptVersion: string | null;
+  regressionLabel: string | null;
+  regressionTone: "success" | "warning" | "danger" | "neutral" | "info";
+  regressionSummary: string | null;
+  runDetailHref: string | null;
+};
+
+export type EvalRegressionOverview = {
+  baselineName: string;
+  latestRunId: string | null;
+  latestRunHref: string | null;
+  blockingPassRate: string;
+  counts: string;
+};
+
+export type EvalLabView = {
+  regressionSummary: EvalRegressionOverview;
+  cases: EvalCaseView[];
 };
 
 export const NAV_ITEMS: ServiceSurface[] = [
@@ -378,40 +397,66 @@ export async function getApprovalQueueItems(
 }
 
 export async function getEvalCaseViews(): Promise<EvalCaseView[]> {
-  const [cases, results] = await Promise.all([getEvalCases(), getEvalResults()]);
-  const resultByCaseId = new Map(results.map((result) => [result.case_id, result]));
+  return (await getEvalLabView()).cases;
+}
 
-  return cases.map((evalCase) => {
-    const result = resultByCaseId.get(evalCase.id);
-    return {
-      id: evalCase.id,
-      scenario: scenarioLabel(evalCase.scenario),
-      title: evalCase.title,
-      description: evalCase.description,
-      expectedOutcome: evalCase.expected_outcome,
-      requiredEvidence: evalCase.required_evidence.join(", "),
-      policyRefs: evalCase.policy_refs.join(", "),
-      approvalRouting: evalCase.expected_approval_routing,
-      resultStatus: result ? titleCase(result.status) : "No run yet",
-      resultSummary: result?.summary ?? null,
-      dimensions: result
-        ? Object.entries(result.dimension_scores).map(
-            ([dimension, score]) => `${dimension.replaceAll("_", " ")}: ${score}`,
-          )
-        : [],
-      failedChecks: formatList(result?.details.failed_checks),
-      missingEvidence: formatList(result?.details.missing_evidence),
-      blockedReason: result?.details.blocked_reason ?? null,
-      blockedCode: result?.details.blocked_code ?? null,
-      readinessGaps: formatList(result?.details.readiness_gaps),
-      recommendedNextScenario: result?.details.recommended_next_scenario ?? null,
-      traceRefs: formatTraceRefs(result?.details.trace_refs),
-      complianceReasonCodes: formatList(result?.details.compliance?.reason_codes),
-      judgeNotes: formatList(result?.details.judge_notes),
-      model: result?.details.model ?? null,
-      promptVersion: result?.details.prompt_version ?? null,
-    };
-  });
+export async function getEvalLabView(): Promise<EvalLabView> {
+  const [cases, results, regression] = await Promise.all([
+    getEvalCases(),
+    getEvalResults(),
+    getEvalRegressionSummary(),
+  ]);
+  const resultByCaseId = new Map(results.map((result) => [result.case_id, result]));
+  const regressionByCaseId = new Map(regression.cases.map((item) => [item.case_id, item]));
+  const latestRunHref = regression.latest_run_id
+    ? `/eval-lab/runs/${regression.latest_run_id}`
+    : null;
+
+  return {
+    regressionSummary: {
+      baselineName: regression.baseline_name ?? "No seeded baseline",
+      latestRunId: regression.latest_run_id,
+      latestRunHref,
+      blockingPassRate: regression.blocking_pass_rate,
+      counts: formatRegressionCounts(regression.counts),
+    },
+    cases: cases.map((evalCase) => {
+      const result = resultByCaseId.get(evalCase.id);
+      const regressionCase = regressionByCaseId.get(evalCase.id);
+      return {
+        id: evalCase.id,
+        scenario: scenarioLabel(evalCase.scenario),
+        title: evalCase.title,
+        description: evalCase.description,
+        expectedOutcome: evalCase.expected_outcome,
+        requiredEvidence: evalCase.required_evidence.join(", "),
+        policyRefs: evalCase.policy_refs.join(", "),
+        approvalRouting: evalCase.expected_approval_routing,
+        resultStatus: result ? titleCase(result.status) : "No run yet",
+        resultSummary: result?.summary ?? null,
+        dimensions: result
+          ? Object.entries(result.dimension_scores).map(
+              ([dimension, score]) => `${dimension.replaceAll("_", " ")}: ${score}`,
+            )
+          : [],
+        failedChecks: formatList(result?.details.failed_checks),
+        missingEvidence: formatList(result?.details.missing_evidence),
+        blockedReason: result?.details.blocked_reason ?? null,
+        blockedCode: result?.details.blocked_code ?? null,
+        readinessGaps: formatList(result?.details.readiness_gaps),
+        recommendedNextScenario: result?.details.recommended_next_scenario ?? null,
+        traceRefs: formatTraceRefs(result?.details.trace_refs),
+        complianceReasonCodes: formatList(result?.details.compliance?.reason_codes),
+        judgeNotes: formatList(result?.details.judge_notes),
+        model: result?.details.model ?? null,
+        promptVersion: result?.details.prompt_version ?? null,
+        regressionLabel: regressionCase ? regressionLabel(regressionCase) : null,
+        regressionTone: regressionCase ? regressionTone(regressionCase.label) : "neutral",
+        regressionSummary: regressionCase?.explanations[0] ?? null,
+        runDetailHref: latestRunHref,
+      };
+    }),
+  };
 }
 
 function mapDecisionSummary(summary: AgentDecisionSummaryResource): AgentDecisionSummary {
@@ -487,6 +532,34 @@ function scenarioLabel(scenario: EvalCaseResource["scenario"]): string {
     return "Usage Spike";
   }
   return "Credit/Refund Dispute";
+}
+
+function regressionLabel(regressionCase: EvalRegressionCaseResource): string {
+  return regressionCase.label
+    .split("_")
+    .map((part) => titleCase(part))
+    .join(" ");
+}
+
+function regressionTone(
+  label: EvalRegressionCaseResource["label"],
+): EvalCaseView["regressionTone"] {
+  if (label === "regressed") {
+    return "danger";
+  }
+  if (label === "improved" || label === "unchanged") {
+    return "success";
+  }
+  if (label === "coverage_gap") {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function formatRegressionCounts(
+  counts: Record<"regressed" | "improved" | "unchanged" | "incomparable" | "coverage_gap", number>,
+) {
+  return `${counts.regressed} regressed, ${counts.improved} improved, ${counts.unchanged} unchanged, ${counts.incomparable} incomparable, ${counts.coverage_gap} coverage gaps`;
 }
 
 function formatList(value?: string[]) {

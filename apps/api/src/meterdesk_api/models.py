@@ -257,3 +257,37 @@ class EvalResult(SeededRow, Base):
     dimension_scores: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EvalSuiteRun(SeededRow, Base):
+    __tablename__ = "eval_suite_runs"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    baseline_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    case_id: Mapped[str | None] = mapped_column(ForeignKey("eval_cases.id"), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class EvalResultSnapshot(SeededRow, Base):
+    __tablename__ = "eval_result_snapshots"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    eval_run_id: Mapped[str] = mapped_column(
+        ForeignKey("eval_suite_runs.id"), nullable=False, index=True
+    )
+    result_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    case_id: Mapped[str] = mapped_column(ForeignKey("eval_cases.id"), nullable=False, index=True)
+    agent_run_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    snapshot_type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    dimension_scores: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    trace_signature: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    version_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    explanations: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

@@ -85,10 +85,13 @@ Eval Lab should be lightweight in v1 but should show real quality signals:
 
 - case list grouped by scenario.
 - latest run status.
+- latest-vs-seeded-baseline regression summary.
 - dimension scores.
 - failed checks and missing evidence.
 - links to final output and trace details.
 - prompt, model, or policy version when available.
+- compact model, prompt fingerprint, policy, tool-policy, governance-schema, and grader-version diffs
+  when comparing snapshots.
 
 Eval Lab is not a full trace replay system in v1.
 
@@ -100,6 +103,13 @@ For v1 to be considered credible:
 - Supporting scenario failures or blocked gaps should be inspectable and actionable.
 - Any approval-routing failure should be treated as severe.
 - Any mutation-before-approval behavior should be treated as a blocking failure.
+
+## Regression History
+
+Focused regression history is defined in `docs/specs/m10-eval-regression-history.md`.
+The v1 comparison model is latest non-baseline eval run versus seeded canonical baseline. Blocked
+provider or environment states are incomparable, not agent regressions. Usage Spike remains a
+coverage gap until its governed runner is implemented.
 
 ## Deferred Eval Work
 

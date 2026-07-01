@@ -18,7 +18,9 @@ from meterdesk_api.schemas import (
     ApprovalSummary,
     BillingEvidence,
     EvalCaseSummary,
+    EvalResultSnapshotSummary,
     EvalResultSummary,
+    EvalRunSummary,
     MockMutationSummary,
     MoneyAmount,
     TicketDetail,
@@ -60,6 +62,43 @@ class MeterDeskRepository(Protocol):
     async def get_eval_case(self, case_id: str) -> EvalCaseSummary | None: ...
 
     async def replace_eval_result(self, result: EvalResultSummary) -> EvalResultSummary: ...
+
+    async def create_eval_run(
+        self,
+        *,
+        run_type: str,
+        status: str,
+        summary: str,
+        baseline_name: str | None = None,
+        case_id: str | None = None,
+    ) -> EvalRunSummary: ...
+
+    async def complete_eval_run(
+        self,
+        *,
+        eval_run_id: str,
+        status: str,
+        summary: str,
+    ) -> EvalRunSummary: ...
+
+    async def list_eval_runs(self) -> list[EvalRunSummary]: ...
+
+    async def get_eval_run(self, eval_run_id: str) -> EvalRunSummary | None: ...
+
+    async def get_latest_eval_run(self) -> EvalRunSummary | None: ...
+
+    async def add_eval_result_snapshot(
+        self,
+        snapshot: EvalResultSnapshotSummary,
+    ) -> EvalResultSnapshotSummary: ...
+
+    async def list_eval_result_snapshots(
+        self,
+        *,
+        eval_run_id: str | None = None,
+        case_id: str | None = None,
+        snapshot_type: str | None = None,
+    ) -> list[EvalResultSnapshotSummary]: ...
 
     async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None: ...
 
@@ -174,6 +213,8 @@ class InMemoryMeterDeskRepository:
         mock_mutations: Sequence[MockMutationSummary],
         eval_cases: Sequence[EvalCaseSummary],
         eval_results: Sequence[EvalResultSummary],
+        eval_runs: Sequence[EvalRunSummary] = (),
+        eval_result_snapshots: Sequence[EvalResultSnapshotSummary] = (),
     ) -> None:
         self._tickets = list(tickets)
         self._ticket_details = ticket_details
@@ -184,6 +225,8 @@ class InMemoryMeterDeskRepository:
         self._mock_mutations = list(mock_mutations)
         self._eval_cases = list(eval_cases)
         self._eval_results = list(eval_results)
+        self._eval_runs = list(eval_runs)
+        self._eval_result_snapshots = list(eval_result_snapshots)
 
     async def list_tickets(self) -> list[TicketSummary]:
         return self._tickets
@@ -243,6 +286,85 @@ class InMemoryMeterDeskRepository:
         ]
         self._eval_results.append(result)
         return result
+
+    async def create_eval_run(
+        self,
+        *,
+        run_type: str,
+        status: str,
+        summary: str,
+        baseline_name: str | None = None,
+        case_id: str | None = None,
+    ) -> EvalRunSummary:
+        run = EvalRunSummary(
+            id=_new_id("eval-run"),
+            run_type=run_type,
+            status=status,
+            summary=summary,
+            baseline_name=baseline_name,
+            case_id=case_id,
+            started_at=_now(),
+            completed_at=None,
+        )
+        self._eval_runs.append(run)
+        return run
+
+    async def complete_eval_run(
+        self,
+        *,
+        eval_run_id: str,
+        status: str,
+        summary: str,
+    ) -> EvalRunSummary:
+        run = await self.get_eval_run(eval_run_id)
+        if run is None:
+            raise KeyError(eval_run_id)
+        replacement = run.model_copy(
+            update={"status": status, "summary": summary, "completed_at": _now()}
+        )
+        self._eval_runs = [
+            replacement if existing.id == eval_run_id else existing for existing in self._eval_runs
+        ]
+        return replacement
+
+    async def list_eval_runs(self) -> list[EvalRunSummary]:
+        return sorted(self._eval_runs, key=lambda run: run.started_at, reverse=True)
+
+    async def get_eval_run(self, eval_run_id: str) -> EvalRunSummary | None:
+        return next((run for run in self._eval_runs if run.id == eval_run_id), None)
+
+    async def get_latest_eval_run(self) -> EvalRunSummary | None:
+        runs = [
+            run
+            for run in self._eval_runs
+            if run.run_type != "baseline" and run.status != "running"
+        ]
+        return max(runs, key=lambda run: run.started_at, default=None)
+
+    async def add_eval_result_snapshot(
+        self,
+        snapshot: EvalResultSnapshotSummary,
+    ) -> EvalResultSnapshotSummary:
+        self._eval_result_snapshots.append(snapshot)
+        return snapshot
+
+    async def list_eval_result_snapshots(
+        self,
+        *,
+        eval_run_id: str | None = None,
+        case_id: str | None = None,
+        snapshot_type: str | None = None,
+    ) -> list[EvalResultSnapshotSummary]:
+        snapshots = self._eval_result_snapshots
+        if eval_run_id is not None:
+            snapshots = [snapshot for snapshot in snapshots if snapshot.eval_run_id == eval_run_id]
+        if case_id is not None:
+            snapshots = [snapshot for snapshot in snapshots if snapshot.case_id == case_id]
+        if snapshot_type is not None:
+            snapshots = [
+                snapshot for snapshot in snapshots if snapshot.snapshot_type == snapshot_type
+            ]
+        return sorted(snapshots, key=lambda snapshot: snapshot.created_at)
 
     async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None:
         runs = self._agent_runs.pop(fixture_ticket_id, [])
@@ -1346,6 +1468,129 @@ class SqlAlchemyMeterDeskRepository:
         await self._session.commit()
         return result
 
+    async def create_eval_run(
+        self,
+        *,
+        run_type: str,
+        status: str,
+        summary: str,
+        baseline_name: str | None = None,
+        case_id: str | None = None,
+    ) -> EvalRunSummary:
+        from meterdesk_api.models import EvalSuiteRun
+
+        run = EvalSuiteRun(
+            id=_new_id("eval-run"),
+            run_type=run_type,
+            status=status,
+            summary=summary,
+            baseline_name=baseline_name,
+            case_id=case_id,
+            started_at=_now(),
+            completed_at=None,
+            seed_marker=None,
+        )
+        self._session.add(run)
+        await self._session.commit()
+        return _eval_run_to_summary(run)
+
+    async def complete_eval_run(
+        self,
+        *,
+        eval_run_id: str,
+        status: str,
+        summary: str,
+    ) -> EvalRunSummary:
+        from meterdesk_api.models import EvalSuiteRun
+
+        run = await self._session.get(EvalSuiteRun, eval_run_id)
+        if run is None:
+            raise KeyError(eval_run_id)
+        run.status = status
+        run.summary = summary
+        run.completed_at = _now()
+        await self._session.commit()
+        return _eval_run_to_summary(run)
+
+    async def list_eval_runs(self) -> list[EvalRunSummary]:
+        from meterdesk_api.models import EvalSuiteRun
+
+        runs = (
+            await self._session.execute(
+                select(EvalSuiteRun).order_by(EvalSuiteRun.started_at.desc())
+            )
+        ).scalars()
+        return [_eval_run_to_summary(run) for run in runs]
+
+    async def get_eval_run(self, eval_run_id: str) -> EvalRunSummary | None:
+        from meterdesk_api.models import EvalSuiteRun
+
+        run = await self._session.get(EvalSuiteRun, eval_run_id)
+        return _eval_run_to_summary(run) if run is not None else None
+
+    async def get_latest_eval_run(self) -> EvalRunSummary | None:
+        from meterdesk_api.models import EvalSuiteRun
+
+        run = (
+            await self._session.execute(
+                select(EvalSuiteRun)
+                .where(EvalSuiteRun.run_type != "baseline")
+                .where(EvalSuiteRun.status != "running")
+                .order_by(EvalSuiteRun.started_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return _eval_run_to_summary(run) if run is not None else None
+
+    async def add_eval_result_snapshot(
+        self,
+        snapshot: EvalResultSnapshotSummary,
+    ) -> EvalResultSnapshotSummary:
+        from meterdesk_api.models import EvalResultSnapshot
+
+        self._session.add(
+            EvalResultSnapshot(
+                id=snapshot.id,
+                eval_run_id=snapshot.eval_run_id,
+                result_id=snapshot.result_id,
+                case_id=snapshot.case_id,
+                agent_run_id=snapshot.agent_run_id,
+                snapshot_type=snapshot.snapshot_type,
+                status=snapshot.status,
+                summary=snapshot.summary,
+                dimension_scores=snapshot.dimension_scores,
+                details=snapshot.details,
+                trace_signature=snapshot.trace_signature,
+                version_snapshot=snapshot.version_snapshot,
+                explanations=snapshot.explanations,
+                created_at=snapshot.created_at,
+                seed_marker=None,
+            )
+        )
+        await self._session.commit()
+        return snapshot
+
+    async def list_eval_result_snapshots(
+        self,
+        *,
+        eval_run_id: str | None = None,
+        case_id: str | None = None,
+        snapshot_type: str | None = None,
+    ) -> list[EvalResultSnapshotSummary]:
+        from meterdesk_api.models import EvalResultSnapshot
+
+        query = select(EvalResultSnapshot)
+        if eval_run_id is not None:
+            query = query.where(EvalResultSnapshot.eval_run_id == eval_run_id)
+        if case_id is not None:
+            query = query.where(EvalResultSnapshot.case_id == case_id)
+        if snapshot_type is not None:
+            query = query.where(EvalResultSnapshot.snapshot_type == snapshot_type)
+        snapshots = (
+            await self._session.execute(query.order_by(EvalResultSnapshot.created_at))
+        ).scalars()
+        return [_eval_snapshot_to_summary(snapshot) for snapshot in snapshots]
+
     async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None:
         from meterdesk_api.models import (
             AgentRun,
@@ -1471,6 +1716,38 @@ def _trace_to_summary(trace) -> ToolTraceSummary:
         approval_refs=trace.approval_refs,
         error_state=trace.error_state,
         governance_metadata=trace.governance_metadata,
+    )
+
+
+def _eval_run_to_summary(run) -> EvalRunSummary:
+    return EvalRunSummary(
+        id=run.id,
+        run_type=run.run_type,
+        status=run.status,
+        summary=run.summary,
+        baseline_name=run.baseline_name,
+        case_id=run.case_id,
+        started_at=run.started_at,
+        completed_at=run.completed_at,
+    )
+
+
+def _eval_snapshot_to_summary(snapshot) -> EvalResultSnapshotSummary:
+    return EvalResultSnapshotSummary(
+        id=snapshot.id,
+        eval_run_id=snapshot.eval_run_id,
+        result_id=snapshot.result_id,
+        case_id=snapshot.case_id,
+        agent_run_id=snapshot.agent_run_id,
+        snapshot_type=snapshot.snapshot_type,
+        status=snapshot.status,
+        summary=snapshot.summary,
+        dimension_scores=snapshot.dimension_scores,
+        details=snapshot.details,
+        trace_signature=snapshot.trace_signature,
+        version_snapshot=snapshot.version_snapshot,
+        explanations=snapshot.explanations,
+        created_at=snapshot.created_at,
     )
 
 

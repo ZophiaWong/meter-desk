@@ -15,6 +15,7 @@ from meterdesk_api.agent.provider import (
 )
 from meterdesk_api.agent.runtime import get_optional_agent_provider, get_optional_eval_judge
 from meterdesk_api.eval.judge import EvalDraftJudgeInput, EvalDraftJudgeOutput
+from meterdesk_api.eval.regression import EvalRegressionService, build_prompt_fingerprint
 from meterdesk_api.eval.runner import EvalRunner
 from meterdesk_api.main import app
 from meterdesk_api.repositories import get_repository
@@ -318,6 +319,86 @@ async def test_eval_results_are_latest_only_and_do_not_reset_workbench_ticket_st
 
 
 @pytest.mark.asyncio
+async def test_eval_case_reruns_preserve_snapshot_history_and_latest_projection() -> None:
+    repository = build_seed_repository()
+    runner = EvalRunner(repository=repository, provider=EchoProvider())
+
+    first = await runner.run_case("eval-duplicate-charge-003")
+    second = await runner.run_case("eval-duplicate-charge-003")
+
+    latest_results = await repository.list_eval_results()
+    snapshots = await repository.list_eval_result_snapshots(case_id="eval-duplicate-charge-003")
+    current_snapshots = [
+        snapshot for snapshot in snapshots if snapshot.snapshot_type == "current"
+    ]
+    baseline_snapshots = [
+        snapshot for snapshot in snapshots if snapshot.snapshot_type == "baseline"
+    ]
+
+    assert first.id != second.id
+    assert [result.case_id for result in latest_results].count("eval-duplicate-charge-003") == 1
+    assert latest_results[0].id == second.id
+    assert [snapshot.result_id for snapshot in current_snapshots] == [first.id, second.id]
+    assert len(baseline_snapshots) == 1
+    assert current_snapshots[-1].version_snapshot["prompt_fingerprint"] == build_prompt_fingerprint()
+    assert current_snapshots[-1].trace_signature["ordered_categories"]
+
+
+@pytest.mark.asyncio
+async def test_eval_regression_summary_compares_latest_run_to_seeded_baseline() -> None:
+    repository = build_seed_repository()
+    runner = EvalRunner(repository=repository, provider=EchoProvider())
+
+    result = await runner.run_case("eval-duplicate-charge-001")
+    summary = await EvalRegressionService(repository).latest_summary()
+    case_summary = next(case for case in summary.cases if case.case_id == result.case_id)
+
+    assert summary.baseline_run_id == "EVAL-RUN-BASELINE-M10"
+    assert summary.latest_run_id is not None
+    assert summary.counts["regressed"] == 0
+    assert summary.blocking_pass_rate == "1/1"
+    assert case_summary.label == "unchanged"
+    assert case_summary.baseline_status == "passed"
+    assert case_summary.current_status == "passed"
+    assert [(diff.field, diff.baseline, diff.current) for diff in case_summary.version_diffs] == [
+        ("model", "seeded-demo", "fake-eval-model")
+    ]
+    assert case_summary.trace_diff["added_categories"] == []
+    assert case_summary.explanations == ["No blocking regression versus seeded baseline."]
+
+
+@pytest.mark.asyncio
+async def test_provider_blocked_eval_is_incomparable_not_agent_regression() -> None:
+    repository = build_seed_repository()
+    runner = EvalRunner(repository=repository, provider=None)
+
+    await runner.run_case("eval-duplicate-charge-001")
+    summary = await EvalRegressionService(repository).latest_summary()
+    case_summary = next(case for case in summary.cases if case.case_id == "eval-duplicate-charge-001")
+
+    assert summary.counts["regressed"] == 0
+    assert summary.counts["incomparable"] >= 1
+    assert case_summary.label == "incomparable"
+    assert case_summary.current_status == "blocked"
+    assert case_summary.explanations == [
+        "Current run is blocked by provider.not_configured; not counted as an agent regression."
+    ]
+
+
+@pytest.mark.asyncio
+async def test_usage_spike_baseline_remains_tracked_as_coverage_gap() -> None:
+    repository = build_seed_repository()
+
+    summary = await EvalRegressionService(repository).latest_summary()
+    usage_case = next(case for case in summary.cases if case.case_id == "eval-usage-spike-001")
+
+    assert usage_case.label == "coverage_gap"
+    assert usage_case.baseline_status == "blocked"
+    assert usage_case.current_status is None
+    assert "Scenario runner is not implemented" in usage_case.explanations[0]
+
+
+@pytest.mark.asyncio
 async def test_reset_eval_fixture_state_removes_results_linked_to_fixture_runs() -> None:
     repository = build_seed_repository()
     run = await repository.create_agent_run(
@@ -433,7 +514,11 @@ async def test_eval_lab_api_runs_one_case_and_all_cases() -> None:
             base_url="http://testserver",
         ) as client:
             single = await client.post("/eval-cases/eval-duplicate-charge-002/run")
+            regression = await client.get("/eval-regression/summary")
+            runs = await client.get("/eval-runs")
             all_cases = await client.post("/eval-runs")
+            comparison = await client.get(f"/eval-runs/{runs.json()[0]['id']}/comparison")
+            history = await client.get("/eval-cases/eval-duplicate-charge-002/history")
     finally:
         app.dependency_overrides.clear()
 
@@ -441,6 +526,18 @@ async def test_eval_lab_api_runs_one_case_and_all_cases() -> None:
     assert single.json()["status"] == "passed"
     assert single.json()["dimension_scores"]["tool_planning"] == "pass"
     assert single.json()["dimension_scores"]["approval_routing"] == "pass"
+    assert regression.status_code == 200
+    assert regression.json()["counts"]["regressed"] == 0
+    assert runs.status_code == 200
+    assert runs.json()[0]["run_type"] == "case_rerun"
+    assert comparison.status_code == 200
+    assert comparison.json()["latest_run_id"] == runs.json()[0]["id"]
+    assert history.status_code == 200
+    assert [snapshot["snapshot_type"] for snapshot in history.json()] == [
+        "current",
+        "current",
+        "baseline",
+    ]
     assert all_cases.status_code == 201
     results = all_cases.json()
     assert len(results) == 9

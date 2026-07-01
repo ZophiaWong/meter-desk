@@ -8,6 +8,15 @@ from pydantic import BaseModel, ConfigDict, Field
 Scenario = Literal["duplicate_charge", "usage_spike", "credit_refund_dispute"]
 RiskLevel = Literal["Low", "Medium", "High"]
 RunComplianceStatus = Literal["passed", "failed", "unsupported"]
+EvalRunType = Literal["baseline", "suite", "case_rerun"]
+EvalSnapshotType = Literal["baseline", "current"]
+EvalRegressionLabel = Literal[
+    "regressed",
+    "improved",
+    "unchanged",
+    "incomparable",
+    "coverage_gap",
+]
 DecisionSummaryState = Literal[
     "not_run",
     "running",
@@ -248,6 +257,72 @@ class EvalResultSummary(BaseModel):
     summary: str
     dimension_scores: dict[str, str]
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvalRunSummary(BaseModel):
+    id: str
+    run_type: EvalRunType
+    status: str
+    summary: str
+    baseline_name: str | None = None
+    case_id: str | None = None
+    started_at: datetime
+    completed_at: datetime | None = None
+
+
+class EvalResultSnapshotSummary(BaseModel):
+    id: str
+    eval_run_id: str
+    result_id: str
+    case_id: str
+    agent_run_id: str | None = None
+    snapshot_type: EvalSnapshotType
+    status: str
+    summary: str
+    dimension_scores: dict[str, str]
+    details: dict[str, Any] = Field(default_factory=dict)
+    trace_signature: dict[str, Any] = Field(default_factory=dict)
+    version_snapshot: dict[str, Any] = Field(default_factory=dict)
+    explanations: list[str] = Field(default_factory=list)
+    created_at: datetime
+
+
+class EvalDimensionDiff(BaseModel):
+    dimension: str
+    baseline: str | None
+    current: str | None
+
+
+class EvalVersionDiff(BaseModel):
+    field: str
+    baseline: Any | None
+    current: Any | None
+
+
+class EvalCaseRegressionSummary(BaseModel):
+    case_id: str
+    scenario: Scenario
+    title: str
+    label: EvalRegressionLabel
+    baseline_status: str | None
+    current_status: str | None
+    baseline_snapshot_id: str | None = None
+    current_snapshot_id: str | None = None
+    dimension_diffs: list[EvalDimensionDiff] = Field(default_factory=list)
+    version_diffs: list[EvalVersionDiff] = Field(default_factory=list)
+    trace_diff: dict[str, Any] = Field(default_factory=dict)
+    explanations: list[str] = Field(default_factory=list)
+
+
+class EvalRegressionSummary(BaseModel):
+    baseline_run_id: str | None
+    baseline_name: str | None
+    latest_run_id: str | None
+    latest_run_type: EvalRunType | None = None
+    latest_run_completed_at: datetime | None = None
+    counts: dict[str, int]
+    blocking_pass_rate: str
+    cases: list[EvalCaseRegressionSummary]
 
 
 class RunComplianceFailure(BaseModel):

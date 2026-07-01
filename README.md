@@ -52,6 +52,7 @@ Start with these documents before implementation:
 - [M6 Governed Runtime + Financial Safety](docs/specs/m6-governed-runtime-financial-safety.md) - planned upgrade from trace kernel to governed action runtime
 - [M7 Eval Contracts + Scenario Unblocking](docs/specs/m7-eval-contracts-scenario-unblocking.md) - planned compliance checks and supporting scenario readiness gates
 - [M9 LLM-Planned Tool Plan](docs/specs/m9-llm-planned-tool-plan.md) - LLM investigation planning with backend contract verification
+- [M10 Eval Regression History](docs/specs/m10-eval-regression-history.md) - seeded baseline comparison, eval run history, and model/prompt/policy diff snapshots
 
 ## Local Setup
 
@@ -126,7 +127,7 @@ The interview demo centers on the Duplicate Charge golden path. The short flow i
 4. Approve or reject the proposed refund.
 5. Inspect the mock mutation and audit trace.
 6. Open `/?ticket=TCK-1137` to review the Credit/Refund governed workflow.
-7. Run Eval Lab and review Duplicate Charge and Credit/Refund scores plus the Usage Spike coverage gap.
+7. Run Eval Lab and review latest-vs-baseline regression counts, Duplicate Charge and Credit/Refund scores, model/prompt/policy version diffs, and the Usage Spike coverage gap.
 
 For the full interview script, including the no-key baseline, live provider reset path, architecture talking points, and likely interview questions, see [MeterDesk Interview Demo Walkthrough](intv/meterdesk-demo-walkthrough.md).
 

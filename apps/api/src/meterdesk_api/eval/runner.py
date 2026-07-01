@@ -59,12 +59,38 @@ class EvalRunner:
         self._judge = judge
 
     async def run_all(self) -> list[EvalResultSummary]:
+        eval_run = await self._repository.create_eval_run(
+            run_type="suite",
+            status="running",
+            summary="Running all eval cases.",
+        )
         results: list[EvalResultSummary] = []
         for eval_case in await self._repository.list_eval_cases():
-            results.append(await self.run_case(eval_case.id))
+            results.append(await self._run_case(eval_case.id, eval_run_id=eval_run.id))
+        statuses = ", ".join(sorted({result.status for result in results}))
+        await self._repository.complete_eval_run(
+            eval_run_id=eval_run.id,
+            status="completed",
+            summary=f"Eval suite completed with statuses: {statuses}.",
+        )
         return results
 
     async def run_case(self, case_id: str) -> EvalResultSummary:
+        eval_run = await self._repository.create_eval_run(
+            run_type="case_rerun",
+            status="running",
+            summary=f"Running eval case {case_id}.",
+            case_id=case_id,
+        )
+        result = await self._run_case(case_id, eval_run_id=eval_run.id)
+        await self._repository.complete_eval_run(
+            eval_run_id=eval_run.id,
+            status="completed",
+            summary=f"Eval case {case_id} completed with status {result.status}.",
+        )
+        return result
+
+    async def _run_case(self, case_id: str, *, eval_run_id: str) -> EvalResultSummary:
         eval_case = await self._repository.get_eval_case(case_id)
         if eval_case is None:
             raise EvalCaseNotFound(case_id)
@@ -76,6 +102,7 @@ class EvalRunner:
             return await self._save_blocked_result(
                 eval_case,
                 "Scenario runner is not implemented for this scenario",
+                eval_run_id=eval_run_id,
                 blocked_code="scenario.runner_not_implemented",
             )
 
@@ -83,6 +110,7 @@ class EvalRunner:
             return await self._save_blocked_result(
                 eval_case,
                 "Eval case does not have a fixture ticket",
+                eval_run_id=eval_run_id,
                 blocked_code="eval.fixture_missing",
             )
 
@@ -90,6 +118,7 @@ class EvalRunner:
             return await self._save_blocked_result(
                 eval_case,
                 "OpenAI-compatible provider is not configured",
+                eval_run_id=eval_run_id,
                 blocked_code="provider.not_configured",
             )
 
@@ -102,18 +131,25 @@ class EvalRunner:
         except AgentLoopError as error:
             return await self._save_failed_result(
                 eval_case,
+                eval_run_id=eval_run_id,
                 summary=str(error),
                 details={"failed_checks": ["agent_run"], "blocked_reason": None},
             )
         if run is None:
-            return await self._save_blocked_result(eval_case, "Fixture ticket was not found")
+            return await self._save_blocked_result(
+                eval_case,
+                "Fixture ticket was not found",
+                eval_run_id=eval_run_id,
+            )
 
-        return await self._grade_governed_case(eval_case, run)
+        return await self._grade_governed_case(eval_case, run, eval_run_id=eval_run_id)
 
     async def _grade_governed_case(
         self,
         eval_case: EvalCaseSummary,
         run: AgentRunSummary,
+        *,
+        eval_run_id: str,
     ) -> EvalResultSummary:
         assert eval_case.fixture_ticket_id is not None
         traces = await self._repository.list_traces(run.id) or []
@@ -219,7 +255,7 @@ class EvalRunner:
             dimension_scores=scores,
             details=details,
         )
-        return await self._repository.replace_eval_result(result)
+        return await self._persist_result(result, eval_run_id=eval_run_id, traces=traces)
 
     async def _judge_draft_quality(self, run: AgentRunSummary) -> tuple[str, list[str]]:
         if self._judge is None:
@@ -246,6 +282,7 @@ class EvalRunner:
         eval_case: EvalCaseSummary,
         blocked_reason: str,
         *,
+        eval_run_id: str,
         blocked_code: str = "eval.blocked",
     ) -> EvalResultSummary:
         readiness_gaps = _readiness_gaps(eval_case.scenario)
@@ -271,12 +308,13 @@ class EvalRunner:
                 "judge_notes": [],
             },
         )
-        return await self._repository.replace_eval_result(result)
+        return await self._persist_result(result, eval_run_id=eval_run_id, traces=[])
 
     async def _save_failed_result(
         self,
         eval_case: EvalCaseSummary,
         *,
+        eval_run_id: str,
         summary: str,
         details: dict[str, Any],
     ) -> EvalResultSummary:
@@ -299,7 +337,27 @@ class EvalRunner:
                 **details,
             },
         )
-        return await self._repository.replace_eval_result(result)
+        return await self._persist_result(result, eval_run_id=eval_run_id, traces=[])
+
+    async def _persist_result(
+        self,
+        result: EvalResultSummary,
+        *,
+        eval_run_id: str,
+        traces: list[ToolTraceSummary],
+    ) -> EvalResultSummary:
+        from meterdesk_api.eval.regression import snapshot_from_result
+
+        saved = await self._repository.replace_eval_result(result)
+        await self._repository.add_eval_result_snapshot(
+            snapshot_from_result(
+                eval_run_id=eval_run_id,
+                result=saved,
+                snapshot_type="current",
+                traces=traces,
+            )
+        )
+        return saved
 
 
 def _score(condition: bool, check_name: str, failed_checks: list[str]) -> str:

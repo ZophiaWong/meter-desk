@@ -20,9 +20,9 @@ M4 originally implemented:
 - Eval Lab controls for running all cases or rerunning one case.
 
 The current implementation extends that baseline with three executable Credit/Refund Dispute eval
-cases. Usage Spike remains the only blocked supporting scenario. Eval Lab still does not implement
-async eval jobs, full trace replay, run history, large dataset management, online monitoring, or
-model comparison.
+cases. Usage Spike remains the only blocked supporting scenario. M10 supersedes M4's latest-only
+result storage with lightweight snapshot-based regression history. Eval Lab still does not implement
+async eval jobs, full trace replay, large dataset management, online monitoring, or model comparison.
 
 ## Data Model
 
@@ -40,9 +40,10 @@ ticket list.
 - `blocked_reason`
 - `judge_notes`
 
-Eval results are latest-only per case. Running a case replaces its prior result and resets only that
-case's eval fixture state. Workbench demo tickets and their runs, approvals, and mock mutations are
-not reset by Eval Lab.
+M4 eval results were latest-only per case. M10 keeps the latest projection for compatibility while
+recording immutable snapshots for regression history. Running a case resets only that case's eval
+fixture execution state; Workbench demo tickets and their runs, approvals, and mock mutations are not
+reset by Eval Lab.
 
 ## Eval Cases
 

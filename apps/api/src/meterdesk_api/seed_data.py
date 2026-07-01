@@ -3,6 +3,14 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 
 from meterdesk_api.agent.governance import build_governance_metadata_for_trace
+from meterdesk_api.eval.regression import (
+    BASELINE_NAME,
+    BASELINE_RUN_ID,
+    GRADER_VERSION,
+    RESULT_SCHEMA_VERSION,
+    build_prompt_fingerprint,
+)
+from meterdesk_api.eval.runner import DIMENSION_NAMES
 from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.repositories import InMemoryMeterDeskRepository
 from meterdesk_api.schemas import (
@@ -13,7 +21,9 @@ from meterdesk_api.schemas import (
     CreditEvidence,
     CustomerSummary,
     EvalCaseSummary,
+    EvalResultSnapshotSummary,
     EvalResultSummary,
+    EvalRunSummary,
     InvoiceEvidence,
     MockMutationSummary,
     MoneyAmount,
@@ -1323,6 +1333,19 @@ EVAL_CASES = [
 
 EVAL_RESULTS: list[EvalResultSummary] = []
 
+EVAL_RUNS = [
+    EvalRunSummary(
+        id=BASELINE_RUN_ID,
+        run_type="baseline",
+        status="completed",
+        summary="Seeded canonical baseline for M10 eval regression comparison.",
+        baseline_name=BASELINE_NAME,
+        case_id=None,
+        started_at=utc(2026, 6, 30, 0, 0),
+        completed_at=utc(2026, 6, 30, 0, 1),
+    )
+]
+
 
 def build_seed_repository() -> InMemoryMeterDeskRepository:
     return InMemoryMeterDeskRepository(
@@ -1335,4 +1358,125 @@ def build_seed_repository() -> InMemoryMeterDeskRepository:
         mock_mutations=MOCK_MUTATIONS,
         eval_cases=EVAL_CASES,
         eval_results=EVAL_RESULTS,
+        eval_runs=EVAL_RUNS,
+        eval_result_snapshots=[_baseline_snapshot_for_case(eval_case) for eval_case in EVAL_CASES],
     )
+
+
+def _baseline_snapshot_for_case(eval_case: EvalCaseSummary) -> EvalResultSnapshotSummary:
+    is_usage_gap = eval_case.scenario == "usage_spike"
+    status = "blocked" if is_usage_gap else "passed"
+    result_id = f"EVAL-BASELINE-{eval_case.id}"
+    dimension_scores = {
+        dimension: ("not_run" if dimension == "draft_quality" else "blocked")
+        if is_usage_gap
+        else ("not_run" if dimension == "draft_quality" else "pass")
+        for dimension in DIMENSION_NAMES
+    }
+    blocked_details = {
+        "blocked_reason": "Scenario runner is not implemented for this scenario",
+        "blocked_code": "scenario.runner_not_implemented",
+        "readiness_gaps": [
+            "usage window and baseline evidence model",
+            "meter dimensions and pricing evidence model",
+            "usage spike deterministic decision tool",
+            "goodwill credit governed action fixtures",
+        ],
+    }
+    details = {
+        "failed_checks": [],
+        "missing_evidence": eval_case.required_evidence if is_usage_gap else [],
+        "policy_refs_seen": [] if is_usage_gap else eval_case.policy_refs,
+        "trace_refs": [],
+        "judge_notes": [],
+        "model": None if is_usage_gap else "seeded-demo",
+        "prompt_version": None if is_usage_gap else _prompt_version_for_case(eval_case),
+        **(blocked_details if is_usage_gap else {"blocked_reason": None}),
+    }
+    return EvalResultSnapshotSummary(
+        id=f"EVS-BASELINE-{eval_case.id}",
+        eval_run_id=BASELINE_RUN_ID,
+        result_id=result_id,
+        case_id=eval_case.id,
+        agent_run_id=None,
+        snapshot_type="baseline",
+        status=status,
+        summary=(
+            "Scenario runner is not implemented for this scenario"
+            if is_usage_gap
+            else "Seeded deterministic baseline checks passed."
+        ),
+        dimension_scores=dimension_scores,
+        details=details,
+        trace_signature=_baseline_trace_signature(eval_case),
+        version_snapshot={
+            "model": None if is_usage_gap else "seeded-demo",
+            "prompt_version": None if is_usage_gap else _prompt_version_for_case(eval_case),
+            "prompt_fingerprint": build_prompt_fingerprint(),
+            "policy_refs_seen": [] if is_usage_gap else eval_case.policy_refs,
+            "tool_policy_versions": {
+                category: "1.0.0"
+                for category in _baseline_trace_signature(eval_case)["ordered_categories"]
+            },
+            "governance_schema_version": "1.0.0",
+            "grader_version": GRADER_VERSION,
+            "result_schema_version": RESULT_SCHEMA_VERSION,
+        },
+        explanations=(
+            ["Scenario runner is not implemented for this scenario; tracked as a coverage gap."]
+            if is_usage_gap
+            else ["Seeded baseline deterministic checks passed."]
+        ),
+        created_at=utc(2026, 6, 30, 0, 1),
+    )
+
+
+def _prompt_version_for_case(eval_case: EvalCaseSummary) -> str:
+    if eval_case.scenario == "credit_refund_dispute":
+        return "m8-credit-refund-v1"
+    return "m3-duplicate-charge-v1"
+
+
+def _baseline_trace_signature(eval_case: EvalCaseSummary) -> dict[str, object]:
+    if eval_case.scenario == "usage_spike":
+        return {
+            "ordered_categories": [],
+            "evidence_categories": [],
+            "policy_refs": [],
+            "approval_refs": [],
+            "governance_reason_codes": [],
+        }
+    read_action = (
+        "read.credit_refund_evidence"
+        if eval_case.scenario == "credit_refund_dispute"
+        else "read.billing_evidence"
+    )
+    decision_action = (
+        "decision.credit_refund_eligibility"
+        if eval_case.scenario == "credit_refund_dispute"
+        else "decision.refund_eligibility"
+    )
+    categories = [
+        "plan.investigation",
+        "plan.verify",
+        read_action,
+        "read.prior_financial_actions",
+        decision_action,
+        "draft.resolution",
+    ]
+    if "requires_approval" in eval_case.expected_approval_routing:
+        categories.append("approval.create_request")
+    return {
+        "ordered_categories": categories,
+        "evidence_categories": eval_case.required_evidence,
+        "policy_refs": eval_case.policy_refs,
+        "approval_refs": ["approval_request"]
+        if "requires_approval" in eval_case.expected_approval_routing
+        else [],
+        "governance_reason_codes": ["governance.allowed"],
+    }
+
+
+EVAL_RESULT_SNAPSHOTS = [
+    _baseline_snapshot_for_case(eval_case) for eval_case in EVAL_CASES
+]

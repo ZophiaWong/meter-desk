@@ -14,6 +14,23 @@ from meterdesk_api.agent.planning import (
     PlanVerifierFeedbackItem,
 )
 
+PLANNER_SYSTEM_PROMPT = (
+    "You plan governed billing-support investigations for MeterDesk. "
+    "Return only allowed action IDs and evidence targets from the provided "
+    "contract. Do not include draft, approval, mutation, external support, "
+    "or payment-provider actions. Include every schema field; use [] when "
+    "there are no dependencies, evidence gaps, or stop conditions. Each "
+    "step's evidence_targets must include every target listed in "
+    "required_targets_by_action for that action_id; decision steps must not "
+    "use [] when their action has required targets."
+)
+RESOLUTION_SYSTEM_PROMPT = (
+    "You draft governed billing-support recommendations for MeterDesk. "
+    "The backend decision_outcome is authoritative; do not reclassify the "
+    "case or include a separate outcome. Customer replies are draft-only and "
+    "must not promise that an unapproved refund or credit has happened."
+)
+
 
 class AgentProviderError(Exception):
     pass
@@ -72,16 +89,7 @@ class OpenAICompatibleProvider:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You plan governed billing-support investigations for MeterDesk. "
-                        "Return only allowed action IDs and evidence targets from the provided "
-                        "contract. Do not include draft, approval, mutation, external support, "
-                        "or payment-provider actions. Include every schema field; use [] when "
-                        "there are no dependencies, evidence gaps, or stop conditions. Each "
-                        "step's evidence_targets must include every target listed in "
-                        "required_targets_by_action for that action_id; decision steps must not "
-                        "use [] when their action has required targets."
-                    ),
+                    "content": PLANNER_SYSTEM_PROMPT,
                 },
                 {
                     "role": "user",
@@ -120,12 +128,7 @@ class OpenAICompatibleProvider:
             "messages": [
                 {
                     "role": "system",
-                    "content": (
-                        "You draft governed billing-support recommendations for MeterDesk. "
-                        "The backend decision_outcome is authoritative; do not reclassify the "
-                        "case or include a separate outcome. Customer replies are draft-only and "
-                        "must not promise that an unapproved refund or credit has happened."
-                    ),
+                    "content": RESOLUTION_SYSTEM_PROMPT,
                 },
                 {
                     "role": "user",

@@ -1,4 +1,4 @@
-import { getEvalCaseViews, type EvalCaseView } from "@/lib/meterdesk-view";
+import { getEvalLabView, type EvalCaseView } from "@/lib/meterdesk-view";
 import Link from "next/link";
 import { rerunEvalCaseAction, runAllEvalCasesAction } from "@/lib/meterdesk-actions";
 
@@ -6,8 +6,8 @@ const SCENARIO_ORDER = ["Duplicate Charge", "Usage Spike", "Credit/Refund Disput
 
 export async function EvalLab() {
   try {
-    const cases = await getEvalCaseViews();
-    const grouped = groupByScenario(cases);
+    const view = await getEvalLabView();
+    const grouped = groupByScenario(view.cases);
 
     return (
       <main className="min-h-screen bg-[#f7f8fb] text-meter-ink">
@@ -29,6 +29,30 @@ export async function EvalLab() {
               Run all evals
             </button>
           </form>
+          <section className="mt-5 rounded-md border border-meter-line bg-white p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Latest vs baseline
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">
+                  Blocking pass rate {view.regressionSummary.blockingPassRate}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Baseline: {view.regressionSummary.baselineName}.{" "}
+                  {view.regressionSummary.counts}.
+                </p>
+              </div>
+              {view.regressionSummary.latestRunHref ? (
+                <Link
+                  className="rounded-md border border-meter-line px-3 py-2 text-sm font-semibold text-meter-blue"
+                  href={view.regressionSummary.latestRunHref}
+                >
+                  View run diff
+                </Link>
+              ) : null}
+            </div>
+          </section>
 
           <div className="mt-6 space-y-6">
             {SCENARIO_ORDER.map((scenario) => (
@@ -43,13 +67,24 @@ export async function EvalLab() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <p className="text-sm font-medium text-meter-blue">{evalCase.id}</p>
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(
-                            evalCase.resultStatus,
-                          )}`}
-                        >
-                          {evalCase.resultStatus}
-                        </span>
+                        <div className="flex flex-col items-end gap-2">
+                          {evalCase.regressionLabel ? (
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${regressionClass(
+                                evalCase.regressionTone,
+                              )}`}
+                            >
+                              {evalCase.regressionLabel}
+                            </span>
+                          ) : null}
+                          <span
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(
+                              evalCase.resultStatus,
+                            )}`}
+                          >
+                            {evalCase.resultStatus}
+                          </span>
+                        </div>
                       </div>
                       <h3 className="mt-3 text-base font-semibold">{evalCase.title}</h3>
                       <p className="mt-2 text-sm leading-6 text-slate-600">{evalCase.description}</p>
@@ -74,6 +109,11 @@ export async function EvalLab() {
                       {evalCase.resultSummary ? (
                         <p className="mt-4 text-sm font-medium text-meter-blue">
                           {evalCase.resultSummary}
+                        </p>
+                      ) : null}
+                      {evalCase.regressionSummary ? (
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                          {evalCase.regressionSummary}
                         </p>
                       ) : null}
                       {evalCase.dimensions.length > 0 ? (
@@ -167,6 +207,14 @@ export async function EvalLab() {
                           Rerun
                         </button>
                       </form>
+                      {evalCase.runDetailHref ? (
+                        <Link
+                          className="mt-3 inline-flex text-xs font-semibold text-meter-blue"
+                          href={evalCase.runDetailHref}
+                        >
+                          View latest diff
+                        </Link>
+                      ) : null}
                     </article>
                   ))}
                 </div>
@@ -192,6 +240,22 @@ function statusClass(status: string) {
     return "bg-[#fff4df] text-[#92400e]";
   }
   return "bg-[#e9f2fb] text-meter-blue";
+}
+
+function regressionClass(tone: EvalCaseView["regressionTone"]) {
+  if (tone === "danger") {
+    return "bg-[#fdecec] text-[#991b1b]";
+  }
+  if (tone === "success") {
+    return "bg-[#e9f8ef] text-[#166534]";
+  }
+  if (tone === "warning") {
+    return "bg-[#fff4df] text-[#92400e]";
+  }
+  if (tone === "info") {
+    return "bg-[#e9f2fb] text-meter-blue";
+  }
+  return "bg-slate-100 text-slate-600";
 }
 
 function groupByScenario(cases: EvalCaseView[]) {
