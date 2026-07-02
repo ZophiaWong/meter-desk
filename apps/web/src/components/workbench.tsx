@@ -7,6 +7,9 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { DecisionGraphCard } from "./decision-graph";
+import { TraceDiagnostics } from "./trace-diagnostics";
+
 type TicketWorkbenchProps = {
   scenario: WorkbenchScenario;
 };
@@ -63,6 +66,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         </div>
 
         <AgentDecisionSummaryCard summary={scenario.decisionSummary} />
+        <DecisionGraphCard graph={scenario.decisionGraph} />
 
         <section aria-labelledby="billing-evidence-heading" className="mt-5" role="region">
           <h2 id="billing-evidence-heading" className="text-lg font-semibold">
@@ -153,7 +157,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         <ComplianceCard scenario={scenario} />
         <ApprovalCard scenario={scenario} />
         <MutationResultList scenario={scenario} />
-        <TraceTimeline traces={scenario.traces} />
+        <TraceDiagnostics traces={scenario.traces} />
         <DraftReply scenario={scenario} />
       </section>
     </div>
@@ -404,37 +408,6 @@ function MutationResultList({ scenario }: TicketWorkbenchProps) {
           </article>
         ))}
       </div>
-    </section>
-  );
-}
-
-function TraceTimeline({ traces }: { traces: WorkbenchScenario["traces"] }) {
-  return (
-    <section className="mt-5">
-      <h3 className="text-sm font-semibold uppercase text-slate-500">Trace timeline</h3>
-      {traces.length === 0 ? (
-        <p className="mt-3 rounded-md border border-meter-line bg-[#fbfcfe] p-3 text-sm text-slate-600">
-          No trace entries yet
-        </p>
-      ) : null}
-      <ol className="mt-3 space-y-3">
-        {traces.map((trace) => (
-          <li className="rounded-md border border-meter-line bg-[#fbfcfe] p-3" key={trace.id}>
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-sm font-semibold">{trace.category}</p>
-              <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-600">
-                {trace.risk} risk
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-slate-700">{trace.label}</p>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{trace.output}</p>
-            {trace.governance ? (
-              <p className="mt-2 text-xs font-medium text-slate-500">{trace.governance}</p>
-            ) : null}
-            <p className="mt-2 text-xs font-medium text-meter-blue">{trace.evidence}</p>
-          </li>
-        ))}
-      </ol>
     </section>
   );
 }

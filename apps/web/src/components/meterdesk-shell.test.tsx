@@ -3,13 +3,95 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { MeterDeskShell } from "./meterdesk-shell";
-import type { WorkbenchScenario } from "@/lib/meterdesk-view";
+import type { DecisionGraph, WorkbenchScenario } from "@/lib/meterdesk-view";
 
 const checkedAt = "2026-06-05T12:00:00.000Z";
 const reachableStatus = {
   api: { label: "API", state: "ok" as const, detail: "FastAPI reachable" },
   database: { label: "Postgres", state: "ok" as const, detail: "Database reachable" },
   checkedAt,
+};
+
+const emptyDecisionGraph: DecisionGraph = {
+  defaultNodeId: "evidence" as const,
+  summaryBadges: [],
+  nodes: [
+    {
+      id: "evidence" as const,
+      label: "Evidence",
+      title: "Evidence loaded",
+      body: "Billing evidence is available.",
+      tone: "info" as const,
+      status: "complete" as const,
+      refs: ["INV-2026-0418"],
+      traceIds: [],
+      inspectorTitle: "Evidence supports the decision",
+      inspectorBody: "Billing evidence is available before the governed investigation runs.",
+      inspectorDetails: [],
+    },
+    {
+      id: "policy" as const,
+      label: "Policy",
+      title: "Policy loaded",
+      body: "Policy citation is available.",
+      tone: "info" as const,
+      status: "complete" as const,
+      refs: ["REFUND-DUP-001 v2026.02"],
+      traceIds: [],
+      inspectorTitle: "Policy controls the outcome",
+      inspectorBody: "Policy evidence is available before the governed investigation runs.",
+      inspectorDetails: [],
+    },
+    {
+      id: "decision" as const,
+      label: "Decision",
+      title: "Investigation required",
+      body: "No trace-backed decision exists yet.",
+      tone: "neutral" as const,
+      status: "unavailable" as const,
+      refs: ["TCK-1042"],
+      traceIds: [],
+      inspectorTitle: "No decision yet",
+      inspectorBody: "A governed run is required before MeterDesk can explain the decision path.",
+      inspectorDetails: [],
+    },
+    {
+      id: "approval" as const,
+      label: "Approval",
+      title: "No approval request",
+      body: "No approval request exists yet.",
+      tone: "neutral" as const,
+      status: "unavailable" as const,
+      refs: [],
+      traceIds: [],
+      inspectorTitle: "Approval not created",
+      inspectorBody: "No refund or credit approval request exists for this run.",
+      inspectorDetails: [],
+    },
+    {
+      id: "mutation" as const,
+      label: "Mutation",
+      title: "No mutation available",
+      body: "No mock financial action can execute before approval exists.",
+      tone: "neutral" as const,
+      status: "unavailable" as const,
+      refs: [],
+      traceIds: [],
+      inspectorTitle: "Mutation unavailable",
+      inspectorBody: "The governed run has not created an approval-gated financial action.",
+      inspectorDetails: [],
+    },
+  ],
+  sideOutputs: [
+    {
+      id: "draft" as const,
+      label: "Draft",
+      title: "No customer draft yet",
+      body: "No draft produced yet.",
+      refs: [],
+      traceIds: [],
+    },
+  ],
 };
 
 const scenario: WorkbenchScenario = {
@@ -93,6 +175,7 @@ const scenario: WorkbenchScenario = {
       },
     ],
   },
+  decisionGraph: emptyDecisionGraph,
   evidence: {
     account: {
       name: "Northstar Compute",
@@ -168,6 +251,88 @@ const scenario: WorkbenchScenario = {
   ],
 };
 
+const decisionGraphFixture: DecisionGraph = {
+  defaultNodeId: "mutation",
+  summaryBadges: ["Plan verified", "7 governed actions", "1 approval gate"],
+  nodes: [
+    {
+      id: "evidence",
+      label: "Evidence",
+      title: "Invoice and duplicate charge evidence",
+      body: "INV-2026-0418 has a duplicate captured charge.",
+      tone: "info",
+      status: "complete",
+      refs: ["INV-2026-0418", "ch_2026_0418_B"],
+      traceIds: ["trace-read-evidence"],
+      inspectorTitle: "Evidence supports the decision",
+      inspectorBody: "The agent read invoice and charge evidence before deciding.",
+      inspectorDetails: [{ label: "Trace", value: "trace-read-evidence" }],
+    },
+    {
+      id: "policy",
+      label: "Policy",
+      title: "Duplicate captured payment policy",
+      body: "REFUND-DUP-001 v2026.02 applies.",
+      tone: "info",
+      status: "complete",
+      refs: ["REFUND-DUP-001 v2026.02"],
+      traceIds: ["trace-decision"],
+      inspectorTitle: "Policy controls the outcome",
+      inspectorBody: "The decision cites the duplicate captured payment policy.",
+      inspectorDetails: [{ label: "Policy", value: "REFUND-DUP-001 v2026.02" }],
+    },
+    {
+      id: "decision",
+      label: "Decision",
+      title: "Duplicate captured charge confirmed",
+      body: "The governed decision tool proposed an original refund.",
+      tone: "success",
+      status: "complete",
+      refs: ["RUN-2042"],
+      traceIds: ["trace-decision"],
+      inspectorTitle: "Decision is trace-backed",
+      inspectorBody: "The deterministic decision tool proposed a refund after evidence review.",
+      inspectorDetails: [{ label: "Run", value: "RUN-2042" }],
+    },
+    {
+      id: "approval",
+      label: "Approval",
+      title: "Human approval pending",
+      body: "APR-2042 is pending.",
+      tone: "warning",
+      status: "pending",
+      refs: ["APR-2042"],
+      traceIds: ["trace-approval"],
+      inspectorTitle: "Approval gate is active",
+      inspectorBody: "The financial action waits for a human approval decision.",
+      inspectorDetails: [{ label: "Approval", value: "APR-2042" }],
+    },
+    {
+      id: "mutation",
+      label: "Mutation",
+      title: "Mutation blocked until approval",
+      body: "Mutation blocked until human approval",
+      tone: "warning",
+      status: "blocked",
+      refs: ["APR-2042"],
+      traceIds: ["trace-approval"],
+      inspectorTitle: "Mutation blocked until approval",
+      inspectorBody: "No mock refund can execute until the operator approves APR-2042.",
+      inspectorDetails: [{ label: "Next action", value: "Approve or reject APR-2042" }],
+    },
+  ],
+  sideOutputs: [
+    {
+      id: "draft",
+      label: "Draft",
+      title: "Customer reply prepared",
+      body: "Draft only - not sent.",
+      refs: ["RUN-2042"],
+      traceIds: ["trace-draft"],
+    },
+  ],
+};
+
 describe("MeterDeskShell", () => {
   it("renders M3 API-backed workbench data and empty run state", () => {
     render(<MeterDeskShell scenario={scenario} status={reachableStatus} />);
@@ -185,7 +350,7 @@ describe("MeterDeskShell", () => {
     expect(screen.getAllByText("Investigation pending").length).toBeGreaterThan(0);
     expect(screen.getByText("Evidence loaded")).toBeInTheDocument();
     expect(screen.getByText("Risk gate pending")).toBeInTheDocument();
-    expect(screen.getByText("No customer draft yet")).toBeInTheDocument();
+    expect(screen.getAllByText("No customer draft yet").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
     expect(screen.getByRole("link", { name: /Usage Spike/ })).toHaveAttribute(
       "href",
@@ -201,6 +366,49 @@ describe("MeterDeskShell", () => {
     expect(within(evidence).getByText("ch_2026_0418_A")).toBeInTheDocument();
     expect(within(evidence).getByText("ch_2026_0418_B")).toBeInTheDocument();
     expect(within(evidence).getByText("REFUND-DUP-001 v2026.02")).toBeInTheDocument();
+  });
+
+  it("renders the Decision Graph with blocked mutation selected and trace diagnostics collapsed", () => {
+    render(
+      <MeterDeskShell
+        scenario={
+          {
+            ...scenario,
+            decisionGraph: decisionGraphFixture,
+            traces: [
+              {
+                id: "trace-approval",
+                category: "approval.create_request",
+                risk: "Medium",
+                label: "Created approval request",
+                output: "Approval request APR-2042 is pending.",
+                evidence: "Evidence: invoice INV-2026-0418, charge ch_2026_0418_B",
+                governance: "Allowed by approval.create_request - Medium risk",
+              },
+            ],
+          }
+        }
+        status={reachableStatus}
+      />,
+    );
+
+    const graph = screen.getByRole("region", { name: "Decision Graph" });
+    expect(within(graph).getByText("Plan verified")).toBeInTheDocument();
+    expect(within(graph).getByText("7 governed actions")).toBeInTheDocument();
+    expect(within(graph).getByText("1 approval gate")).toBeInTheDocument();
+    expect(within(graph).getByText("Mutation blocked until approval")).toBeInTheDocument();
+    expect(within(graph).getByText("No mock refund can execute until the operator approves APR-2042.")).toBeInTheDocument();
+    expect(within(graph).getByText("Draft only - not sent.")).toBeInTheDocument();
+
+    fireEvent.click(within(graph).getByRole("button", { name: /Evidence/ }));
+
+    expect(within(graph).getByText("Evidence supports the decision")).toBeInTheDocument();
+    expect(within(graph).getByText("The agent read invoice and charge evidence before deciding.")).toBeInTheDocument();
+    expect(screen.queryByText("Allowed by approval.create_request - Medium risk")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Trace diagnostics"));
+
+    expect(screen.getByText("Allowed by approval.create_request - Medium risk")).toBeInTheDocument();
   });
 
   it("renders draft-only output and active approval controls after a run", () => {
@@ -322,6 +530,10 @@ describe("MeterDeskShell", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
     expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Allowed by approval.create_request - Medium risk"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Trace diagnostics"));
     expect(screen.getByText("Allowed by approval.create_request - Medium risk")).toBeInTheDocument();
   });
 

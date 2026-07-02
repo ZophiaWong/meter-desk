@@ -41,10 +41,11 @@ make dev
 
 1. **票据优先的调查入口**：入口是一张 billing dispute ticket，不是一个泛用聊天框。
 2. **账单证据**：invoice `INV-2026-0418` 下面有两笔 captured charges，金额都等于 invoice total。
-3. **可追溯性**：右侧能看到 agent run、evidence read、prior-action check、decision、draft creation 和 approval request。
-4. **策略依据**：duplicate charge decision 引用了 `REFUND-DUP-001 v2026.02`。
-5. **只生成草稿**：customer reply 只是 draft，MeterDesk 不会自动发送给客户。
-6. **审批门**：original refund 还在 pending approval，没有 approval 之前不会产生 mock mutation。
+3. **Decision Graph**：中间的 Decision Graph 把 evidence、policy、decision、approval 和 mutation state 串起来，先讲“为什么可以相信这个判断”，而不是先读底层日志。
+4. **Blocked mutation**：默认选中的节点是 `Mutation blocked`。这里说明 refund proposal 已经生成，但 approval 还是 pending，所以不会产生 mock mutation。
+5. **策略依据**：duplicate charge decision 引用了 `REFUND-DUP-001 v2026.02`，policy refs 和 trace ids 可以在 graph inspector 里看到。
+6. **只生成草稿**：customer reply 是 Decision 的 side output，标记为 draft only，MeterDesk 不会自动发送给客户。
+7. **可追溯性**：右侧保留 Trace diagnostics，可以展开看 agent run、evidence read、prior-action check、decision、draft creation 和 approval request。
 
 然后打开 Approval Queue：
 
@@ -63,7 +64,8 @@ make dev
 1. 这是 supporting scenario，不是新的产品线。
 2. Agent 读取 trial credit、subscription/cancellation timing、prior adjustment 和 policy refs。
 3. Deterministic decision tool 计算剩余 disputed trial credit，而不是让 LLM 自己决定金额。
-4. `goodwill_credit` 会进入 pending approval；approval 前没有 mock mutation。
+4. Decision Graph 复用同一套 evidence -> policy -> decision -> approval -> mutation 解释链路。
+5. `goodwill_credit` 会进入 pending approval；approval 前没有 mock mutation。
 
 ## 真实 Provider 路径
 
@@ -119,7 +121,8 @@ Usage Spike 的 blocked cases 不是 Duplicate Charge 或 Credit/Refund 路径�
 - **Provider boundary 很窄**：v1 只接一个 OpenAI-compatible provider，不做 multi-provider gateway。
 - **Approval gate 控制高风险动作**：refund / credit mutation 必须经过人工审批。
 - **外部系统全是 mock-only**：没有真实 Stripe、support、Slack 或 email integration。
-- **Trace 是产品数据**：它解释 agent 看了什么、判断了什么、写了什么、把什么送去审批。
+- **Decision Graph 是产品解释层**：它把底层 trace 转成 evidence -> policy -> decision -> approval -> mutation 的可读链路。
+- **Trace 是审计数据**：Trace diagnostics 仍然解释 agent 看了什么、判断了什么、写了什么、把什么送去审批。
 
 ## 面试常见追问
 

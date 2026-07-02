@@ -174,6 +174,7 @@ export type ToolTraceResource = {
     negative_evidence_refs?: string[];
     trace_required?: boolean;
     reason_code?: string;
+    planning?: Record<string, unknown>;
   };
 };
 

@@ -26,6 +26,11 @@ production monitoring, or mock-provider execution mode.
 This seeded run is a walkthrough artifact. It proves MeterDesk's evidence, trace, draft, and
 approval surfaces without requiring a live model call during every demo.
 
+The Workbench should present this proof through a center-column Decision Graph before raw trace
+diagnostics. The graph is a recruiter-facing explanation surface for why the decision can be
+trusted: evidence, policy, deterministic decision, approval gate, and blocked or executed mock
+mutation state.
+
 Live provider behavior remains unchanged. A real `POST /tickets/{ticket_id}/agent-runs` for
 `TCK-1042` or `TCK-1137` still requires provider configuration and still fails with `503` before
 creating a run when configuration is missing.
@@ -51,10 +56,16 @@ product surface.
 The Workbench should make the golden path easy to scan:
 
 - billing evidence explains the duplicate charge.
+- the Decision Graph explains the semantic path from evidence to policy, decision, approval, and
+  blocked or executed mutation state.
 - the governance panel shows run state, approval gate, trace entries, draft-only output, and mock
-  mutation state in a coherent order.
+  mutation state in a coherent order, with raw trace entries kept as diagnostics rather than the
+  headline explanation.
 - targeted empty and error states cover no run, provider missing or failed run, pending approval,
   rejected approval, approved mock mutation, and missing evidence fallback.
+
+This is not a full trace replay lab. It is a Workbench explanation feature that turns existing
+governed traces into an operator-readable decision lineage.
 
 Eval Lab keeps Usage Spike results visible as `blocked` coverage gaps. Hiding these gaps would
 weaken the eval story.
@@ -66,6 +77,8 @@ M5 adds `intv/meterdesk-demo-walkthrough.md` for interview use. It should explai
 - fresh setup and baseline demo flow.
 - no-key baseline versus live provider path.
 - live reset steps.
+- how to use the Decision Graph to explain why the agent decision is evidence-backed and
+  approval-gated.
 - approval safety and mock mutation constraints.
 - Eval Lab behavior and why Usage Spike cases are blocked.
 - architecture and governance talking points likely to come up in an interview.
