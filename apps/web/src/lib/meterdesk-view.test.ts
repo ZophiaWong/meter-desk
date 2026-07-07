@@ -64,6 +64,61 @@ describe("meterdesk-view", () => {
     ]);
   });
 
+  it("maps Duplicate Charge resources into a semantic Decision Graph", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const rawUrl = input instanceof Request ? input.url : input.toString();
+        const url = new URL(rawUrl);
+        const payload = payloads[url.pathname];
+        if (payload === undefined) {
+          return new Response("Not found", { status: 404 });
+        }
+        return new Response(JSON.stringify(payload), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }),
+    );
+
+    const scenario = await getDefaultWorkbenchScenario();
+    const graph = scenario.decisionGraph;
+
+    expect(graph.defaultNodeId).toBe("mutation");
+    expect(graph.summaryBadges).toEqual([
+      "Plan verified",
+      "7 governed actions",
+      "1 approval gate",
+    ]);
+    expect(graph.nodes.map((node: { id: string; status: string }) => [node.id, node.status])).toEqual([
+      ["evidence", "complete"],
+      ["policy", "complete"],
+      ["decision", "complete"],
+      ["approval", "pending"],
+      ["mutation", "blocked"],
+    ]);
+    expect(graph.nodes.find((node: { id: string }) => node.id === "policy")).toMatchObject({
+      refs: ["REFUND-DUP-001 v2026.02"],
+      traceIds: ["trace-read-evidence", "trace-decision", "trace-approval"],
+    });
+    expect(graph.nodes.find((node: { id: string }) => node.id === "mutation")).toMatchObject({
+      title: "Mutation blocked until approval",
+      body: "Mutation blocked until human approval",
+      tone: "warning",
+      refs: ["APR-2042", "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD"],
+    });
+    expect(graph.sideOutputs).toEqual([
+      {
+        id: "draft",
+        label: "Draft",
+        title: "Customer reply prepared",
+        body: "Draft only - not sent.",
+        refs: ["RUN-2042"],
+        traceIds: ["trace-draft"],
+      },
+    ]);
+  });
+
   it("loads a ticket-scoped Credit/Refund Workbench scenario", async () => {
     vi.stubGlobal(
       "fetch",
@@ -102,6 +157,10 @@ describe("meterdesk-view", () => {
       policyCitation: "TRIAL-CREDIT-003 v2026.03",
     });
     expect(scenario.traces[0].category).toBe("plan.verify");
+    expect(scenario.decisionGraph.nodes.find((node) => node.id === "mutation")).toMatchObject({
+      status: "blocked",
+      refs: ["APR-1137", creditRefundFingerprint],
+    });
   });
 
   it("maps Eval Lab regression summary into compact overview and case labels", async () => {
@@ -351,6 +410,78 @@ const payloads: Record<string, unknown> = {
         reason_code: "governance.allowed",
       },
     },
+    {
+      id: "trace-read-evidence",
+      agent_run_id: "RUN-2042",
+      sequence: 2,
+      category: "read.billing_evidence",
+      risk: "Low",
+      label: "Collected Duplicate Charge billing evidence",
+      input_summary: "Read evidence.",
+      output_summary: "Found invoice INV-2026-0418 with duplicate captured charges.",
+      evidence_refs: ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+      policy_refs: ["REFUND-DUP-001 v2026.02"],
+      approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
+    {
+      id: "trace-decision",
+      agent_run_id: "RUN-2042",
+      sequence: 3,
+      category: "decision.refund_eligibility",
+      risk: "Medium",
+      label: "Evaluated duplicate-charge refund eligibility",
+      input_summary: "Compared captured charges, invoice total, policy, and prior actions.",
+      output_summary: "Refund the duplicate captured charge after human approval.",
+      evidence_refs: ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+      policy_refs: ["REFUND-DUP-001 v2026.02"],
+      approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
+    {
+      id: "trace-draft",
+      agent_run_id: "RUN-2042",
+      sequence: 4,
+      category: "draft.resolution",
+      risk: "Low",
+      label: "Drafted governed resolution",
+      input_summary: "Prepared draft output.",
+      output_summary: "Draft-only resolution text was stored without sending a customer reply.",
+      evidence_refs: ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+      policy_refs: ["REFUND-DUP-001 v2026.02"],
+      approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
+    {
+      id: "trace-approval",
+      agent_run_id: "RUN-2042",
+      sequence: 5,
+      category: "approval.create_request",
+      risk: "Medium",
+      label: "Created approval request for financial action",
+      input_summary: "Created human approval gate.",
+      output_summary: "Approval request APR-2042 is pending.",
+      evidence_refs: ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+      policy_refs: ["REFUND-DUP-001 v2026.02"],
+      approval_refs: ["APR-2042"],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
   ],
   "/agent-runs/RUN-2042/compliance": {
     status: "passed",
@@ -521,6 +652,42 @@ const creditRefundPayloads: Record<string, unknown> = {
       evidence_refs: ["credit cred-ledger-1137", "subscription sub-helio-2026"],
       policy_refs: ["TRIAL-CREDIT-003 v2026.03"],
       approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
+    {
+      id: "trace-1137-decision",
+      agent_run_id: "RUN-1137",
+      sequence: 2,
+      category: "decision.credit_refund_eligibility",
+      risk: "Medium",
+      label: "Evaluated credit/refund eligibility",
+      input_summary: "Compared credit ledger and policy.",
+      output_summary: "Create a goodwill credit for $120.00 after human approval.",
+      evidence_refs: ["credit cred-ledger-1137"],
+      policy_refs: ["TRIAL-CREDIT-003 v2026.03"],
+      approval_refs: [],
+      error_state: null,
+      governance_metadata: {
+        gate_result: "allowed",
+        reason_code: "governance.allowed",
+      },
+    },
+    {
+      id: "trace-1137-approval",
+      agent_run_id: "RUN-1137",
+      sequence: 3,
+      category: "approval.create_request",
+      risk: "Medium",
+      label: "Created approval request for financial action",
+      input_summary: "Created human approval gate.",
+      output_summary: "Approval request APR-1137 is pending.",
+      evidence_refs: ["credit cred-ledger-1137"],
+      policy_refs: ["TRIAL-CREDIT-003 v2026.03"],
+      approval_refs: ["APR-1137"],
       error_state: null,
       governance_metadata: {
         gate_result: "allowed",

@@ -122,10 +122,10 @@ If `/health/db` returns 503 while Postgres appears healthy in Docker, see [WSL2 
 The interview demo centers on the Duplicate Charge golden path. The short flow is:
 
 1. Open a duplicate charge ticket in the Ticket Workbench.
-2. Inspect billing evidence, policy citations, the seeded agent run, and the trace timeline.
+2. Inspect the Decision Overview to see the evidence, policy, decision, approval, and mutation path.
 3. Review the draft-only internal resolution and customer reply.
 4. Approve or reject the proposed refund.
-5. Inspect the mock mutation and audit trace.
+5. Inspect the Safety Rail for approval status, mock mutation state, and trace diagnostics.
 6. Open `/?ticket=TCK-1137` to review the Credit/Refund governed workflow.
 7. Run Eval Lab and review latest-vs-baseline regression counts, Duplicate Charge and Credit/Refund scores, model/prompt/policy version diffs, and the Usage Spike coverage gap.
 

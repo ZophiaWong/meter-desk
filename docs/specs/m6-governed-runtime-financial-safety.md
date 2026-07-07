@@ -152,7 +152,7 @@ behind the existing Rules Drawer. M6 should not add a standalone Governance page
 or trace viewer product surface.
 
 Trace cards may show compact rule-applied metadata, but the full matrix and diagnostic details should
-stay behind disclosure UI so the `Governance and trace` panel remains readable.
+stay behind disclosure UI so the Workbench Safety Rail remains readable.
 
 ## Explicit Deferrals
 

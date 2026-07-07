@@ -2,14 +2,17 @@ import os
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from meterdesk_api.db import create_engine
 from meterdesk_api.demo_reset_live import reset_live_demo_state
 from meterdesk_api.main import app
+from meterdesk_api.models import EvalSuiteRun
 from meterdesk_api.repositories import SqlAlchemyMeterDeskRepository
 from meterdesk_api.schemas import EvalResultSummary
 from meterdesk_api.seed import seed_demo_data
+from meterdesk_api.seed_data import utc
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("METERDESK_RUN_DB_TESTS") != "1",
@@ -167,6 +170,43 @@ async def test_reset_eval_fixture_state_removes_postgres_results_linked_to_fixtu
             results = await repository.list_eval_results()
             assert runs == []
             assert results == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_seed_removes_eval_suite_runs_linked_to_seeded_cases() -> None:
+    await seed_demo_data()
+    engine = create_engine()
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                session.add(
+                    EvalSuiteRun(
+                        id="EVRUN-db-test-seeded-case",
+                        run_type="case",
+                        status="completed",
+                        summary="Previous ad-hoc eval case run.",
+                        baseline_name=None,
+                        case_id="eval-duplicate-charge-002",
+                        started_at=utc(2026, 6, 30, 10, 0),
+                        completed_at=utc(2026, 6, 30, 10, 1),
+                        seed_marker=None,
+                    )
+                )
+
+        await seed_demo_data()
+
+        async with session_factory() as session:
+            remaining_runs = (
+                await session.execute(
+                    select(EvalSuiteRun.id).where(EvalSuiteRun.id == "EVRUN-db-test-seeded-case")
+                )
+            ).scalars()
+
+        assert list(remaining_runs) == []
     finally:
         await engine.dispose()
 
