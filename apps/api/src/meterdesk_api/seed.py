@@ -74,21 +74,21 @@ async def seed_demo_data() -> None:
                 all_ticket_details = {**TICKET_DETAILS, **EVAL_TICKET_DETAILS}
                 all_billing_evidence = {**BILLING_EVIDENCE, **EVAL_BILLING_EVIDENCE}
                 reset_ticket_ids = (*DEMO_TICKET_IDS, *EVAL_FIXTURE_TICKET_IDS)
+                eval_case_ids = [case.id for case in EVAL_CASES]
                 demo_agent_run_ids = select(AgentRun.id).where(
                     AgentRun.ticket_id.in_(reset_ticket_ids)
                 )
                 await session.execute(
-                    delete(EvalResult).where(
-                        EvalResult.case_id.in_([case.id for case in EVAL_CASES])
-                    )
+                    delete(EvalResult).where(EvalResult.case_id.in_(eval_case_ids))
                 )
                 await session.execute(
-                    delete(EvalResultSnapshot).where(
-                        EvalResultSnapshot.case_id.in_([case.id for case in EVAL_CASES])
-                    )
+                    delete(EvalResultSnapshot).where(EvalResultSnapshot.case_id.in_(eval_case_ids))
                 )
                 await session.execute(
-                    delete(EvalSuiteRun).where(EvalSuiteRun.seed_marker == DEMO_SEED_MARKER)
+                    delete(EvalSuiteRun).where(
+                        (EvalSuiteRun.seed_marker == DEMO_SEED_MARKER)
+                        | (EvalSuiteRun.case_id.in_(eval_case_ids))
+                    )
                 )
                 await session.execute(
                     delete(EvalResult).where(EvalResult.agent_run_id.in_(demo_agent_run_ids))

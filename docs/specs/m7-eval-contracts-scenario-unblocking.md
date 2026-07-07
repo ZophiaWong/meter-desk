@@ -89,8 +89,8 @@ Workbench should show a compact compliance status for the current run:
 - high-risk gate count.
 
 Details may be expanded inside the existing Rules Drawer. The drawer may show reason codes, affected
-trace ids, missing refs, and policy versions. The default `Governance and trace` panel should remain
-focused on the current ticket state: run, approval, mutation, trace, and draft.
+trace ids, missing refs, and policy versions. The default Workbench Safety Rail should remain focused
+on the current ticket state: run, approval, mutation, trace, and draft.
 
 Compliance failures in Workbench are read-only diagnostic warnings. They do not disable approval
 buttons or create a second operation gate. Runtime enforcement still belongs to the Governance Kernel

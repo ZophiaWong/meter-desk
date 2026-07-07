@@ -346,10 +346,14 @@ describe("MeterDeskShell", () => {
     expect(screen.getByText("API reachable")).toBeInTheDocument();
     expect(screen.getByText("Postgres reachable")).toBeInTheDocument();
     expect(screen.getByText("M3 API")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Agent Decision Summary" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Decision Overview" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Agent Decision Summary" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Safety rail" })).toBeInTheDocument();
     expect(screen.getAllByText("Investigation pending").length).toBeGreaterThan(0);
-    expect(screen.getByText("Evidence loaded")).toBeInTheDocument();
-    expect(screen.getByText("Risk gate pending")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Evidence step, Complete" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approval step, Unavailable" })).toBeInTheDocument();
     expect(screen.getAllByText("No customer draft yet").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
     expect(screen.getByRole("link", { name: /Usage Spike/ })).toHaveAttribute(
@@ -368,7 +372,7 @@ describe("MeterDeskShell", () => {
     expect(within(evidence).getByText("REFUND-DUP-001 v2026.02")).toBeInTheDocument();
   });
 
-  it("renders the Decision Graph with blocked mutation selected and trace diagnostics collapsed", () => {
+  it("renders the Decision Overview with blocked mutation selected and trace diagnostics collapsed", () => {
     render(
       <MeterDeskShell
         scenario={
@@ -392,18 +396,33 @@ describe("MeterDeskShell", () => {
       />,
     );
 
-    const graph = screen.getByRole("region", { name: "Decision Graph" });
-    expect(within(graph).getByText("Plan verified")).toBeInTheDocument();
-    expect(within(graph).getByText("7 governed actions")).toBeInTheDocument();
-    expect(within(graph).getByText("1 approval gate")).toBeInTheDocument();
-    expect(within(graph).getByText("Mutation blocked until approval")).toBeInTheDocument();
-    expect(within(graph).getByText("No mock refund can execute until the operator approves APR-2042.")).toBeInTheDocument();
-    expect(within(graph).getByText("Draft only - not sent.")).toBeInTheDocument();
+    const overview = screen.getByRole("region", { name: "Decision Overview" });
+    expect(within(overview).getByText("Plan verified")).toBeInTheDocument();
+    expect(within(overview).getByText("7 governed actions")).toBeInTheDocument();
+    expect(within(overview).getByText("1 approval gate")).toBeInTheDocument();
+    expect(within(overview).getByText("Mutation blocked until approval")).toBeInTheDocument();
+    expect(
+      within(overview).getByText("No mock refund can execute until the operator approves APR-2042."),
+    ).toBeInTheDocument();
+    expect(within(overview).getByText("Draft only - not sent.")).toBeInTheDocument();
+    expect(within(overview).queryByText("->")).not.toBeInTheDocument();
 
-    fireEvent.click(within(graph).getByRole("button", { name: /Evidence/ }));
+    const stepper = within(overview).getByTestId("decision-stepper");
+    expect(stepper.className).toContain("grid-cols-1");
+    expect(stepper.className).not.toContain("md:grid-cols-5");
 
-    expect(within(graph).getByText("Evidence supports the decision")).toBeInTheDocument();
-    expect(within(graph).getByText("The agent read invoice and charge evidence before deciding.")).toBeInTheDocument();
+    const evidenceStep = within(overview).getByRole("button", {
+      name: "Evidence step, Complete",
+    });
+    expect(evidenceStep.className).toContain("min-w-0");
+    expect(evidenceStep.className).toContain("break-words");
+
+    fireEvent.click(evidenceStep);
+
+    expect(within(overview).getByText("Evidence supports the decision")).toBeInTheDocument();
+    expect(
+      within(overview).getByText("The agent read invoice and charge evidence before deciding."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Allowed by approval.create_request - Medium risk")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Trace diagnostics"));
@@ -512,14 +531,14 @@ describe("MeterDeskShell", () => {
     );
 
     expect(screen.getAllByText("RUN-2042").length).toBeGreaterThan(0);
-    expect(screen.getByRole("region", { name: "Agent Decision Summary" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Decision Overview" })).toBeInTheDocument();
     expect(screen.getAllByText("Duplicate captured charge confirmed").length).toBeGreaterThan(0);
     expect(
       screen.getByText(
         "Agent confirmed a duplicate captured charge on INV-2026-0418 and prepared an original refund request. The $1,248.00 mutation remains blocked until human approval.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("Refund blocked for approval")).toBeInTheDocument();
+    expect(screen.getByText("Mutation blocked until human approval")).toBeInTheDocument();
     expect(screen.getByText("Compliance: Passed")).toBeInTheDocument();
     expect(screen.getByText("7 governed actions verified")).toBeInTheDocument();
     expect(screen.getByText("1 high-risk gate")).toBeInTheDocument();
@@ -527,8 +546,9 @@ describe("MeterDeskShell", () => {
     expect(screen.getByText("Prompt: m3-duplicate-charge-v1")).toBeInTheDocument();
     expect(screen.getByText("Confirmed duplicate payment on INV-2026-0418.")).toBeInTheDocument();
     expect(screen.getByText("Draft only - not sent")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+    const safetyRail = screen.getByRole("region", { name: "Safety rail" });
+    expect(within(safetyRail).getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(within(safetyRail).getByRole("button", { name: "Reject" })).toBeEnabled();
     expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
     expect(
       screen.queryByText("Allowed by approval.create_request - Medium risk"),

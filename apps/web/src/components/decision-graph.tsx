@@ -1,20 +1,27 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   DecisionGraph,
   DecisionGraphNode,
   DecisionGraphNodeId,
   DecisionGraphTone,
+  WorkbenchScenario,
 } from "@/lib/meterdesk-view";
 
-type DecisionGraphCardProps = {
+type DecisionOverviewProps = {
   graph: DecisionGraph;
+  summary: WorkbenchScenario["decisionSummary"];
 };
 
-export function DecisionGraphCard({ graph }: DecisionGraphCardProps) {
+export function DecisionOverview({ graph, summary }: DecisionOverviewProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<DecisionGraphNodeId>(graph.defaultNodeId);
+
+  useEffect(() => {
+    setSelectedNodeId(graph.defaultNodeId);
+  }, [graph.defaultNodeId]);
+
   const selectedNode = useMemo(
     () => graph.nodes.find((node) => node.id === selectedNodeId) ?? graph.nodes[0],
     [graph.nodes, selectedNodeId],
@@ -22,56 +29,71 @@ export function DecisionGraphCard({ graph }: DecisionGraphCardProps) {
 
   return (
     <section
-      aria-labelledby="decision-graph-heading"
-      className="mt-5 rounded-md border border-meter-line bg-white p-4"
+      aria-labelledby="decision-overview-heading"
+      className="rounded-md border border-meter-line bg-white p-5"
       role="region"
     >
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase text-slate-500">Decision Graph</p>
-          <h2 id="decision-graph-heading" className="mt-2 text-xl font-semibold">
-            Decision Graph
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase text-slate-500">Decision overview</p>
+          <h2 id="decision-overview-heading" className="mt-2 text-xl font-semibold">
+            Decision Overview
           </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Why this decision is trustworthy
+          <h3 className="mt-3 text-2xl font-semibold leading-tight">{summary.decisionLabel}</h3>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700">
+            {summary.rationale}
           </p>
         </div>
-        {graph.summaryBadges.length > 0 ? (
-          <div className="flex flex-wrap gap-2 text-xs font-medium">
-            {graph.summaryBadges.map((badge) => (
-              <span
-                className="rounded-full border border-meter-line bg-[#fbfcfe] px-2.5 py-1 text-slate-600"
-                key={badge}
-              >
-                {badge}
-              </span>
-            ))}
+        {summary.runId || summary.policyCitation || summary.complianceStatus ? (
+          <div className="flex shrink-0 flex-wrap gap-2 text-xs font-medium lg:max-w-[260px] lg:justify-end">
+            {summary.runId ? <SummaryBadge label={`Run ${summary.runId}`} /> : null}
+            {summary.policyCitation ? <SummaryBadge label={summary.policyCitation} /> : null}
+            {summary.complianceStatus ? (
+              <SummaryBadge label={`Compliance ${summary.complianceStatus}`} />
+            ) : null}
           </div>
         ) : null}
       </div>
 
-      <div className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1.1fr)_minmax(280px,0.9fr)]">
-        <div>
-          <ol className="grid gap-2 md:grid-cols-5">
+      {graph.summaryBadges.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2 text-xs font-medium">
+          {graph.summaryBadges.map((badge) => (
+            <SummaryBadge label={badge} key={badge} />
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-5 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,0.72fr)]">
+        <div className="min-w-0">
+          <ol
+            aria-label="Decision lineage"
+            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5"
+            data-testid="decision-stepper"
+          >
             {graph.nodes.map((node, index) => (
-              <li className="relative" key={node.id}>
+              <li className="min-w-0" key={node.id}>
                 <button
+                  aria-label={`${node.label} step, ${statusLabel(node)}`}
                   aria-pressed={node.id === selectedNode.id}
-                  className={`h-full min-h-24 w-full rounded-md border p-3 text-left transition ${nodeToneClass(
+                  className={`min-w-0 w-full break-words rounded-md border px-3 py-2 text-left transition ${nodeToneClass(
                     node.tone,
                     node.id === selectedNode.id,
                   )}`}
                   onClick={() => setSelectedNodeId(node.id)}
                   type="button"
                 >
-                  <span className="text-xs font-semibold uppercase">{node.label}</span>
-                  <span className="mt-2 block text-sm font-semibold">{statusLabel(node)}</span>
-                </button>
-                {index < graph.nodes.length - 1 ? (
-                  <span className="absolute -right-2 top-1/2 hidden -translate-y-1/2 text-slate-400 md:block">
-                    -&gt;
+                  <span className="flex items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current text-[11px] font-semibold">
+                      {index + 1}
+                    </span>
+                    <span className="min-w-0 break-words text-[11px] font-semibold uppercase leading-tight">
+                      {node.label}
+                    </span>
                   </span>
-                ) : null}
+                  <span className="mt-1 block min-w-0 break-words text-xs font-semibold leading-tight">
+                    {statusLabel(node)}
+                  </span>
+                </button>
               </li>
             ))}
           </ol>
@@ -102,6 +124,14 @@ export function DecisionGraphCard({ graph }: DecisionGraphCardProps) {
         {selectedNode ? <DecisionGraphInspector node={selectedNode} /> : null}
       </div>
     </section>
+  );
+}
+
+function SummaryBadge({ label }: { label: string }) {
+  return (
+    <span className="rounded-full border border-meter-line bg-[#fbfcfe] px-2.5 py-1 text-slate-600">
+      {label}
+    </span>
   );
 }
 
