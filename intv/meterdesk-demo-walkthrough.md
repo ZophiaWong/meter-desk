@@ -2,6 +2,10 @@
 
 这份文档是 MeterDesk 的面试演示脚本。它回答三个问题：要运行什么、要展示什么、以及面试官追问设计时该怎么解释。
 
+## 30 秒项目介绍
+
+MeterDesk 是一个面向 usage-based API / AI 平台的账单支持工作台。它不是客服聊天机器人，而是一个 governed agent product：agent 通过受控工具读取 invoice、charge、credit、usage 和 policy evidence，生成可解释的 resolution draft；一旦涉及 refund 或 credit mutation，系统必须先创建人工审批请求，approval 前不会执行任何 mutation。这个项目的重点是把 agent workflow、权限边界、audit trace、approval gate 和 offline eval 串成一个能演示、能测试、能解释的完整产品切片。
+
 ## 演示结构
 
 MeterDesk 是一个面向按量计费 API / AI 平台的账单支持控制台。它的重点不是聊天，而是让 agent（智能体）在受控工具、审计 trace 和人工审批门后处理账单争议。
@@ -14,6 +18,27 @@ v1 的主路径是 Duplicate Charge。
 - **真实 provider 路径**：`make demo-reset-live` 默认只清空 Duplicate Charge 主票据的运行态数据；也可以用 `TICKET_ID=TCK-1137` 清空 Credit/Refund Dispute。配置 provider 后，可以在 Workbench 里跑真实 governed agent loop。
 
 无 key 基线不是“无 key 也真实跑 agent”。它是一条 seeded audit trail，用来稳定展示产品流程、治理模型和审批门。真实模型调用仍然走真实 provider 路径。
+
+## README 图示讲法
+
+README 保持普通开源项目入口：介绍产品、能力、架构、运行方式和规格文档。求职导向的讲法放在这份 `intv/` 文档里。
+
+![Recruiter demo map](../docs/diagrams/recruiter-demo-map.svg)
+
+如果对方只给 30 秒，按这条路径讲：
+
+1. Open `http://localhost:3000` and inspect `TCK-1042`, the Duplicate Charge golden path.
+2. Review the Decision Overview: evidence -> policy -> decision -> approval -> mutation state.
+3. Open `http://localhost:3000/approvals` and approve or reject the proposed financial action.
+4. Open `http://localhost:3000/eval-lab` and inspect deterministic eval results plus Usage Spike blocked gaps.
+5. Open `http://localhost:3000/?ticket=TCK-1137` to see the supporting Credit/Refund Dispute workflow reuse the same governance path.
+
+仓库里的 SVG 图不是产品功能扩展，而是解释入口。每张图在 `docs/diagrams/` 下都有对应 Mermaid reference，方便后续维护。可以按这个顺序讲：
+
+1. **Recruiter Demo Map**：这张图回答“我应该先看哪里”。从 `make seed` 进入 Ticket Workbench，看 Duplicate Charge 的 Decision Overview，再去 Approval Queue 验证人工审批门，最后去 Eval Lab 看 outcome 和 trace scoring。`TCK-1137` 证明同一套治理路径能复用到 Credit/Refund Dispute；Usage Spike blocked gap 则说明 eval 没有隐藏未完成覆盖。
+2. **System Architecture**：这张图强调边界。Next.js 只负责展示和交互；FastAPI 控制 workflow、tool execution、approval 和 eval；Postgres 保存 domain data 和 audit state；provider boundary 很窄，只接一个 OpenAI-compatible provider；外部账单和支付系统都是 mock-only。
+3. **Governed Agent Run**：这张 sequence diagram 说明 agent 不是自由调用工具。provider 先给 bounded investigation plan，FastAPI 做 plan verification，然后工具读取证据、执行 deterministic decision，最后只让 provider 生成 draft text。每一步都会写 trace。
+4. **Approval Gate State Machine**：这张图是安全模型。Agent 可以 propose refund 或 credit，但进入 `PendingApproval` 后 mutation tool 仍然 blocked。只有 human approve 后，系统才允许一次 mock mutation；reject 则进入 no-mutation closed state。
 
 ## 首次启动
 

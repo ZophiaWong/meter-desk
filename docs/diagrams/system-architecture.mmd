@@ -1,0 +1,16 @@
+flowchart TB
+    subgraph UI["Next.js product surfaces"]
+        Workbench["Ticket Workbench"]
+        Queue["Approval Queue"]
+        Lab["Eval Lab"]
+    end
+
+    Runtime["FastAPI governed runtime<br/>resource APIs + agent orchestration + tool policy + approval gates + eval runner"]
+    Provider["one OpenAI-compatible provider<br/>bounded planning and draft text"]
+    Mock["mock external systems<br/>billing evidence + mock refund/credit mutations"]
+    Store["Postgres durable state<br/>domain records + agent traces + approvals + mock mutations + eval results"]
+
+    UI --> Runtime
+    Runtime --> Provider
+    Runtime --> Mock
+    Runtime --> Store

@@ -1,0 +1,18 @@
+stateDiagram-v2
+    [*] --> Proposed: agent proposes refund or credit
+    Proposed --> PendingApproval: FastAPI creates approval request
+    PendingApproval --> Approved: human approves
+    PendingApproval --> Rejected: human rejects
+    Rejected --> ClosedNoMutation: no mutation allowed
+    Approved --> MockMutationReady: one mock mutation unlocked
+    MockMutationReady --> MockMutationExecuted: mutation.mock_refund or mutation.mock_credit_or_refund
+    MockMutationExecuted --> AuditRecorded: link ticket, run, evidence, approval
+    AuditRecorded --> [*]
+
+    PendingApproval --> MutationBlocked: early mutation attempt
+    MutationBlocked --> PendingApproval: keep action blocked
+
+    note right of PendingApproval
+        High-risk tools cannot execute here.
+        Customer replies remain draft-only.
+    end note

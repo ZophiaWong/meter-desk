@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="860" viewBox="0 0 1200 860" role="img" aria-labelledby="title desc">
+  <title id="title">MeterDesk governed agent run sequence</title>
+  <desc id="desc">The operator starts an investigation. FastAPI asks the provider for a bounded plan, verifies it, executes governed tools, records traces, drafts text, creates approval, and returns a pending-approval run.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3167b1"/>
+    </marker>
+    <marker id="dashArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .title { fill: #18212f; font: 700 28px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .caption { fill: #64748b; font: 400 15px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .actor { fill: #e8f1fc; stroke: #3167b1; stroke-width: 1.8; rx: 8; }
+      .participant { fill: #ffffff; stroke: #d7dde7; stroke-width: 1.5; rx: 8; }
+      .head { fill: #18212f; font: 700 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .small { fill: #64748b; font: 400 12px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .msg { fill: #18212f; font: 400 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .note { fill: #fff7e6; stroke: #b7791f; stroke-width: 1.5; rx: 8; }
+      .lifeline { stroke: #d7dde7; stroke-width: 1.5; stroke-dasharray: 6 6; }
+      .arrow { stroke: #3167b1; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #64748b; stroke-width: 1.6; stroke-dasharray: 6 5; fill: none; marker-end: url(#dashArrow); }
+      .self { stroke: #3167b1; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="860"/>
+  <text class="title" x="48" y="54">Governed Agent Run</text>
+  <text class="caption" x="48" y="82">The model can plan and draft; FastAPI owns verification, tools, traces, approval, and mutation safety.</text>
+
+  <rect class="actor" x="38" y="122" width="128" height="54"/>
+  <text class="head" x="75" y="146">Operator</text>
+  <text class="small" x="64" y="164">support user</text>
+  <rect class="participant" x="214" y="122" width="148" height="54"/>
+  <text class="head" x="244" y="146">Next.js UI</text>
+  <text class="small" x="236" y="164">Workbench</text>
+  <rect class="participant" x="420" y="122" width="148" height="54"/>
+  <text class="head" x="459" y="146">FastAPI</text>
+  <text class="small" x="446" y="164">governance owner</text>
+  <rect class="participant" x="626" y="122" width="148" height="54"/>
+  <text class="head" x="666" y="146">Provider</text>
+  <text class="small" x="654" y="164">plan and draft</text>
+  <rect class="participant" x="832" y="122" width="148" height="54"/>
+  <text class="head" x="866" y="146">Tools</text>
+  <text class="small" x="854" y="164">permission scoped</text>
+  <rect class="participant" x="1038" y="122" width="124" height="54"/>
+  <text class="head" x="1073" y="146">Postgres</text>
+  <text class="small" x="1062" y="164">audit state</text>
+
+  <line class="lifeline" x1="102" y1="176" x2="102" y2="808"/>
+  <line class="lifeline" x1="288" y1="176" x2="288" y2="808"/>
+  <line class="lifeline" x1="494" y1="176" x2="494" y2="808"/>
+  <line class="lifeline" x1="700" y1="176" x2="700" y2="808"/>
+  <line class="lifeline" x1="906" y1="176" x2="906" y2="808"/>
+  <line class="lifeline" x1="1100" y1="176" x2="1100" y2="808"/>
+
+  <path class="arrow" d="M 102 218 L 288 218"/>
+  <text class="msg" x="121" y="210">1. Run investigation for TCK-1042</text>
+  <path class="arrow" d="M 288 262 L 494 262"/>
+  <text class="msg" x="316" y="254">2. POST /tickets/TCK-1042/agent-runs</text>
+  <path class="arrow" d="M 494 306 L 700 306"/>
+  <text class="msg" x="520" y="298">3. Request bounded investigation plan</text>
+  <path class="dash" d="M 700 350 L 494 350"/>
+  <text class="msg" x="520" y="342">4. Evidence targets and planned actions</text>
+  <path class="self" d="M 494 386 C 556 386 556 422 494 422"/>
+  <text class="msg" x="526" y="402">5. Verify plan contract</text>
+  <path class="arrow" d="M 494 466 L 1100 466"/>
+  <text class="msg" x="545" y="458">6. Trace plan.investigation and plan.verify</text>
+  <path class="arrow" d="M 494 510 L 906 510"/>
+  <text class="msg" x="562" y="502">7. read.billing_evidence</text>
+  <path class="arrow" d="M 906 554 L 1100 554"/>
+  <text class="msg" x="937" y="546">8. Load billing and policy evidence</text>
+  <path class="dash" d="M 1100 598 L 906 598"/>
+  <text class="msg" x="936" y="590">9. Evidence references</text>
+  <path class="dash" d="M 906 642 L 494 642"/>
+  <text class="msg" x="578" y="634">10. Structured evidence summary</text>
+  <path class="arrow" d="M 494 686 L 906 686"/>
+  <text class="msg" x="559" y="678">11. decision.refund_eligibility</text>
+  <path class="dash" d="M 906 730 L 494 730"/>
+  <text class="msg" x="572" y="722">12. Duplicate charge eligible</text>
+  <path class="arrow" d="M 494 774 L 700 774"/>
+  <text class="msg" x="520" y="766">13. Draft internal note and customer reply</text>
+  <path class="dash" d="M 700 818 L 288 818"/>
+  <text class="msg" x="371" y="810">14. Completed run with pending approval</text>
+
+  <rect class="note" x="770" y="250" width="330" height="74"/>
+  <text class="head" x="790" y="278">Safety boundary</text>
+  <text class="small" x="790" y="300">Provider text is not authority for refunds.</text>
+  <text class="small" x="790" y="316">FastAPI owns tools, traces, and approval.</text>
+</svg>

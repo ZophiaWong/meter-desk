@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">MeterDesk system architecture</title>
+  <desc id="desc">A layered architecture diagram showing Next.js product surfaces calling a central FastAPI governed runtime, which controls one provider boundary, mock external systems, and durable Postgres audit state.</desc>
+  <defs>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3167b1"/>
+    </marker>
+    <marker id="arrowSlate" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .title { fill: #18212f; font: 700 30px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .caption { fill: #64748b; font: 400 15px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .section-title { fill: #64748b; font: 700 14px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .card { fill: #ffffff; stroke: #d7dde7; stroke-width: 1.5; rx: 8; }
+      .surface { fill: #e8f1fc; stroke: #3167b1; stroke-width: 1.8; rx: 8; }
+      .runtime { fill: #ffffff; stroke: #3167b1; stroke-width: 2; rx: 8; }
+      .runtime-badge { fill: #18212f; rx: 6; }
+      .module { fill: #fbfcfe; stroke: #d7dde7; stroke-width: 1.5; rx: 6; }
+      .store { fill: #e8f8f3; stroke: #1f9d7a; stroke-width: 1.8; rx: 8; }
+      .external { fill: #fff7e6; stroke: #b7791f; stroke-width: 1.8; rx: 8; }
+      .provider { fill: #ffffff; stroke: #3167b1; stroke-width: 1.8; rx: 8; }
+      .label { fill: #18212f; font: 700 15px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .label-light { fill: #ffffff; font: 700 16px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .small { fill: #64748b; font: 400 12px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .arrow { stroke: #3167b1; stroke-width: 2; fill: none; marker-end: url(#arrowBlue); }
+      .arrow-muted { stroke: #64748b; stroke-width: 1.6; stroke-dasharray: 6 5; fill: none; marker-end: url(#arrowSlate); }
+      .divider { stroke: #d7dde7; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="720"/>
+  <text class="title" x="48" y="54">System Architecture</text>
+  <text class="caption" x="48" y="82">MeterDesk is centered on a backend-owned governed runtime, not frontend-driven tool calls.</text>
+
+  <text class="section-title" x="72" y="128">PRODUCT SURFACES</text>
+  <rect class="surface" x="72" y="150" width="260" height="88"/>
+  <text class="label" x="116" y="184">Ticket Workbench</text>
+  <text class="small" x="102" y="207">evidence, decision overview,</text>
+  <text class="small" x="130" y="224">drafts, safety rail</text>
+
+  <rect class="surface" x="470" y="150" width="260" height="88"/>
+  <text class="label" x="522" y="184">Approval Queue</text>
+  <text class="small" x="510" y="207">human approve/reject</text>
+  <text class="small" x="526" y="224">financial actions</text>
+
+  <rect class="surface" x="868" y="150" width="260" height="88"/>
+  <text class="label" x="968" y="184">Eval Lab</text>
+  <text class="small" x="922" y="207">outcome, trace, baseline,</text>
+  <text class="small" x="947" y="224">coverage gaps</text>
+
+  <rect class="runtime" x="248" y="304" width="704" height="188"/>
+  <rect class="runtime-badge" x="474" y="322" width="252" height="32"/>
+  <text class="label-light" x="500" y="343">FastAPI Governed Runtime</text>
+  <text class="small" x="406" y="374">Owns workflow control, validation, tool execution, approvals, trace writes, and eval execution.</text>
+  <line class="divider" x1="280" y1="388" x2="920" y2="388"/>
+
+  <rect class="module" x="282" y="402" width="140" height="54"/>
+  <text class="label" x="322" y="424">Resource</text>
+  <text class="label" x="336" y="442">APIs</text>
+
+  <rect class="module" x="440" y="402" width="150" height="54"/>
+  <text class="label" x="477" y="424">Agent</text>
+  <text class="label" x="462" y="442">orchestration</text>
+
+  <rect class="module" x="608" y="402" width="150" height="54"/>
+  <text class="label" x="646" y="424">Tool policy</text>
+  <text class="small" x="638" y="442">read / decision / draft</text>
+
+  <rect class="module" x="776" y="402" width="140" height="54"/>
+  <text class="label" x="806" y="424">Approval</text>
+  <text class="label" x="828" y="442">gates</text>
+
+  <text class="small" x="365" y="474">Low-risk actions are traced. High-risk refund and credit mutations require approval.</text>
+
+  <rect class="provider" x="72" y="316" width="142" height="148"/>
+  <text class="label" x="105" y="350">Provider</text>
+  <text class="small" x="96" y="374">one OpenAI-</text>
+  <text class="small" x="94" y="392">compatible API</text>
+  <text class="small" x="100" y="424">bounded plan</text>
+  <text class="small" x="104" y="442">draft text</text>
+
+  <rect class="external" x="986" y="316" width="142" height="148"/>
+  <text class="label" x="1021" y="350">Mock</text>
+  <text class="label" x="1002" y="368">systems</text>
+  <text class="small" x="1012" y="394">billing evidence</text>
+  <text class="small" x="1005" y="414">mock refund/credit</text>
+  <text class="small" x="1017" y="442">no real provider</text>
+
+  <rect class="store" x="130" y="560" width="940" height="104"/>
+  <text class="label" x="496" y="594">Postgres Durable State</text>
+  <text class="small" x="205" y="626">domain records: tickets, accounts, invoices, charges, credits, usage, policies</text>
+  <text class="small" x="205" y="648">audit records: agent runs, tool traces, approval decisions, mock mutations, eval results</text>
+
+  <path class="arrow" d="M 202 238 L 368 304"/>
+  <path class="arrow" d="M 600 238 L 600 304"/>
+  <path class="arrow" d="M 998 238 L 832 304"/>
+  <path class="arrow-muted" d="M 248 390 L 214 390"/>
+  <path class="arrow-muted" d="M 952 390 L 986 390"/>
+  <path class="arrow" d="M 600 492 L 600 560"/>
+
+  <text class="small" x="250" y="276">internal APIs only</text>
+  <text class="small" x="962" y="276">eval runner reads traces</text>
+</svg>

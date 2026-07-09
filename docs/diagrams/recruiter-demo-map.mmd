@@ -1,0 +1,11 @@
+flowchart LR
+    Reviewer["Reviewer starts local demo"] --> Seed["make seed creates a no-key portfolio baseline"]
+    Seed --> Workbench["Ticket Workbench<br/>TCK-1042 Duplicate Charge"]
+    Workbench --> Decision["Decision Overview<br/>evidence -> policy -> decision"]
+    Decision --> Approval["Approval Queue<br/>human gate for refund or credit"]
+    Approval --> Eval["Eval Lab<br/>outcome + trace scoring"]
+    Eval --> Support["TCK-1137<br/>Credit/Refund supporting workflow"]
+
+    Workbench -.-> Evidence["not a chatbot:<br/>billing evidence, policy refs, traces"]
+    Approval -.-> Mutation["mutation blocked until approval:<br/>mock-only mutation"]
+    Eval -.-> Spike["honest coverage:<br/>Usage Spike remains blocked"]

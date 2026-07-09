@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">MeterDesk recruiter demo map</title>
+  <desc id="desc">A recruiter-oriented path through seed data, the Ticket Workbench, Decision Overview, Approval Queue, Eval Lab, and the Credit/Refund supporting workflow.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3167b1"/>
+    </marker>
+    <marker id="dashArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .title { fill: #18212f; font: 700 28px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .subtitle { fill: #64748b; font: 400 16px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .box { fill: #ffffff; stroke: #d7dde7; stroke-width: 1.5; rx: 8; }
+      .box-strong { fill: #e8f1fc; stroke: #3167b1; stroke-width: 1.8; rx: 8; }
+      .callout { fill: #fbfcfe; stroke: #d7dde7; stroke-width: 1.5; rx: 8; }
+      .label { fill: #18212f; font: 700 15px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .small { fill: #64748b; font: 400 13px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .arrow { stroke: #3167b1; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .dash { stroke: #64748b; stroke-width: 1.6; stroke-dasharray: 6 5; fill: none; marker-end: url(#dashArrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="520"/>
+  <text class="title" x="48" y="54">Recruiter Demo Map</text>
+  <text class="subtitle" x="48" y="82">A 30-second path through the governed billing support workflow.</text>
+
+  <rect class="box" x="48" y="142" width="148" height="96"/>
+  <text class="label" x="74" y="176">Reviewer</text>
+  <text class="small" x="74" y="202">starts local demo</text>
+
+  <rect class="box" x="230" y="142" width="156" height="96"/>
+  <text class="label" x="260" y="170">make seed</text>
+  <text class="small" x="252" y="197">no-key portfolio</text>
+  <text class="small" x="275" y="215">baseline</text>
+
+  <rect class="box-strong" x="420" y="132" width="170" height="116"/>
+  <text class="label" x="454" y="164">Workbench</text>
+  <text class="small" x="452" y="191">TCK-1042</text>
+  <text class="small" x="436" y="211">Duplicate Charge</text>
+
+  <rect class="box" x="624" y="132" width="170" height="116"/>
+  <text class="label" x="650" y="164">Decision</text>
+  <text class="label" x="648" y="184">Overview</text>
+  <text class="small" x="649" y="211">evidence -> policy</text>
+
+  <rect class="box" x="828" y="132" width="170" height="116"/>
+  <text class="label" x="861" y="164">Approval</text>
+  <text class="label" x="877" y="184">Queue</text>
+  <text class="small" x="855" y="211">human gate</text>
+
+  <rect class="box" x="1032" y="132" width="120" height="116"/>
+  <text class="label" x="1060" y="169">Eval</text>
+  <text class="label" x="1064" y="189">Lab</text>
+  <text class="small" x="1054" y="214">trace scoring</text>
+
+  <path class="arrow" d="M 196 190 L 230 190"/>
+  <path class="arrow" d="M 386 190 L 420 190"/>
+  <path class="arrow" d="M 590 190 L 624 190"/>
+  <path class="arrow" d="M 794 190 L 828 190"/>
+  <path class="arrow" d="M 998 190 L 1032 190"/>
+
+  <rect class="callout" x="410" y="324" width="190" height="82"/>
+  <text class="label" x="443" y="354">Not a chatbot</text>
+  <text class="small" x="431" y="378">billing evidence, policy</text>
+  <text class="small" x="459" y="396">refs, traces</text>
+  <path class="dash" d="M 505 248 L 505 324"/>
+
+  <rect class="callout" x="790" y="324" width="246" height="82"/>
+  <text class="label" x="842" y="354">Mutation blocked</text>
+  <text class="small" x="834" y="378">approval required before</text>
+  <text class="small" x="871" y="396">mock mutation</text>
+  <path class="dash" d="M 913 248 L 913 324"/>
+
+  <rect class="callout" x="996" y="348" width="156" height="86"/>
+  <text class="label" x="1031" y="380">TCK-1137</text>
+  <text class="small" x="1019" y="404">Credit/Refund</text>
+  <text class="small" x="1029" y="422">workflow</text>
+  <path class="arrow" d="M 1092 248 L 1092 348"/>
+</svg>

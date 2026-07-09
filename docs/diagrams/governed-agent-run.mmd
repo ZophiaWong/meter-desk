@@ -1,0 +1,26 @@
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant UI as Next.js Workbench
+    participant API as FastAPI
+    participant LLM as OpenAI-compatible provider
+    participant Tools as Governed tools
+    participant DB as Postgres audit state
+
+    Operator->>UI: Run investigation for TCK-1042
+    UI->>API: POST /tickets/TCK-1042/agent-runs
+    API->>LLM: Request bounded investigation plan
+    LLM-->>API: Evidence targets and planned actions
+    API->>API: Verify plan contract
+    API->>DB: Trace plan.investigation and plan.verify
+    API->>Tools: read.billing_evidence
+    Tools->>DB: Load invoices, charges, credits, policy
+    DB-->>Tools: Evidence references
+    Tools-->>API: Structured evidence summary
+    API->>Tools: decision.refund_eligibility
+    Tools-->>API: Duplicate charge eligible
+    API->>LLM: Draft internal note and customer reply
+    LLM-->>API: Draft-only text
+    API->>DB: Trace draft and create approval request
+    API-->>UI: Completed run with pending approval
+    UI-->>Operator: Decision Overview and Safety Rail

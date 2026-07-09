@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" viewBox="0 0 1100 640" role="img" aria-labelledby="title desc">
+  <title id="title">MeterDesk approval gate state machine</title>
+  <desc id="desc">A proposed refund or credit enters pending approval. Rejection closes without mutation. Approval unlocks one mock mutation. Early mutation attempts remain blocked.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3167b1"/>
+    </marker>
+    <marker id="blockedArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#991b1b"/>
+    </marker>
+    <style>
+      .bg { fill: #f7f8fb; }
+      .title { fill: #18212f; font: 700 28px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .caption { fill: #64748b; font: 400 15px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .state { fill: #ffffff; stroke: #d7dde7; stroke-width: 1.5; rx: 8; }
+      .pending { fill: #fff7e6; stroke: #b7791f; stroke-width: 2; rx: 8; }
+      .approved { fill: #e8f8f3; stroke: #1f9d7a; stroke-width: 1.8; rx: 8; }
+      .blocked { fill: #fef2f2; stroke: #991b1b; stroke-width: 1.8; rx: 8; }
+      .label { fill: #18212f; font: 700 15px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .small { fill: #64748b; font: 400 12px Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif; }
+      .arrow { stroke: #3167b1; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .red { stroke: #991b1b; stroke-width: 2; fill: none; marker-end: url(#blockedArrow); }
+      .note { fill: #e8f1fc; stroke: #3167b1; stroke-width: 1.5; rx: 8; }
+    </style>
+  </defs>
+  <rect class="bg" width="1100" height="640"/>
+  <text class="title" x="48" y="54">Approval Gate / Mutation State Machine</text>
+  <text class="caption" x="48" y="82">High-risk refund and credit mutations stay blocked until a human approval decision unlocks exactly one mock mutation.</text>
+
+  <circle cx="66" cy="300" r="16" fill="#18212f"/>
+  <rect class="state" x="116" y="256" width="150" height="88"/>
+  <text class="label" x="158" y="292">Proposed</text>
+  <text class="small" x="140" y="316">agent proposes</text>
+  <text class="small" x="139" y="332">refund or credit</text>
+
+  <rect class="pending" x="330" y="246" width="186" height="108"/>
+  <text class="label" x="371" y="284">PendingApproval</text>
+  <text class="small" x="365" y="310">FastAPI creates the</text>
+  <text class="small" x="363" y="328">human approval gate</text>
+
+  <rect class="approved" x="604" y="156" width="150" height="86"/>
+  <text class="label" x="646" y="192">Approved</text>
+  <text class="small" x="635" y="216">human action</text>
+
+  <rect class="state" x="604" y="366" width="150" height="86"/>
+  <text class="label" x="649" y="402">Rejected</text>
+  <text class="small" x="632" y="426">no mutation allowed</text>
+
+  <rect class="approved" x="826" y="134" width="172" height="86"/>
+  <text class="label" x="861" y="170">MockMutation</text>
+  <text class="label" x="890" y="188">Ready</text>
+  <text class="small" x="864" y="210">one execution only</text>
+
+  <rect class="approved" x="826" y="260" width="172" height="86"/>
+  <text class="label" x="856" y="296">MockMutation</text>
+  <text class="label" x="875" y="314">Executed</text>
+  <text class="small" x="848" y="336">refund or credit mock</text>
+
+  <rect class="state" x="826" y="404" width="172" height="86"/>
+  <text class="label" x="866" y="440">AuditRecorded</text>
+  <text class="small" x="851" y="464">ticket, run, evidence,</text>
+  <text class="small" x="876" y="480">approval linked</text>
+
+  <rect class="blocked" x="330" y="472" width="186" height="86"/>
+  <text class="label" x="370" y="508">MutationBlocked</text>
+  <text class="small" x="365" y="532">early mutation attempt</text>
+
+  <rect class="note" x="92" y="418" width="184" height="88"/>
+  <text class="label" x="122" y="450">Draft-only replies</text>
+  <text class="small" x="115" y="474">Customer text cannot</text>
+  <text class="small" x="116" y="492">promise unapproved refunds.</text>
+
+  <path class="arrow" d="M 82 300 L 116 300"/>
+  <path class="arrow" d="M 266 300 L 330 300"/>
+  <path class="arrow" d="M 516 286 C 560 238 560 199 604 199"/>
+  <path class="arrow" d="M 516 318 C 560 366 560 409 604 409"/>
+  <path class="arrow" d="M 754 199 L 826 177"/>
+  <path class="arrow" d="M 912 220 L 912 260"/>
+  <path class="arrow" d="M 912 346 L 912 404"/>
+  <path class="arrow" d="M 754 409 L 826 447"/>
+  <path class="red" d="M 423 354 L 423 472"/>
+  <path class="arrow" d="M 330 515 C 266 515 266 350 330 330"/>
+  <text class="small" x="543" y="260">approve</text>
+  <text class="small" x="545" y="386">reject</text>
+  <text class="small" x="436" y="420">blocked</text>
+</svg>
