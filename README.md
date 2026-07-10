@@ -1,16 +1,20 @@
 # MeterDesk
 
-MeterDesk is a billing support workbench for usage-based API and AI platforms. It lets an agent inspect invoices, charges, credits, usage, and policy records through backend-owned tools.
+MeterDesk is a billing support workbench for usage-based API and AI platforms. An agent investigates each ticket by reading invoices, charges, credits, usage, and policy records through tools owned by the backend.
 
-It is not a chat-first support bot. The main screen is a ticket workbench where the agent gathers evidence, explains a billing decision, drafts internal and customer-facing text, and requests approval. Refunds and credits do not execute until a human approves them. In v1, those executions are mock mutations only.
+The product starts from a ticket, not a blank chat box. The agent gathers evidence, explains the billing decision, drafts internal notes and customer-facing text, and asks for approval when money is involved. Refunds and credits execute only after human approval. In v1, those executions are mock mutations.
+
+![Ticket Workbench focused on a Duplicate Charge decision and pending approval gate](docs/screenshots/workbench-duplicate-charge-decision-overview.png)
+
+The Workbench puts the ticket, billing evidence, policy citations, decision path, approval state, and blocked mutation state on the same screen.
 
 ## Core capabilities
 
-- Ticket-first investigation: the Workbench starts from a billing dispute ticket, not an open-ended chat box.
-- Backend-owned tools: the agent uses read, decision, draft, approval, and mock mutation boundaries controlled by FastAPI.
-- Human approval: refund and credit actions stay blocked until a human approves the specific request.
-- Audit records: agent runs, tool calls, policy citations, approval decisions, and mock mutations are stored for review.
-- Offline evals: Eval Lab checks both the final answer and the trace path, including evidence coverage and approval routing.
+- Investigations start from a billing dispute ticket instead of an open-ended chat box.
+- FastAPI owns the read, decision, draft, approval, and mock mutation boundaries.
+- Refund and credit actions stay blocked until a human approves the exact request.
+- Agent runs, tool calls, policy citations, approval decisions, and mock mutations are stored for review.
+- Eval Lab checks the final answer and the trace path, including evidence coverage and approval routing.
 
 ## V1 golden path
 
@@ -23,11 +27,25 @@ The v1 golden path is **Duplicate Charge**:
 5. An approved action executes only as a mock mutation.
 6. The full run is available as an audit trail and offline eval target.
 
-MeterDesk also includes **Usage Spike** and **Credit/Refund Dispute** as supporting scenarios. Credit/Refund Dispute has a runnable governed workflow for `TCK-1137`. Usage Spike is still a visible coverage gap. Both scenarios reuse the same workbench, trace, approval, and eval model instead of becoming separate product lines.
+MeterDesk also includes **Usage Spike** and **Credit/Refund Dispute** as supporting scenarios. Credit/Refund Dispute has a runnable governed workflow for `TCK-1137`. Usage Spike remains a visible coverage gap. Both scenarios reuse the same workbench, trace, approval, and eval model instead of becoming separate product lines.
+
+## Product tour
+
+### Approval Queue
+
+Human reviewers approve or reject pending financial actions. A proposed refund or credit stays blocked until the reviewer records a decision.
+
+![Approval Queue showing pending financial actions](docs/screenshots/approval-queue-pending-action.png)
+
+### Eval Lab
+
+Eval Lab runs offline checks against governed agent traces, including outcome correctness, required evidence, policy compliance, approval routing, and known coverage gaps.
+
+![Eval Lab showing deterministic checks and coverage gaps](docs/screenshots/eval-lab-overview.png)
 
 ## System architecture
 
-MeterDesk separates the UI, backend workflow control, agent orchestration, mock systems, and stored audit data.
+The app keeps the UI, backend workflow control, agent orchestration, mock systems, and stored audit data behind separate boundaries.
 
 ![System architecture](docs/diagrams/system-architecture.svg)
 
@@ -39,8 +57,8 @@ Stack:
 - Backend: FastAPI
 - Database: Postgres
 - LLM: OpenAI-compatible interface with one live provider in v1
-- Retrieval: no vector search in v1; policy is handled through explicit policy text and eligibility checks
-- MCP posture: adapter-ready tool layer, but no required MCP server in v1
+- Retrieval: no vector search in v1; policy uses explicit policy text and eligibility checks
+- MCP: adapter-ready tool layer; no required MCP server in v1
 
 ## Governed agent run
 
@@ -52,7 +70,7 @@ Mermaid reference: [governed-agent-run.mmd](docs/diagrams/governed-agent-run.mmd
 
 ## Approval gate state machine
 
-Refunds and credits are high-risk actions even in a mock system. The agent can propose them, but mutation stays blocked until a human approval decision is recorded.
+Refunds and credits count as high-risk actions even in a mock system. The agent can propose them, but the mutation stays blocked until a human records an approval decision.
 
 ![Approval gate state machine](docs/diagrams/approval-gate-state-machine.svg)
 
@@ -121,13 +139,13 @@ curl --fail http://localhost:8000/health/db
 
 If `/health/db` returns 503 while Postgres appears healthy in Docker, see [WSL2 Docker Desktop Postgres troubleshooting](docs/troubleshooting/wsl-docker-postgres-health-db.md).
 
-## Demo script
+## Guided walkthrough
 
-For the no-key seeded baseline, live provider reset path, architecture talking points, and interview walkthrough, see [MeterDesk Interview Demo Walkthrough](intv/meterdesk-demo-walkthrough.md).
+See [MeterDesk Demo Walkthrough](intv/meterdesk-demo-walkthrough.md) for the no-key seeded baseline, live provider reset path, architecture talking points, and interview notes.
 
-## Project docs
+## Further reading
 
-Start with these documents before implementation:
+The deeper product and implementation notes are here:
 
 - [AGENTS.md](AGENTS.md) - operating rules for AI coding agents
 - [Product Scope](docs/specs/product-scope.md) - product thesis, v1 scope, golden path, and exclusions

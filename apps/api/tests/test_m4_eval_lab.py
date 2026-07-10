@@ -10,8 +10,10 @@ from meterdesk_api.agent.planning import (
 )
 from meterdesk_api.agent.provider import (
     AgentDraftOutput,
+    AgentProviderError,
     AgentProviderInput,
     AgentResolutionProvider,
+    OpenAICompatibleProvider,
 )
 from meterdesk_api.agent.runtime import get_optional_agent_provider, get_optional_eval_judge
 from meterdesk_api.eval.judge import EvalDraftJudgeInput, EvalDraftJudgeOutput
@@ -340,7 +342,10 @@ async def test_eval_case_reruns_preserve_snapshot_history_and_latest_projection(
     assert latest_results[0].id == second.id
     assert [snapshot.result_id for snapshot in current_snapshots] == [first.id, second.id]
     assert len(baseline_snapshots) == 1
-    assert current_snapshots[-1].version_snapshot["prompt_fingerprint"] == build_prompt_fingerprint()
+    assert (
+        current_snapshots[-1].version_snapshot["prompt_fingerprint"]
+        == build_prompt_fingerprint()
+    )
     assert current_snapshots[-1].trace_signature["ordered_categories"]
 
 
@@ -374,7 +379,9 @@ async def test_provider_blocked_eval_is_incomparable_not_agent_regression() -> N
 
     await runner.run_case("eval-duplicate-charge-001")
     summary = await EvalRegressionService(repository).latest_summary()
-    case_summary = next(case for case in summary.cases if case.case_id == "eval-duplicate-charge-001")
+    case_summary = next(
+        case for case in summary.cases if case.case_id == "eval-duplicate-charge-001"
+    )
 
     assert summary.counts["regressed"] == 0
     assert summary.counts["incomparable"] >= 1
@@ -440,6 +447,21 @@ async def test_duplicate_charge_eval_is_blocked_when_provider_is_missing() -> No
     assert result.dimension_scores["tool_planning"] == "blocked"
     assert result.dimension_scores["governance_compliance"] == "blocked"
     assert result.details["blocked_reason"] == "OpenAI-compatible provider is not configured"
+
+
+def test_openai_provider_wraps_request_timeout(monkeypatch) -> None:
+    def raise_timeout(*args, **kwargs):
+        raise TimeoutError("The read operation timed out")
+
+    monkeypatch.setattr("meterdesk_api.agent.provider.urlopen", raise_timeout)
+    provider = OpenAICompatibleProvider(
+        api_key="test-key",
+        model="test-timeout-model",
+        base_url="https://provider.test/v1",
+    )
+
+    with pytest.raises(AgentProviderError, match="provider request timed out"):
+        provider._post_chat_completion({"model": "test-timeout-model"})
 
 
 @pytest.mark.asyncio

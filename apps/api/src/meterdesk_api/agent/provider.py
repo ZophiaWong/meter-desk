@@ -174,6 +174,8 @@ class OpenAICompatibleProvider:
             raise AgentProviderError(f"provider HTTP {error.code}: {body}") from error
         except URLError as error:
             raise AgentProviderError(f"provider request failed: {error.reason}") from error
+        except TimeoutError as error:
+            raise AgentProviderError("provider request timed out") from error
 
 
 def validate_provider_output(output: AgentDraftOutput) -> None:
