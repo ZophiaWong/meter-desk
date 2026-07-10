@@ -5,8 +5,6 @@ import {
 } from "@/lib/meterdesk-actions";
 import type { WorkbenchScenario } from "@/lib/meterdesk-view";
 
-import { TraceDiagnostics } from "./trace-diagnostics";
-
 type SafetyRailProps = {
   scenario: WorkbenchScenario;
 };
@@ -15,7 +13,7 @@ export function SafetyRail({ scenario }: SafetyRailProps) {
   return (
     <section
       aria-labelledby="safety-rail-heading"
-      className="rounded-md border border-meter-line bg-white p-5 xl:sticky xl:top-6 xl:self-start"
+      className="rounded-md border border-meter-line bg-white p-5 xl:sticky xl:top-24 xl:self-start"
       role="region"
     >
       <div>
@@ -24,12 +22,10 @@ export function SafetyRail({ scenario }: SafetyRailProps) {
           Safety rail
         </h2>
       </div>
-      <GovernanceRulesDrawer scenario={scenario} />
+      <SafetySummaryCard scenario={scenario} />
       <RunStateCard scenario={scenario} />
       <ComplianceCard scenario={scenario} />
-      <ApprovalCard scenario={scenario} />
       <MutationResultList scenario={scenario} />
-      <TraceDiagnostics traces={scenario.traces} />
       <DraftReply scenario={scenario} />
     </section>
   );
@@ -62,30 +58,55 @@ function ComplianceCard({ scenario }: SafetyRailProps) {
   );
 }
 
-function ApprovalCard({ scenario }: SafetyRailProps) {
+function SafetySummaryCard({ scenario }: SafetyRailProps) {
   if (!scenario.approval) {
     return (
-      <section className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4">
-        <p className="text-xs font-semibold uppercase text-slate-500">No approval request</p>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Financial action approval appears after a governed agent run proposes a refund or credit.
-        </p>
+      <section
+        aria-label="Safety summary"
+        className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4"
+        role="region"
+      >
+        <p className="text-xs font-semibold uppercase text-slate-500">Safety summary</p>
+        <h3 id="safety-summary-heading" className="mt-2 text-base font-semibold">
+          No approval request
+        </h3>
+        <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-600">
+          <span>No approval required yet</span>
+          <span>No mock mutation executed</span>
+          <span>{scenario.drafts ? "Draft only" : "No draft"}</span>
+        </div>
       </section>
     );
   }
   const isPending = scenario.approval.status.toLowerCase() === "pending";
   const tone = approvalToneClass(scenario.approval.status);
+  const hasMutation = scenario.mutations.length > 0;
 
   return (
-    <section className={`mt-4 rounded-md border p-4 ${tone.panel}`}>
+    <section
+      aria-label="Safety summary"
+      className={`mt-4 rounded-md border p-4 ${tone.panel}`}
+      role="region"
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className={`text-xs font-semibold uppercase ${tone.label}`}>
-            {scenario.approval.status}
-          </p>
-          <h3 className="mt-2 text-base font-semibold">{scenario.approval.title}</h3>
+          <p className={`text-xs font-semibold uppercase ${tone.label}`}>Safety summary</p>
+          <h3 id="safety-summary-heading" className="mt-2 text-base font-semibold">
+            {scenario.approval.status === "Pending"
+              ? "Pending approval"
+              : `${scenario.approval.status} approval`}
+          </h3>
         </div>
         <span className="text-lg font-semibold">{scenario.approval.amount}</span>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-700">
+        <span>
+          {scenario.approval.status === "Pending"
+            ? "Approval gate pending"
+            : `${scenario.approval.status} gate`}
+        </span>
+        <span>{hasMutation ? "Mock mutation executed" : "Mutation blocked"}</span>
+        <span>{scenario.drafts ? "Draft only" : "No draft"}</span>
       </div>
       <p className="mt-3 text-sm leading-6 text-slate-700">{scenario.approval.reason}</p>
       <p className={`mt-3 text-sm font-medium ${tone.label}`}>{scenario.approval.blocker}</p>
@@ -189,66 +210,6 @@ function MutationResultList({ scenario }: SafetyRailProps) {
         ))}
       </div>
     </section>
-  );
-}
-
-function GovernanceRulesDrawer({ scenario }: SafetyRailProps) {
-  const policyCount = scenario.toolPolicies.length;
-  const highRiskCount = scenario.toolPolicies.filter((policy) => policy.risk === "High").length;
-
-  return (
-    <details className="mt-3 rounded-md border border-meter-line bg-[#fbfcfe] p-3">
-      <summary className="cursor-pointer list-none text-sm font-semibold text-meter-blue">
-        {policyCount} governed actions | {highRiskCount} high-risk gate | View rules
-      </summary>
-      <div className="mt-4 space-y-3">
-        <p className="text-xs leading-5 text-slate-500">
-          Read-only matrix generated from the backend code-first registry.
-        </p>
-        {scenario.compliance ? (
-          <div className="rounded-md border border-meter-line bg-white p-3 text-xs text-slate-600">
-            <h3 className="font-semibold text-slate-800">Compliance diagnostics</h3>
-            {scenario.compliance.reasonCodes ? (
-              <p className="mt-2">Reason codes: {scenario.compliance.reasonCodes}</p>
-            ) : null}
-            {scenario.compliance.affectedTraceIds ? (
-              <p className="mt-2">Affected traces: {scenario.compliance.affectedTraceIds}</p>
-            ) : null}
-            {scenario.compliance.missingRefs ? (
-              <p className="mt-2">Missing refs: {scenario.compliance.missingRefs}</p>
-            ) : null}
-            {scenario.compliance.policyVersions ? (
-              <p className="mt-2">Policy versions: {scenario.compliance.policyVersions}</p>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-separate border-spacing-y-2 text-left text-xs">
-            <thead className="text-slate-500">
-              <tr>
-                <th className="pr-3 font-semibold">Action</th>
-                <th className="pr-3 font-semibold">Risk</th>
-                <th className="pr-3 font-semibold">Gate</th>
-                <th className="font-semibold">Refs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scenario.toolPolicies.map((policy) => (
-                <tr className="align-top" key={policy.id}>
-                  <td className="pr-3">
-                    <p className="font-semibold text-slate-800">{policy.id}</p>
-                    <p className="mt-1 text-slate-500">{policy.label}</p>
-                  </td>
-                  <td className="pr-3 font-semibold">{policy.risk}</td>
-                  <td className="pr-3 text-slate-600">{policy.gate}</td>
-                  <td className="text-slate-600">{policy.requiredRefs}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </details>
   );
 }
 

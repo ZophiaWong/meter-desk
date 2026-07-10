@@ -2,6 +2,7 @@ import type { WorkbenchScenario } from "@/lib/meterdesk-view";
 
 import { BillingEvidence } from "./billing-evidence";
 import { DecisionOverview } from "./decision-graph";
+import { ProofAudit } from "./proof-audit";
 import { SafetyRail } from "./safety-rail";
 import { TicketRail } from "./ticket-rail";
 
@@ -11,26 +12,53 @@ type TicketWorkbenchProps = {
 
 export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
   return (
-    <div className="grid gap-5 py-6 xl:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_340px] xl:items-start">
       <TicketRail tickets={scenario.tickets} />
 
       <section className="min-w-0 space-y-5">
         <TicketHeader scenario={scenario} />
+        <GoldenPathStrip />
+        <DecisionOverview
+          graph={scenario.decisionGraph}
+          summary={scenario.decisionSummary}
+        />
+      </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="min-w-0 space-y-5">
-            <DecisionOverview
-              graph={scenario.decisionGraph}
-              summary={scenario.decisionSummary}
-            />
-            <BillingEvidence evidence={scenario.evidence} />
-            <InternalResolution scenario={scenario} />
-          </div>
+      <SafetyRail scenario={scenario} />
 
-          <SafetyRail scenario={scenario} />
-        </div>
+      <section className="min-w-0 space-y-5 xl:col-start-2">
+        <BillingEvidence evidence={scenario.evidence} />
+        <InternalResolution scenario={scenario} />
+        <ProofAudit scenario={scenario} />
       </section>
     </div>
+  );
+}
+
+function GoldenPathStrip() {
+  const steps = ["Evidence", "Policy", "Decision", "Approval", "Mutation"];
+
+  return (
+    <section
+      aria-label="Golden path"
+      className="rounded-md border border-meter-line bg-white px-4 py-3"
+      role="region"
+    >
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase text-slate-500">Golden path</p>
+          <p className="mt-1 text-sm font-semibold text-meter-ink">Duplicate Charge walkthrough</p>
+        </div>
+        <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+          {steps.map((step, index) => (
+            <li className="flex items-center gap-2" key={step}>
+              {index > 0 ? <span className="text-slate-300">/</span> : null}
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
   );
 }
 

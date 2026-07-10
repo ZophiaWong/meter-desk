@@ -197,7 +197,11 @@ function mockApi(payloads: Record<string, unknown>) {
     vi.fn(async (input: RequestInfo | URL) => {
       const rawUrl = input instanceof Request ? input.url : input.toString();
       const url = new URL(rawUrl);
-      const payload = payloads[url.pathname];
+      const payload =
+        payloads[url.pathname] ??
+        (url.pathname === "/health" || url.pathname === "/health/db"
+          ? { status: "ok" }
+          : undefined);
 
       if (payload === undefined) {
         return new Response("Not found", { status: 404 });
@@ -220,6 +224,14 @@ describe("M3 API-backed routes", () => {
 
     render(await ApprovalsPage({}));
 
+    expect(screen.getByRole("banner")).toHaveClass("sticky");
+    expect(screen.getByRole("link", { name: "Ticket Workbench" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Approval Queue" })).toHaveAttribute(
+      "href",
+      "/approvals",
+    );
+    expect(screen.getByRole("link", { name: "Eval Lab" })).toHaveAttribute("href", "/eval-lab");
+    expect(screen.getByText("API reachable")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Approval Queue" })).toBeInTheDocument();
     expect(screen.getByText("Original refund pending approval")).toBeInTheDocument();
     expect(screen.getByText("TCK-1042")).toBeInTheDocument();
@@ -257,6 +269,14 @@ describe("M3 API-backed routes", () => {
 
     render(await EvalLabPage());
 
+    expect(screen.getByRole("banner")).toHaveClass("sticky");
+    expect(screen.getByRole("link", { name: "Ticket Workbench" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Approval Queue" })).toHaveAttribute(
+      "href",
+      "/approvals",
+    );
+    expect(screen.getByRole("link", { name: "Eval Lab" })).toHaveAttribute("href", "/eval-lab");
+    expect(screen.getByText("Postgres reachable")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Eval Lab" })).toBeInTheDocument();
     expect(screen.getAllByRole("article")).toHaveLength(9);
     expect(screen.getAllByText("No run yet")).toHaveLength(9);

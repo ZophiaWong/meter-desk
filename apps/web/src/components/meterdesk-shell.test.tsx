@@ -107,6 +107,7 @@ const scenario: WorkbenchScenario = {
       customer: "Northstar Compute",
       status: "Ready for approval",
       summary: "Two captured charges are attached to INV-2026-0418.",
+      scenario: "Duplicate Charge",
       isActive: true,
       href: "/?ticket=TCK-1042",
     },
@@ -116,6 +117,7 @@ const scenario: WorkbenchScenario = {
       customer: "Atlas Labs",
       status: "Seeded support scenario",
       summary: "May token usage increased after a batch import job.",
+      scenario: "Usage Spike",
       isActive: false,
       href: "/?ticket=TCK-1098",
     },
@@ -343,14 +345,21 @@ describe("MeterDeskShell", () => {
       "/approvals",
     );
     expect(screen.getByRole("link", { name: "Eval Lab" })).toHaveAttribute("href", "/eval-lab");
+    expect(screen.getByRole("banner")).toHaveClass("sticky");
     expect(screen.getByText("API reachable")).toBeInTheDocument();
     expect(screen.getByText("Postgres reachable")).toBeInTheDocument();
-    expect(screen.getByText("M3 API")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Ticket queue" })).toBeInTheDocument();
+    expect(screen.getByText("Duplicate Charge")).toBeInTheDocument();
+    expect(screen.getByText("Needs approval")).toBeInTheDocument();
+    expect(screen.queryByText("M3 API")).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Golden path" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Decision Overview" })).toBeInTheDocument();
     expect(
       screen.queryByRole("region", { name: "Agent Decision Summary" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Safety rail" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Safety summary" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Proof & audit" })).toBeInTheDocument();
     expect(screen.getAllByText("Investigation pending").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Evidence step, Complete" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approval step, Unavailable" })).toBeInTheDocument();
@@ -408,14 +417,17 @@ describe("MeterDeskShell", () => {
     expect(within(overview).queryByText("->")).not.toBeInTheDocument();
 
     const stepper = within(overview).getByTestId("decision-stepper");
-    expect(stepper.className).toContain("grid-cols-1");
+    expect(stepper.className).toContain("grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]");
     expect(stepper.className).not.toContain("md:grid-cols-5");
+    expect(stepper.className).not.toContain("xl:grid-cols-5");
 
     const evidenceStep = within(overview).getByRole("button", {
       name: "Evidence step, Complete",
     });
     expect(evidenceStep.className).toContain("min-w-0");
-    expect(evidenceStep.className).toContain("break-words");
+    expect(evidenceStep.className).toContain("min-h-[76px]");
+    expect(evidenceStep.className).not.toContain("break-words");
+    expect(within(evidenceStep).getByText("Evidence").className).toContain("whitespace-nowrap");
 
     fireEvent.click(evidenceStep);
 
@@ -539,6 +551,11 @@ describe("MeterDeskShell", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("Mutation blocked until human approval")).toBeInTheDocument();
+    const safetySummary = screen.getByRole("region", { name: "Safety summary" });
+    expect(within(safetySummary).getByText("Pending approval")).toBeInTheDocument();
+    expect(within(safetySummary).getByText("Mutation blocked")).toBeInTheDocument();
+    expect(within(safetySummary).getByText("Draft only")).toBeInTheDocument();
+    expect(within(safetySummary).getByText("$1,248.00")).toBeInTheDocument();
     expect(screen.getByText("Compliance: Passed")).toBeInTheDocument();
     expect(screen.getByText("7 governed actions verified")).toBeInTheDocument();
     expect(screen.getByText("1 high-risk gate")).toBeInTheDocument();
@@ -577,7 +594,9 @@ describe("MeterDeskShell", () => {
       />,
     );
 
-    const drawer = screen.getByText("2 governed actions | 1 high-risk gate | View rules");
+    const proof = screen.getByRole("region", { name: "Proof & audit" });
+    expect(within(proof).getByText("Trace diagnostics")).toBeInTheDocument();
+    const drawer = within(proof).getByText("2 governed actions | 1 high-risk gate | View rules");
     expect(drawer).toBeInTheDocument();
 
     fireEvent.click(drawer);

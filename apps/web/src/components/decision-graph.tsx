@@ -67,7 +67,7 @@ export function DecisionOverview({ graph, summary }: DecisionOverviewProps) {
         <div className="min-w-0">
           <ol
             aria-label="Decision lineage"
-            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5"
+            className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2"
             data-testid="decision-stepper"
           >
             {graph.nodes.map((node, index) => (
@@ -75,7 +75,7 @@ export function DecisionOverview({ graph, summary }: DecisionOverviewProps) {
                 <button
                   aria-label={`${node.label} step, ${statusLabel(node)}`}
                   aria-pressed={node.id === selectedNode.id}
-                  className={`min-w-0 w-full break-words rounded-md border px-3 py-2 text-left transition ${nodeToneClass(
+                  className={`min-h-[76px] min-w-0 w-full rounded-md border px-3 py-2 text-left transition ${nodeToneClass(
                     node.tone,
                     node.id === selectedNode.id,
                   )}`}
@@ -86,11 +86,11 @@ export function DecisionOverview({ graph, summary }: DecisionOverviewProps) {
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-current text-[11px] font-semibold">
                       {index + 1}
                     </span>
-                    <span className="min-w-0 break-words text-[11px] font-semibold uppercase leading-tight">
+                    <span className="whitespace-nowrap text-[11px] font-semibold uppercase leading-tight">
                       {node.label}
                     </span>
                   </span>
-                  <span className="mt-1 block min-w-0 break-words text-xs font-semibold leading-tight">
+                  <span className="mt-2 block whitespace-nowrap text-xs font-semibold leading-tight">
                     {statusLabel(node)}
                   </span>
                 </button>

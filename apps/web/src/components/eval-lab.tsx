@@ -11,57 +11,53 @@ export async function EvalLab() {
     const grouped = groupByScenario(view.cases);
 
     return (
-      <main className="min-h-screen bg-[#f7f8fb] text-meter-ink">
-        <section className="mx-auto w-full max-w-6xl px-6 py-8">
-          <Link className="text-sm font-medium text-meter-blue" href="/">
-            Ticket Workbench
-          </Link>
-          <h1 className="mt-4 text-3xl font-semibold">Eval Lab</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-            Run offline evals against governed agent traces. Duplicate Charge and Credit/Refund
-            cases execute through governed loops; Usage Spike remains an explicit blocked coverage
-            gap until its runner exists.
-          </p>
-          <EvalRunControlsProvider>
-            <EvalRunForm
-              action={runAllEvalCasesAction}
-              defaultLabel="Run all evals"
-              formClassName="mt-5"
-              pendingLabel="Running all evals..."
-              runKey="all"
-              variant="primary"
-            />
-            <section className="mt-5 rounded-md border border-meter-line bg-white p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Latest vs baseline
-                  </p>
-                  <h2 className="mt-1 text-lg font-semibold">
-                    Blocking pass rate {view.regressionSummary.blockingPassRate}
-                  </h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Baseline: {view.regressionSummary.baselineName}.{" "}
-                    {view.regressionSummary.counts}.
-                  </p>
-                </div>
-                {view.regressionSummary.latestRunHref ? (
-                  <Link
-                    className="rounded-md border border-meter-line px-3 py-2 text-sm font-semibold text-meter-blue"
-                    href={view.regressionSummary.latestRunHref}
-                  >
-                    View run diff
-                  </Link>
-                ) : null}
+      <section className="mx-auto w-full max-w-6xl">
+        <h1 className="text-3xl font-semibold">Eval Lab</h1>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+          Run offline evals against governed agent traces. Duplicate Charge and Credit/Refund cases
+          execute through governed loops; Usage Spike remains an explicit blocked coverage gap until
+          its runner exists.
+        </p>
+        <EvalRunControlsProvider>
+          <EvalRunForm
+            action={runAllEvalCasesAction}
+            defaultLabel="Run all evals"
+            formClassName="mt-5"
+            pendingLabel="Running all evals..."
+            runKey="all"
+            variant="primary"
+          />
+          <section className="mt-5 rounded-md border border-meter-line bg-white p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Latest vs baseline
+                </p>
+                <h2 className="mt-1 text-lg font-semibold">
+                  Blocking pass rate {view.regressionSummary.blockingPassRate}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Baseline: {view.regressionSummary.baselineName}.{" "}
+                  {view.regressionSummary.counts}.
+                </p>
               </div>
-            </section>
+              {view.regressionSummary.latestRunHref ? (
+                <Link
+                  className="rounded-md border border-meter-line px-3 py-2 text-sm font-semibold text-meter-blue"
+                  href={view.regressionSummary.latestRunHref}
+                >
+                  View run diff
+                </Link>
+              ) : null}
+            </div>
+          </section>
 
-            <div className="mt-6 space-y-6">
-              {SCENARIO_ORDER.map((scenario) => (
-                <section key={scenario}>
-                  <h2 className="text-lg font-semibold">{scenario}</h2>
-                  <div className="mt-3 grid gap-3 lg:grid-cols-3">
-                    {(grouped.get(scenario) ?? []).map((evalCase) => (
+          <div className="mt-6 space-y-6">
+            {SCENARIO_ORDER.map((scenario) => (
+              <section key={scenario}>
+                <h2 className="text-lg font-semibold">{scenario}</h2>
+                <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                  {(grouped.get(scenario) ?? []).map((evalCase) => (
                       <article
                         aria-label={evalCase.id}
                         className="rounded-md border border-meter-line bg-white p-4"
@@ -220,14 +216,13 @@ export async function EvalLab() {
                           </Link>
                         ) : null}
                       </article>
-                    ))}
-                  </div>
-                </section>
-              ))}
-            </div>
-          </EvalRunControlsProvider>
-        </section>
-      </main>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+        </EvalRunControlsProvider>
+      </section>
     );
   } catch (error) {
     return <EvalLabError message={error instanceof Error ? error.message : undefined} />;
@@ -274,19 +269,14 @@ function groupByScenario(cases: EvalCaseView[]) {
 
 function EvalLabError({ message }: { message?: string }) {
   return (
-    <main className="min-h-screen bg-[#f7f8fb] text-meter-ink">
-      <section className="mx-auto w-full max-w-5xl px-6 py-8">
-        <Link className="text-sm font-medium text-meter-blue" href="/">
-          Ticket Workbench
-        </Link>
-        <h1 className="mt-4 text-3xl font-semibold">Eval Lab</h1>
-        <article className="mt-6 rounded-md border border-meter-amber bg-[#fffaf0] p-5">
-          <h2 className="text-xl font-semibold">Eval data unavailable</h2>
-          <p className="mt-3 text-sm leading-6 text-slate-700">
-            {message ?? "FastAPI eval resources are unavailable."}
-          </p>
-        </article>
-      </section>
-    </main>
+    <section className="mx-auto w-full max-w-5xl">
+      <h1 className="text-3xl font-semibold">Eval Lab</h1>
+      <article className="mt-6 rounded-md border border-meter-amber bg-[#fffaf0] p-5">
+        <h2 className="text-xl font-semibold">Eval data unavailable</h2>
+        <p className="mt-3 text-sm leading-6 text-slate-700">
+          {message ?? "FastAPI eval resources are unavailable."}
+        </p>
+      </article>
+    </section>
   );
 }

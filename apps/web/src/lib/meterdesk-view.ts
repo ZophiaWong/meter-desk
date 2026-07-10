@@ -35,6 +35,7 @@ export type TicketListItem = {
   customer: string;
   status: string;
   summary: string;
+  scenario: string;
   href: string;
   isActive: boolean;
 };
@@ -957,6 +958,7 @@ function mapTickets(tickets: TicketSummaryResource[], activeTicketId: string): T
     customer: ticket.customer,
     status: ticket.status,
     summary: ticket.summary,
+    scenario: scenarioLabel(ticket.scenario),
     href: `/?ticket=${encodeURIComponent(ticket.id)}`,
     isActive: ticket.id === activeTicketId,
   }));
