@@ -371,7 +371,11 @@ describe("MeterDeskShell", () => {
     );
     expect(document.querySelector('input[name="ticketId"]')).toHaveAttribute("value", "TCK-1042");
     expect(screen.getByText("No agent run yet")).toBeInTheDocument();
-    expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Mock mutation" })).getByText(
+        "No mock mutation executed",
+      ),
+    ).toBeInTheDocument();
 
     const evidence = screen.getByRole("region", { name: "Billing evidence" });
     expect(within(evidence).getByText("Northstar Compute")).toBeInTheDocument();
@@ -566,7 +570,11 @@ describe("MeterDeskShell", () => {
     const safetyRail = screen.getByRole("region", { name: "Safety rail" });
     expect(within(safetyRail).getByRole("button", { name: "Approve" })).toBeEnabled();
     expect(within(safetyRail).getByRole("button", { name: "Reject" })).toBeEnabled();
-    expect(screen.getByText("No mock mutation executed")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Mock mutation" })).getByText(
+        "No mock mutation executed",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText("Allowed by approval.create_request - Medium risk"),
     ).not.toBeInTheDocument();

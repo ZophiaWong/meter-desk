@@ -186,14 +186,22 @@ function RunStateCard({ scenario }: SafetyRailProps) {
 function MutationResultList({ scenario }: SafetyRailProps) {
   if (scenario.mutations.length === 0) {
     return (
-      <section className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4">
+      <section
+        aria-label="Mock mutation"
+        className="mt-4 rounded-md border border-meter-line bg-[#fbfcfe] p-4"
+        role="region"
+      >
         <h3 className="text-sm font-semibold uppercase text-slate-500">Mock mutation</h3>
         <p className="mt-3 text-sm leading-6 text-slate-600">No mock mutation executed</p>
       </section>
     );
   }
   return (
-    <section className="mt-4 rounded-md border border-meter-mint bg-[#f0fdf8] p-4">
+    <section
+      aria-label="Mock mutation"
+      className="mt-4 rounded-md border border-meter-mint bg-[#f0fdf8] p-4"
+      role="region"
+    >
       <h3 className="text-sm font-semibold uppercase text-slate-500">Mock mutation</h3>
       <div className="mt-3 space-y-3">
         {scenario.mutations.map((mutation) => (
