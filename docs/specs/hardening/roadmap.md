@@ -3,7 +3,8 @@
 ## Status
 
 - Program status: approved next phase.
-- Active workstream: P0-01 CI and Runtime Baseline.
+- Active workstream: P0-01 CI and Runtime Baseline; runtime implementation is present locally and
+  verification/merge is in progress.
 - Product scope change: none.
 - Interview and demo collateral refresh: deferred until the hardening program is complete; this
   collateral is not authoritative for current workstream sequencing.
@@ -43,11 +44,13 @@ The current repository already demonstrates a ticket-first workbench, backend-ow
 decisions, bounded LLM planning, approval-gated mock financial actions, action fingerprints,
 governance traces, compliance checks, and eval regression history.
 
-The post-M10 baseline still lacks public CI evidence, API/Web runtime images, a full-stack container
-smoke path, trusted approval identity, application-lifetime database resources, explicit workflow
-state semantics, background execution, provider resilience, operational telemetry, typed networked
-tool execution, structured context snapshots, and broad security/failure/concurrency regression
-coverage.
+P0-01 now supplies API/Web runtime images, a seeded five-service Compose path, an isolated no-key
+smoke harness, and a four-job GitHub Actions workflow contract. Local image and smoke evidence is
+verified, but public CI evidence and final candidate-branch quality/database evidence remain open.
+The baseline still lacks trusted approval identity, application-lifetime database resources,
+explicit workflow state semantics, background execution, provider resilience, operational
+telemetry, typed networked tool execution, structured context snapshots, and broad
+security/failure/concurrency regression coverage.
 
 ## Workstream Sequence
 
@@ -92,9 +95,14 @@ All completed foundations
 
 ### P0-01 — CI and Runtime Baseline
 
-Establish backend/frontend quality jobs, Postgres integration checks, non-root API and Web images,
-a seeded full-stack Compose topology, a no-provider-key smoke harness, stable Make targets, and a
-container runbook. Do not change agent, approval, mutation, governance, trace, or eval behavior.
+Implemented artifacts are `.github/workflows/ci.yml`, `.dockerignore`, the API and Web Dockerfiles,
+`compose.yaml`, `scripts/container-smoke.sh`, the five `container-*` Make targets, the container
+runbook, and the Markdown link checker. Compose runs `postgres`, `migrate`, `seed`, `api`, and `web`;
+both application images run as `10001:10001`, with the API repository layout preserved at
+`/workspace/apps/api`. Local image builds, isolated seeded runtime, no-provider 503 behavior, and
+cleanup/default-volume preservation are verified. All four GitHub jobs remain Planned until a real
+remote run succeeds, and final branch-wide quality/database verification is still in progress. No
+agent, approval, mutation, governance, trace, or eval behavior changed.
 
 Detailed requirements: [P0-01 CI and Runtime Baseline](p0-01-ci-runtime-baseline.md).
 
@@ -176,6 +184,10 @@ explicit optional target.
 
 P0-01 must provide automated backend quality, frontend quality/build, Postgres integration, image
 build, and seeded full-stack smoke evidence without a real provider key.
+
+Status: implementation and local runtime evidence are present. The gate remains open pending final
+candidate-branch quality/database commands and successful remote results for `backend-quality`,
+`frontend-quality`, `database-integration`, and `container-smoke`.
 
 ### Gate B — Trusted Actor
 

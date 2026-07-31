@@ -39,22 +39,29 @@ the program roadmap alone remains a **Gap** until its focused spec is approved.
 | Trace-aware eval | Eval runner, compliance, snapshots | Eval/compliance tests | Eval Lab | Existing |
 | Usage Spike scope honesty | Explicit blocked coverage gap | Blocked-case tests | Eval Lab coverage gap | Existing |
 
-`Existing` does not mean the current branch has passed every command. During the 2026-07-31
-documentation review, API tests reported 68 passed and 6 skipped, API lint stopped on five existing
-Ruff findings, frontend tests were blocked by the local WSL/Node environment, and Docker was not
-available in the local WSL distribution.
+`Existing` does not mean the current branch has passed every command. The recorded
+pre-implementation full test snapshot was API `68 passed, 6 skipped` and Web `21 passed` under
+Node 22.22.2. P0-01 focused checks later reported `15` passing Eval Lab tests and `9` passing
+Markdown-link tests. Those runs do not replace final candidate-branch `make lint`, `make test`, or
+`make test-db` evidence. The five allowed Ruff findings were fixed, but root format verification now
+reports pre-existing drift in `repositories.py`, `seed_data.py`, and `test_m4_eval_lab.py`; maintainer
+direction is pending. The locally verified container environment was Docker Engine `28.1.1` and
+Docker Compose `v2.35.1-desktop.1`. These counts and versions are execution context, not product
+performance claims.
 
 ## Hardening Target Evidence
 
 | Requirement | Current state | Target evidence | Workstream | Status |
 |---|---|---|---|---|
-| PR backend quality checks | No workflow | `backend-quality` Ruff and pytest job result | P0-01 | Planned |
-| PR frontend quality/build checks | No workflow | `frontend-quality` lint, typecheck, Vitest, build result | P0-01 | Planned |
-| Automated Postgres integration | Local `make test-db` only | `database-integration` migration, seed, checker logs | P0-01 | Planned |
-| Locked non-root API image | No Dockerfile | Image build plus non-root process check | P0-01 | Planned |
-| Locked non-root Web image | No Dockerfile | Image build plus non-root process check | P0-01 | Planned |
-| Seeded full-stack runtime | Compose starts only Postgres | Project-isolated `make container-smoke` endpoint evidence | P0-01 | Planned |
-| CI without provider credentials | No CI evidence | Smoke environment and missing-key assertions | P0-01 | Planned |
+| PR backend quality checks | `.github/workflows/ci.yml` runs frozen Ruff check/format, pytest, and Markdown links | Actual successful `backend-quality` GitHub job URL/result; final local root format check still has three-file drift pending maintainer direction | P0-01 | Planned |
+| PR frontend quality/build checks | `.github/workflows/ci.yml` runs `npm ci`, lint, typecheck, Vitest, and build | Actual successful `frontend-quality` GitHub job URL/result | P0-01 | Planned |
+| Automated Postgres integration | `.github/workflows/ci.yml` runs `make test-db` with unique project/port and unconditional cleanup | Actual successful `database-integration` GitHub job logs; final candidate-branch local `make test-db` is pending | P0-01 | Planned |
+| CI container smoke | Dependency-gated `container-smoke` job runs with empty provider variables | Actual successful `container-smoke` GitHub job URL/result | P0-01 | Planned |
+| Locked non-root API image | `apps/api/Dockerfile`, `.dockerignore`; `meterdesk-api:local`, workdir `/workspace/apps/api` | `docker build --file apps/api/Dockerfile --tag meterdesk-api:local .`; image and process checks returned `10001:10001`; Alembic/seed entrypoints and repository root `/workspace` resolved | P0-01 | Verified |
+| Locked non-root Web image | `apps/web/Dockerfile`, `apps/web/next.config.ts`, `.dockerignore`; `meterdesk-web:local`, workdir `/app` | `docker build --file apps/web/Dockerfile --tag meterdesk-web:local .`; image and process checks returned `10001:10001`; `node server.js` standalone runtime built | P0-01 | Verified |
+| Seeded full-stack runtime | `compose.yaml`, `Makefile`, and `scripts/container-smoke.sh` implement `postgres`, `migrate`, `seed`, `api`, `web` | Multiple unique-project `make container-smoke` runs verified `/health`, `/health/db`, tickets `TCK-1042`/`TCK-1137`, Web content, project cleanup, and default-volume preservation | P0-01 | Verified |
+| No-provider-key smoke behavior | Smoke pins empty key/model/base URL and isolates dotenv/Compose selectors | `make container-smoke` verified empty provider environment and expected HTTP 503 `OpenAI-compatible provider is not configured.` without exposing configuration values | P0-01 | Verified |
+| Current-document link integrity | `scripts/check_markdown_links.py` and `apps/api/tests/test_markdown_links.py` | `9` focused tests passed; `python3 scripts/check_markdown_links.py` reported 15 Markdown files and 53 local links | P0-01 | Verified |
 | Client cannot choose approver | `decided_by` comes from request body | Forged actor test and persisted server principal | P0-02 | Gap |
 | Approval role enforcement | No route role dependency | 401/403/success tests for operator, approver, admin | P0-02 | Gap |
 | Approval actor audit | Untrusted actor string | Subject, role, request ID persistence evidence | P0-02 | Gap |
