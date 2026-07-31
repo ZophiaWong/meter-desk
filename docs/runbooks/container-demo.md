@@ -7,6 +7,7 @@ and `make dev` when changing code on the host.
 ## Prerequisites
 
 - Docker Engine or Docker Desktop with the Compose plugin available as `docker compose`.
+- Bash 4 or newer and Python 3, used by the isolated smoke harness.
 - Free local ports `3000`, `8000`, and `5432`, or chosen replacements.
 - The repository checkout; no OpenAI-compatible provider key is needed for the seeded replay.
 

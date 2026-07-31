@@ -23,8 +23,9 @@ The starting repository had local install, lint, test, database, seed, reset, an
 commands but no publicly repeatable build/runtime contract. P0-01 adds that contract without moving
 application authority: locked installs, production images, migrations, seed, API/Web networking,
 and no-provider-key behavior now share one repository-local command surface. The remaining problem
-is evidence closure: no real remote workflow run exists yet, and final candidate-branch
-`make lint`, `make test`, and `make test-db` results are not yet available.
+is evidence closure: no real remote workflow run exists yet, final candidate-branch `make lint` and
+`make test` results are not yet available, and the recorded `make test-db` result still needs to be
+reconfirmed after any remaining review fixes.
 
 ## Implementation and Evidence Snapshot
 
