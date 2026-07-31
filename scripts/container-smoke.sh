@@ -21,6 +21,7 @@ unset COMPOSE_PROJECT_NAME
 unset COMPOSE_PROFILES
 unset COMPOSE_ENV_FILES
 unset COMPOSE_PATH_SEPARATOR
+unset CONTAINER_BIND_ADDRESS
 export COMPOSE_DISABLE_ENV_FILE=true
 
 run_id=${GITHUB_RUN_ID:-local}
@@ -108,6 +109,22 @@ export OPENAI_API_KEY=
 export OPENAI_MODEL=
 export OPENAI_BASE_URL=
 
+(
+  unset OPENAI_BASE_URL
+  export OPENAI_API_KEY=meterdesk-smoke-contract-key
+  export OPENAI_MODEL=meterdesk-smoke-contract-model
+  compose config --format json | python3 -c '
+import json
+import sys
+
+environment = json.load(sys.stdin)["services"]["api"]["environment"]
+assert environment["OPENAI_API_KEY"] == "meterdesk-smoke-contract-key"
+assert environment["OPENAI_MODEL"] == "meterdesk-smoke-contract-model"
+assert environment["OPENAI_BASE_URL"] == "https://api.openai.com/v1"
+'
+)
+printf 'Provider default contract: key/model-only configuration keeps the OpenAI base URL.\n'
+
 wait_timeout=${CONTAINER_WAIT_TIMEOUT:-180}
 curl_attempts=${SMOKE_CURL_ATTEMPTS:-30}
 curl_delay=${SMOKE_CURL_DELAY:-2}
@@ -163,6 +180,14 @@ web_binding=$(compose port web 3000)
 postgres_port=${postgres_binding##*:}
 api_port=${api_binding##*:}
 web_port=${web_binding##*:}
+
+for binding in "$postgres_binding" "$api_binding" "$web_binding"; do
+  if [[ ! "$binding" =~ ^127\.0\.0\.1:[0-9]+$ ]]; then
+    printf 'Expected loopback-only smoke binding, received %s.\n' "$binding" >&2
+    exit 1
+  fi
+done
+printf 'Published ports: Postgres, API, and Web are bound to loopback.\n'
 
 if [[ ! "$postgres_port" =~ ^[0-9]+$ ]] || [[ ! "$api_port" =~ ^[0-9]+$ ]] || [[ ! "$web_port" =~ ^[0-9]+$ ]]; then
   printf 'Could not resolve numeric ephemeral host ports.\n' >&2

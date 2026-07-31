@@ -35,6 +35,9 @@ The default URLs are:
 - API: `http://localhost:8000`
 - Postgres: `localhost:5432`
 
+Compose publishes all three ports on `127.0.0.1` by default. They are not reachable from another
+host unless an operator explicitly changes the bind address as described below.
+
 ## Seeded replay and explicit live runs
 
 The container demo is usable without a provider key. Its tickets, audit history, and visible
@@ -44,9 +47,10 @@ state, attempting a new agent run returns the existing missing-provider response
 To make a live agent run from the seeded pending-approval state, keep the normal container project
 running and use this sequence:
 
-1. In the untracked local `.env`, configure `OPENAI_API_KEY` and `OPENAI_MODEL`. Keep the existing
-   `OPENAI_BASE_URL` default for OpenAI, or change that optional setting for another compatible
-   endpoint. Do not print the values or pass them on a command line.
+1. In the untracked local `.env`, configure `OPENAI_API_KEY` and `OPENAI_MODEL`. When
+   `OPENAI_BASE_URL` is unset, Compose preserves the application default
+   `https://api.openai.com/v1`; set the optional value only for another compatible endpoint. Do not
+   print the values or pass them on a command line.
 2. Reset the Duplicate Charge live runtime rows through the API image:
 
    ```bash
@@ -137,6 +141,18 @@ POSTGRES_PORT=55432 API_PORT=18000 WEB_PORT=13000 make container-up
 Use the matching overridden API port for health checks. Containers address each other through the
 internal Compose names (`postgres:5432` and `http://api:8000`), so host port overrides do not change
 container-to-container traffic.
+
+All published ports remain loopback-only under those overrides. To opt in to access from another
+host, set the one shared bind-address variable explicitly:
+
+```bash
+CONTAINER_BIND_ADDRESS=0.0.0.0 make container-up
+```
+
+This exposes Postgres, the API, and the Web server on every host interface. Use it only on a trusted
+network with host firewall controls; the local demo credentials are not production credentials and
+MeterDesk does not yet provide the authentication/RBAC boundary planned for a later workstream.
+Prefer the loopback default when remote access is unnecessary.
 
 Compose names containers and volumes by project. The normal project uses its persistent named
 database volume across `make container-down` and future `make container-up` invocations. If you set

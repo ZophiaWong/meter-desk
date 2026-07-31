@@ -45,14 +45,19 @@ claims.
   `/workspace/apps/api`; `meterdesk-web:local` runs from `/app`; both image configs use
   `10001:10001`.
 - Multiple unique-project `make container-smoke` runs succeeded, including projects ending in
-  `372842`, `379294`, and `388927`. They verified API health, database reachability, seeded
-  `TCK-1042` and `TCK-1137`, Web content, empty provider configuration, expected HTTP 503 on a live
-  run without a provider, exact non-root image users, project cleanup, and preservation of the
-  default `meter-desk_meterdesk-postgres-data` volume.
+  `372842`, `379294`, `388927`, and `462530`. They verified API health, database reachability,
+  seeded `TCK-1042` and `TCK-1137`, Web content, the key/model-only provider base-URL default,
+  loopback-only ephemeral publications, explicit-empty no-key configuration, expected HTTP 503 on
+  a live run without a provider, exact non-root image users, project cleanup, and preservation of
+  the default `meter-desk_meterdesk-postgres-data` volume.
+- A cold `make test-db` run on the brand-new unique project
+  `meterdesk-review-db-fix-escalated-460934` waited for Postgres health before Alembic, applied all
+  seven migrations, seeded successfully, and passed the M5 database integration check. Its
+  disposable volume was removed; the default MeterDesk volume was present before and after.
 - The current local runtime snapshot is Docker Engine client/server `28.1.1` and Docker Compose
   `v2.35.1-desktop.1`.
-- No final candidate-branch passing result is recorded for `make test` or `make test-db`. No GitHub
-  Actions job has a real remote result yet.
+- No final candidate-branch passing result is recorded for `make test`; the cold unique-project
+  `make test-db` result is recorded above. No GitHub Actions job has a real remote result yet.
 
 P0-01 must establish a clean quality baseline. The narrow Ruff cleanup belongs in this workstream
 because new CI would otherwise fail immediately, but it must not change eval or domain behavior.
@@ -77,11 +82,13 @@ Create one reproducible verification surface that provides:
 - `.dockerignore`, `apps/api/Dockerfile`, `apps/web/Dockerfile`, and
   `apps/web/next.config.ts`: frozen production builds and standalone runtimes.
 - `compose.yaml`: `postgres`, `migrate`, `seed`, `api`, and `web` with health/completion ordering,
-  internal `postgres:5432` and `http://api:8000` interfaces, and a persistent named Postgres volume.
+  internal `postgres:5432` and `http://api:8000` interfaces, loopback-default host publications,
+  provider-default preservation, and a persistent named Postgres volume.
 - `Makefile`: frozen host dependency commands plus `container-build`, `container-up`,
-  `container-seed`, `container-smoke`, and volume-preserving `container-down`.
+  `container-seed`, `container-smoke`, and volume-preserving `container-down`; host `db-up` waits
+  for Postgres health with the bounded container wait timeout.
 - `scripts/container-smoke.sh`: unique-project, ephemeral-port, no-provider smoke and guarded
-  cleanup.
+  cleanup, including rendered provider-default and actual loopback-binding checks.
 - `README.md`, `docs/runbooks/container-demo.md`, `scripts/check_markdown_links.py`, and
   `apps/api/tests/test_markdown_links.py`: host/container guidance and current-document link checks.
 
@@ -126,14 +133,18 @@ Docker Compose project
 
 ### Compose Isolation
 
-- Preserve Postgres 16, the existing default credentials, host port behavior, and persistent volume
+- Preserve Postgres 16, the existing default credentials, host port numbers, and persistent volume
   semantics for normal local development.
+- Bind default host publications to `127.0.0.1`; use one explicit `CONTAINER_BIND_ADDRESS` override
+  when an operator deliberately opts in to remote access.
 - Remove the fixed Postgres `container_name`; every service must use Compose-generated names scoped
   by `COMPOSE_PROJECT_NAME`.
 - Reuse one explicit API image contract for migration, seed, and API services.
 - Use internal hostnames `postgres:5432` and `http://api:8000`.
 - Never inject an OpenAI key by default; `.env` may supply one for explicit live use without baking
   it into an image.
+- Preserve the application OpenAI base-URL default when the variable is unset, and preserve an
+  explicit empty value when the no-key smoke harness clears it.
 
 ### Command Surface
 
@@ -149,6 +160,8 @@ make container-down
 
 Existing host commands must retain their current meaning. Volume destruction must remain an explicit
 documented command rather than an implicit part of normal `container-down`.
+`db-up` must wait for the existing Postgres healthcheck with `CONTAINER_WAIT_TIMEOUT` before a
+dependent migration or seed command starts.
 
 ## CI Contract
 
@@ -185,7 +198,9 @@ The smoke harness must:
 - start API and Web and wait with bounded retries;
 - verify `/health`, `/health/db`, `/tickets`, and `/`;
 - verify seeded `TCK-1042` and `TCK-1137` records and visible MeterDesk page content;
+- verify a key/model-only rendered configuration retains the application OpenAI base URL;
 - explicitly unset live-provider configuration;
+- verify its ephemeral Postgres, API, and Web publications are loopback-only;
 - print relevant Compose state and service logs on failure;
 - preserve the primary failure code and always clean its own services and volumes.
 
@@ -198,6 +213,7 @@ replay from an explicitly configured live agent execution.
 |---|---|
 | Lockfile/manifests disagree | Installation fails; do not regenerate lockfiles silently |
 | Migration or seed fails | API/Web smoke stops and prints relevant logs |
+| Cold host Postgres is not ready | `db-up` waits on the existing healthcheck with a bounded timeout before Alembic starts |
 | Service never becomes healthy | Bounded wait fails with endpoint and service diagnostics |
 | Provider key is missing | Seeded runtime remains available; live run keeps current missing-provider behavior |
 | Cleanup fails | Preserve the primary failure and report cleanup failure separately |
@@ -225,6 +241,8 @@ containers must be non-root. Demo database credentials must be documented as loc
 - API and Web images build from committed lockfiles and run as non-root users.
 - Compose defines `postgres`, `migrate`, `seed`, `api`, and `web` without fixed container names.
 - Internal database and API hostnames resolve correctly.
+- Default published ports bind to loopback, with remote binding available only through the explicit
+  shared opt-in variable.
 - Migration succeeds and seed can be rerun under the documented demo reset contract.
 - `make lint`, `make test`, and `make test-db` pass in a suitable environment.
 - `make container-build` and `make container-smoke` pass with no provider credentials.
@@ -243,7 +261,7 @@ Current acceptance status:
 | Five-service seeded runtime | Verified locally | Repeated unique-project `make container-smoke` runs exercised `postgres`, `migrate`, `seed`, `api`, and `web` |
 | No-provider behavior and cleanup | Verified locally | Empty key/model/base URL, expected live-run HTTP 503, project-volume cleanup, and default-volume preservation |
 | README/runbook and links | Verified locally | Commands match the Make/Compose interfaces; current link check reports 15 files and 53 local links |
-| Candidate branch quality/database | In progress | Final `make lint`, `make test`, and `make test-db` results are pending; root Ruff format drift requires maintainer direction |
+| Candidate branch quality/database | In progress | Cold unique-project `make test-db` passed; final `make lint` and `make test` remain pending, and root Ruff format drift requires maintainer direction |
 | GitHub Actions | Planned | Workflow and all four job contracts exist, but no real remote job has succeeded yet |
 
 ## Verification Contract
@@ -271,7 +289,8 @@ Current execution status:
   source import resolves from `/workspace/apps/api/src` with repository root `/workspace`.
 - `python3 scripts/check_markdown_links.py` exited 0 with 15 current Markdown files and 53 local
   links.
-- No final candidate-branch passing result is recorded for `make lint`, `make test`, or
-  `make test-db`.
+- Cold unique-project `make test-db` exited 0 after health wait, seven migrations, seed, and the M5
+  integration check; no final candidate-branch passing result is recorded for `make lint` or
+  `make test`.
 - `backend-quality`, `frontend-quality`, `database-integration`, and `container-smoke` remain
   Planned until actual GitHub job results are available.

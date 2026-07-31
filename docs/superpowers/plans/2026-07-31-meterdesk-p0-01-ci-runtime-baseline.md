@@ -18,6 +18,10 @@
 - Do not add real payment, billing, support, messaging, or accounting integrations; do not add provider routing, authentication, workers, telemetry, pgvector, or large-scale RAG.
 - Install API and Web dependencies from committed `apps/api/uv.lock` and `apps/web/package-lock.json`; every install fails on manifest/lock disagreement.
 - API and Web runtime containers run as numeric user/group `10001:10001`.
+- Default Postgres, API, and Web publications bind to `127.0.0.1`; remote access requires the one
+  explicit `CONTAINER_BIND_ADDRESS` override.
+- Preserve the application OpenAI base URL when `OPENAI_BASE_URL` is unset, while allowing the smoke
+  path to pass an explicitly empty value.
 - Normal `make container-down` preserves named volumes. Only the smoke harness may remove volumes, and only after validating its unique `meterdesk-smoke-` project name.
 - Smoke passes empty provider configuration explicitly and never prints Compose configuration, `.env`, or secret-bearing environment values.
 - Interview collateral under `intv/` is outside this change.
@@ -61,10 +65,14 @@
 
 ### Runtime Interfaces
 
-- Compose consumes `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`, `API_PORT`, `WEB_PORT`, `METERDESK_API_IMAGE`, `METERDESK_WEB_IMAGE`, and optional explicit live-provider variables.
+- Compose consumes `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`, `API_PORT`,
+  `WEB_PORT`, `CONTAINER_BIND_ADDRESS`, `METERDESK_API_IMAGE`, `METERDESK_WEB_IMAGE`, and optional
+  explicit live-provider variables.
 - Compose produces internal endpoints `postgres:5432` and `http://api:8000`; host defaults remain Postgres `5432`, API `8000`, and Web `3000`.
 - `migrate`, `seed`, and `api` consume the same API image. `api` starts only after successful seed; `web` starts only after API health succeeds.
 - `scripts/container-smoke.sh` consumes optional `COMPOSE` and timeout overrides, owns only a unique `meterdesk-smoke-*` project, and returns the primary build/start/assertion exit code even when cleanup also fails.
+- Host `db-up` waits for the existing Postgres healthcheck with `CONTAINER_WAIT_TIMEOUT` before a
+  dependent migration or seed command can start.
 - The Web runtime consumes `API_BASE_URL=http://api:8000`; existing server-side `fetchApi()` and `getSystemStatus()` functions remain unchanged.
 
 ---
@@ -435,7 +443,9 @@ web:
       condition: service_healthy
 ```
 
-The API database URL is `postgresql+psycopg://meterdesk:meterdesk@postgres:5432/meterdesk` under defaults. Provider variables use empty defaults and can only become non-empty through an explicit local environment.
+The API database URL is `postgresql+psycopg://meterdesk:meterdesk@postgres:5432/meterdesk` under
+defaults. Key and model use empty defaults. An unset base URL preserves the application default;
+the smoke path passes all three provider variables as explicitly empty values.
 
 - [ ] **Step 3: Make every existing dependency execution frozen and add stable targets**
 
@@ -464,9 +474,17 @@ container-down:
 
 Normal down must not include `--volumes` or `-v`.
 
+The existing `db-up` target uses `up -d --wait --wait-timeout $(CONTAINER_WAIT_TIMEOUT) postgres`
+so a cold host database reaches its existing healthcheck before Alembic starts.
+
 - [ ] **Step 4: Implement guarded smoke lifecycle and failure preservation**
 
-The script must use `set -Eeuo pipefail`, split `${COMPOSE:-docker compose}` into an array, generate and validate a lowercase `meterdesk-smoke-<run>-<attempt>-<pid>` name, assign host port `0` for all three published ports, and use project-specific image tags. Export empty `OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_BASE_URL` so Compose’s automatic `.env` loading cannot inject live configuration.
+The script must use `set -Eeuo pipefail`, split `${COMPOSE:-docker compose}` into an array, generate
+and validate a lowercase `meterdesk-smoke-<run>-<attempt>-<pid>` name, assign host port `0` for all
+three loopback-only published ports, and use project-specific image tags. It behaviorally verifies
+that a key/model-only configuration retains the application base URL. Export empty
+`OPENAI_API_KEY`, `OPENAI_MODEL`, and `OPENAI_BASE_URL` for the actual smoke runtime so Compose's
+automatic `.env` loading cannot inject live configuration.
 
 The EXIT trap must:
 
@@ -484,6 +502,9 @@ After `compose build api web` and `compose up -d --wait`, resolve ephemeral host
 - `/tickets` contains `TCK-1042` and `TCK-1137`;
 - `/` contains `MeterDesk`, `TCK-1042`, and `TCK-1137`;
 - API environment contains no provider key or model;
+- the key/model-only Compose contract retains `https://api.openai.com/v1`, while the actual no-key
+  runtime retains an explicitly empty base URL;
+- all three ephemeral publications resolve on `127.0.0.1`;
 - POST `/tickets/TCK-1042/agent-runs` returns 503 with the existing missing-provider message;
 - both image config users equal `10001:10001`.
 

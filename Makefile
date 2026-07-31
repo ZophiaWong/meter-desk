@@ -46,7 +46,7 @@ install-web:
 	cd $(WEB_DIR) && npm ci
 
 db-up:
-	$(COMPOSE) up -d postgres
+	$(COMPOSE) up -d --wait --wait-timeout $(CONTAINER_WAIT_TIMEOUT) postgres
 
 db-down:
 	$(COMPOSE) rm --stop --force postgres
