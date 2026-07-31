@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v8
+        with:
+          version: "0.11.16"
+          enable-cache: true
+          working-directory: apps/api
+      - run: uv sync --frozen
+        working-directory: apps/api
+      - run: uv run --frozen ruff check .
+        working-directory: apps/api
+      - run: uv run --frozen ruff format --check .
+        working-directory: apps/api
+      - run: uv run --frozen pytest
+        working-directory: apps/api
+      - run: uv run --frozen python ../../scripts/check_markdown_links.py
+        working-directory: apps/api
+
+  frontend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run lint
+        working-directory: apps/web
+      - run: npm run typecheck
+        working-directory: apps/web
+      - run: npm test
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+
+  database-integration:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: meterdesk-db-${{ github.run_id }}-${{ github.run_attempt }}
+      POSTGRES_PORT: "55432"
+      DATABASE_URL: postgresql+psycopg://meterdesk:meterdesk@localhost:55432/meterdesk
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: ""
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v8
+        with:
+          version: "0.11.16"
+          enable-cache: true
+          working-directory: apps/api
+      - run: uv sync --frozen
+        working-directory: apps/api
+      - run: make test-db
+      - if: always()
+        run: docker compose down --volumes --remove-orphans
+
+  container-smoke:
+    needs: [backend-quality, frontend-quality, database-integration]
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ""
+      OPENAI_MODEL: ""
+      OPENAI_BASE_URL: ""
+    steps:
+      - uses: actions/checkout@v6
+      - run: make container-smoke
