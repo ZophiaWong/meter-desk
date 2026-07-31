@@ -86,6 +86,28 @@ def test_accepts_reference_style_link_to_existing_target(tmp_path: Path) -> None
     assert "Checked 1 Markdown file(s), 1 local link(s)." in result.stdout
 
 
+def test_reports_missing_shortcut_reference_target(tmp_path: Path) -> None:
+    source = tmp_path / "source.md"
+    source.write_text("[ref]\n\n[ref]: missing.md\n", encoding="utf-8")
+
+    result = run_checker(source)
+
+    diagnostic = f"{source}: missing local target missing.md"
+    assert result.returncode == 1
+    assert result.stderr.count(diagnostic) == 1
+
+
+def test_accepts_collapsed_reference_link_to_existing_target(tmp_path: Path) -> None:
+    (tmp_path / "target.md").write_text("# Target\n", encoding="utf-8")
+    source = tmp_path / "source.md"
+    source.write_text("[label][]\n\n[label]: target.md\n", encoding="utf-8")
+
+    result = run_checker(source)
+
+    assert result.returncode == 0, result.stderr
+    assert "Checked 1 Markdown file(s), 1 local link(s)." in result.stdout
+
+
 def test_escaped_backticks_do_not_hide_a_broken_link(tmp_path: Path) -> None:
     source = tmp_path / "source.md"
     source.write_text(r"\`[broken](missing.md)\`" "\n", encoding="utf-8")

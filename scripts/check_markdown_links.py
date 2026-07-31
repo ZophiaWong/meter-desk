@@ -294,6 +294,13 @@ def markdown_destinations(markdown: str) -> list[str]:
                     destinations.append(destination)
                 position = reference_end + 1
                 continue
+        elif after_label >= len(visible_markdown) or visible_markdown[after_label] != ":":
+            reference = visible_markdown[opening + 1 : label_end]
+            destination = definitions.get(normalized_reference(reference))
+            if destination is not None:
+                destinations.append(destination)
+                position = after_label
+                continue
         position = label_end + 1
 
     return destinations
