@@ -175,7 +175,7 @@ Current sources:
 - [Eval Strategy](docs/specs/eval-strategy.md) - offline eval cases, grading dimensions, and Eval Lab expectations
 - [Implementation Roadmap](docs/specs/implementation-roadmap.md) - completed v1 program and current phase
 - [Post-M10 Hardening Roadmap](docs/specs/hardening/roadmap.md) - active workstreams, dependencies, gates, and re-review points
-- [P0-01 CI and Runtime Baseline](docs/specs/hardening/p0-01-ci-runtime-baseline.md) - approved first hardening workstream; implementation not started
+- [P0-01 CI and Runtime Baseline](docs/specs/hardening/p0-01-ci-runtime-baseline.md) - implemented CI/runtime baseline; the evidence matrix records current verification status
 - [Engineering Evidence Matrix](docs/evidence/engineering-evidence-matrix.md) - current claims, gaps, planned evidence, and verification rules
 
 Historical context:
