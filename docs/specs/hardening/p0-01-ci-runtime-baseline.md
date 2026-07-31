@@ -5,10 +5,10 @@
 - Priority: P0.
 - Design status: approved; runtime architecture implementation is Implemented on the candidate
   branch.
-- Evidence status: API/Web images, seeded runtime, no-provider smoke behavior, and Markdown links
-  are locally Verified; final branch-wide quality/database verification is in progress. Remote CI
-  verification is pending and all four GitHub jobs remain Planned because no remote run has yet
-  occurred.
+- Evidence status: API/Web images, seeded runtime, no-provider smoke behavior, host tests/database,
+  and Markdown links are locally Verified; final root lint verification remains blocked on the
+  recorded three-file format scope decision. Remote CI verification is pending and all four GitHub
+  jobs remain Planned because no remote run has yet occurred.
 - Depends on: post-M10 baseline commit `86c737d` and the P0-01 candidate commits.
 - Blocks: every later hardening workstream.
 - Intended product behavior change: none.
@@ -23,9 +23,8 @@ The starting repository had local install, lint, test, database, seed, reset, an
 commands but no publicly repeatable build/runtime contract. P0-01 adds that contract without moving
 application authority: locked installs, production images, migrations, seed, API/Web networking,
 and no-provider-key behavior now share one repository-local command surface. The remaining problem
-is evidence closure: no real remote workflow run exists yet, final candidate-branch `make lint` and
-`make test` results are not yet available, and the recorded `make test-db` result still needs to be
-reconfirmed after any remaining review fixes.
+is evidence closure: no real remote workflow run exists yet, and final candidate-branch `make lint`
+cannot pass until the recorded three-file format scope decision is resolved.
 
 ## Implementation and Evidence Snapshot
 
@@ -34,7 +33,8 @@ describe those executions only; they are not performance, availability, or produ
 claims.
 
 - The recorded pre-implementation full test snapshot was API `68 passed, 6 skipped` and Web
-  `21 passed` under Node 22.22.2. It is not a final candidate-branch `make test` result.
+  `21 passed` under Node 22.22.2. The current candidate `make test` run passed with API `77 passed,
+  6 skipped` and Web `21 passed`; a separate `make lint-web` run passed ESLint and TypeScript.
 - The five allowed Ruff findings in `apps/api/src/meterdesk_api/eval/regression.py` were fixed;
   focused Ruff check/format and `15` Eval Lab tests passed. A subsequent root format check exposed
   pre-existing drift in `apps/api/src/meterdesk_api/repositories.py`,
@@ -46,7 +46,8 @@ claims.
   `/workspace/apps/api`; `meterdesk-web:local` runs from `/app`; both image configs use
   `10001:10001`.
 - Multiple unique-project `make container-smoke` runs succeeded, including projects ending in
-  `372842`, `379294`, `388927`, and `462530`. They verified API health, database reachability,
+  `372842`, `379294`, `388927`, `462530`, and current candidate run `488082`. They verified API
+  health, database reachability,
   seeded `TCK-1042` and `TCK-1137`, Web content, the key/model-only provider base-URL default,
   loopback-only ephemeral publications, explicit-empty no-key configuration, expected HTTP 503 on
   a live run without a provider, exact non-root image users, project cleanup, and preservation of
@@ -55,10 +56,16 @@ claims.
   `meterdesk-review-db-fix-escalated-460934` waited for Postgres health before Alembic, applied all
   seven migrations, seeded successfully, and passed the M5 database integration check. Its
   disposable volume was removed; the default MeterDesk volume was present before and after.
+- The current candidate `make test-db` rerun waited for the default-project Postgres service to
+  report Healthy, then completed migration, seed, and the M5 database integration check.
+- A Docker-context contract failed before broader generated-artifact exclusions because
+  `apps/web/tsconfig.tsbuildinfo` was present, then passed after `.dockerignore` was aligned with
+  local build, coverage, test-report, and database artifacts. Required production image builds
+  subsequently passed.
 - The current local runtime snapshot is Docker Engine client/server `28.1.1` and Docker Compose
   `v2.35.1-desktop.1`.
-- No final candidate-branch passing result is recorded for `make test`; the cold unique-project
-  `make test-db` result is recorded above. No GitHub Actions job has a real remote result yet.
+- No final candidate-branch passing result is recorded for `make lint`; `make test` and
+  `make test-db` results are recorded above. No GitHub Actions job has a real remote result yet.
 
 P0-01 must establish a clean quality baseline. The narrow Ruff cleanup belongs in this workstream
 because new CI would otherwise fail immediately, but it must not change eval or domain behavior.
@@ -262,7 +269,7 @@ Current acceptance status:
 | Five-service seeded runtime | Verified locally | Repeated unique-project `make container-smoke` runs exercised `postgres`, `migrate`, `seed`, `api`, and `web` |
 | No-provider behavior and cleanup | Verified locally | Empty key/model/base URL, expected live-run HTTP 503, project-volume cleanup, and default-volume preservation |
 | README/runbook and links | Verified locally | Commands match the Make/Compose interfaces; current link check reports 15 files and 53 local links |
-| Candidate branch quality/database | In progress | Cold unique-project `make test-db` passed; final `make lint` and `make test` remain pending, and root Ruff format drift requires maintainer direction |
+| Candidate branch quality/database | In progress | Current `make test` passed with API `77 passed, 6 skipped` and Web `21 passed`; cold and current `make test-db` runs passed; `make lint` remains blocked only by the three-file root Ruff format scope decision |
 | GitHub Actions | Planned | Workflow and all four job contracts exist, but no real remote job has succeeded yet |
 
 ## Verification Contract
@@ -290,8 +297,10 @@ Current execution status:
   source import resolves from `/workspace/apps/api/src` with repository root `/workspace`.
 - `python3 scripts/check_markdown_links.py` exited 0 with 15 current Markdown files and 53 local
   links.
-- Cold unique-project `make test-db` exited 0 after health wait, seven migrations, seed, and the M5
-  integration check; no final candidate-branch passing result is recorded for `make lint` or
-  `make test`.
+- Current `make test` exited 0 with API `77 passed, 6 skipped` and Web `21 passed`; `make lint-web`
+  separately passed ESLint and TypeScript.
+- Cold unique-project and current default-project `make test-db` runs exited 0 after health wait,
+  migrations, seed, and the M5 integration check. No passing result is recorded for `make lint`:
+  Ruff checks pass, but format check reports only the three files awaiting maintainer direction.
 - `backend-quality`, `frontend-quality`, `database-integration`, and `container-smoke` remain
   Planned until actual GitHub job results are available.
