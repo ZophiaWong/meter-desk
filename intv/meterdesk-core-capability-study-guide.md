@@ -184,11 +184,13 @@ Eval 要讲得更具体：
 
 ### 第三天：治理模型
 
-读 `docs/specs/agent-governance.md` 和 `docs/specs/m3-governed-agent-loop.md`。重点练"agent 能做什么，不能做什么"。
+读 `docs/specs/agent-governance.md` 和历史实现规格
+`docs/archive/milestones/m3-governed-agent-loop.md`。重点练"agent 能做什么，不能做什么"。
 
 ### 第四天：Eval
 
-读 `docs/specs/eval-strategy.md` 和 `docs/specs/m10-eval-regression-history.md`。练习解释 deterministic checks。
+读 `docs/specs/eval-strategy.md` 和历史实现规格
+`docs/archive/milestones/m10-eval-regression-history.md`。练习解释 deterministic checks。
 
 ### 第五天：架构
 

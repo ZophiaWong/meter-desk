@@ -145,22 +145,25 @@ See [MeterDesk Demo Walkthrough](intv/meterdesk-demo-walkthrough.md) for the no-
 
 ## Further reading
 
-The deeper product and implementation notes are here:
+Start with the [documentation index](docs/README.md), which separates current requirements, the
+active hardening roadmap, engineering evidence, and historical milestone context.
+
+Current sources:
 
 - [AGENTS.md](AGENTS.md) - operating rules for AI coding agents
 - [Product Scope](docs/specs/product-scope.md) - product thesis, v1 scope, golden path, and exclusions
 - [System Architecture](docs/specs/system-architecture.md) - application boundaries, data flow, mock systems, and domain glossary
 - [Agent Governance](docs/specs/agent-governance.md) - tool governance, approval gates, trace rules, and policy citation requirements
 - [Eval Strategy](docs/specs/eval-strategy.md) - offline eval cases, grading dimensions, and Eval Lab expectations
-- [Implementation Roadmap](docs/specs/implementation-roadmap.md) - milestone sequence for building the v1 system
-- [M2 Backend Domain + Mock Billing](docs/specs/m2-backend-domain-mock-billing.md) - durable mock billing data, read APIs, seed behavior, and DB checks
-- [M3 Governed Agent Loop](docs/specs/m3-governed-agent-loop.md) - constrained agent orchestration, provider boundary, approval writes, and mock mutation execution
-- [M4 Eval Lab](docs/specs/m4-eval-lab.md) - deterministic eval runner, Duplicate Charge and Credit/Refund fixtures, and Usage Spike blocked gaps
-- [M5 Polish + Portfolio Readiness](docs/specs/m5-polish-portfolio-readiness.md) - seeded demo baseline, live reset, and interview walkthrough expectations
-- [M6 Governed Runtime + Financial Safety](docs/specs/m6-governed-runtime-financial-safety.md) - planned upgrade from trace kernel to governed action runtime
-- [M7 Eval Contracts + Scenario Unblocking](docs/specs/m7-eval-contracts-scenario-unblocking.md) - planned compliance checks and supporting scenario readiness gates
-- [M9 LLM-Planned Tool Plan](docs/specs/m9-llm-planned-tool-plan.md) - LLM investigation planning with backend contract verification
-- [M10 Eval Regression History](docs/specs/m10-eval-regression-history.md) - seeded baseline comparison, eval run history, and model/prompt/policy diff snapshots
+- [Implementation Roadmap](docs/specs/implementation-roadmap.md) - completed v1 program and current phase
+- [Post-M10 Hardening Roadmap](docs/specs/hardening/roadmap.md) - active workstreams, dependencies, gates, and re-review points
+- [P0-01 CI and Runtime Baseline](docs/specs/hardening/p0-01-ci-runtime-baseline.md) - approved first hardening workstream; implementation not started
+- [Engineering Evidence Matrix](docs/evidence/engineering-evidence-matrix.md) - current claims, gaps, planned evidence, and verification rules
+
+Historical context:
+
+- [M0-M10 milestone archive](docs/archive/README.md) - implementation-era design records that no longer define current requirements
+- [2026-07-30 ChatGPT hardening handoff](docs/archive/handoffs/2026-07-30-chatgpt/ARCHIVE-NOTICE.md) - preserved source material; archived plans are stale
 
 ## Out of scope for v1
 

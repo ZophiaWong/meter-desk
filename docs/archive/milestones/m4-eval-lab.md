@@ -1,5 +1,9 @@
 # M4 Eval Lab
 
+> **Archive status:** Historical implementation spec from the completed M0-M10 program. It is
+> non-authoritative and cannot override `AGENTS.md`, current foundational specs, or an approved
+> active workstream spec. Start from the [documentation index](../../README.md).
+
 ## Purpose
 
 M4 adds a lightweight offline eval core for MeterDesk. It proves that the governed agent produces

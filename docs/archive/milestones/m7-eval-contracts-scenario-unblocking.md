@@ -1,5 +1,9 @@
 # M7 Eval Contracts + Scenario Unblocking
 
+> **Archive status:** Historical implementation spec from the completed M0-M10 program. It is
+> non-authoritative and cannot override `AGENTS.md`, current foundational specs, or an approved
+> active workstream spec. Start from the [documentation index](../../README.md).
+
 ## Purpose
 
 M7 makes evals prove that MeterDesk agent runs are not only outcome-correct, but also governed and
