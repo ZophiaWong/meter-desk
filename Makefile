@@ -1,7 +1,9 @@
 SHELL := /bin/bash
 
+ifeq ($(filter container-smoke,$(MAKECMDGOALS)),)
 -include .env
 export
+endif
 
 API_DIR := apps/api
 WEB_DIR := apps/web

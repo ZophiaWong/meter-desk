@@ -7,6 +7,22 @@ if ((${#compose_command[@]} == 0)); then
   exit 2
 fi
 
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+repo_root=$(cd -- "$script_dir/.." && pwd -P)
+compose_file="$repo_root/compose.yaml"
+if [[ ! -f "$compose_file" ]]; then
+  printf 'MeterDesk Compose file not found: %s\n' "$compose_file" >&2
+  exit 2
+fi
+readonly script_dir repo_root compose_file
+
+unset COMPOSE_FILE
+unset COMPOSE_PROJECT_NAME
+unset COMPOSE_PROFILES
+unset COMPOSE_ENV_FILES
+unset COMPOSE_PATH_SEPARATOR
+export COMPOSE_DISABLE_ENV_FILE=true
+
 run_id=${GITHUB_RUN_ID:-local}
 attempt=${GITHUB_RUN_ATTEMPT:-1}
 project="meterdesk-smoke-${run_id,,}-${attempt,,}-$$"
@@ -19,7 +35,11 @@ fi
 readonly project
 
 compose() {
-  "${compose_command[@]}" --project-name "$project" "$@"
+  "${compose_command[@]}" \
+    --file "$compose_file" \
+    --env-file /dev/null \
+    --project-name "$project" \
+    "$@"
 }
 
 cleanup() {
@@ -75,7 +95,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-export COMPOSE_PROJECT_NAME=$project
 export POSTGRES_PORT=0
 export API_PORT=0
 export WEB_PORT=0
