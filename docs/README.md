@@ -48,6 +48,8 @@ internally inconsistent state.
 ## Supporting Material
 
 - [`docs/diagrams/`](diagrams/README.md) contains architecture and demo diagrams.
+- [Seeded Container Demo Runbook](runbooks/container-demo.md) documents the local container runtime,
+  its reset boundary, and cleanup safety.
 - [`docs/screenshots/`](screenshots/) contains current portfolio screenshots.
 - [`docs/troubleshooting/`](troubleshooting/) contains focused local-development guidance.
 - [`intv/`](../intv/) contains interview preparation and demo material.

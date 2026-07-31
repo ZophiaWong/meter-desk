@@ -139,6 +139,24 @@ curl --fail http://localhost:8000/health/db
 
 If `/health/db` returns 503 while Postgres appears healthy in Docker, see [WSL2 Docker Desktop Postgres troubleshooting](docs/troubleshooting/wsl-docker-postgres-health-db.md).
 
+### Seeded container demo
+
+The host-development workflow above remains the recommended path for local changes. To run the
+complete seeded demo in containers instead, use:
+
+```bash
+make container-build
+make container-up
+make container-smoke
+make container-down
+```
+
+The default container URLs are the same: Web at `http://localhost:3000`, API at
+`http://localhost:8000`, and Postgres at `localhost:5432`. The seeded runtime works without a
+provider key; its histories are a deterministic replay, not a live agent run. See the
+[Container Demo Runbook](docs/runbooks/container-demo.md) for reset behavior, live-provider setup,
+health checks, logs, port overrides, and cleanup guidance.
+
 ## Guided walkthrough
 
 See [MeterDesk Demo Walkthrough](intv/meterdesk-demo-walkthrough.md) for the no-key seeded baseline, live provider reset path, architecture talking points, and interview notes.
