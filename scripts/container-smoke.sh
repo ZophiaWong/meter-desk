@@ -46,6 +46,7 @@ compose() {
 cleanup() {
   local primary_status=$?
   local project_cleanup_status=0
+  local image_cleanup_status=0
   local artifact_cleanup_status=0
   trap - EXIT
   set +e
@@ -70,6 +71,23 @@ cleanup() {
     fi
   fi
 
+  if [[ -n "${API_IMAGE:-}" || -n "${WEB_IMAGE:-}" ]]; then
+    if [[ "${API_IMAGE:-}" != "meterdesk-api:${project}" || \
+      "${WEB_IMAGE:-}" != "meterdesk-web:${project}" ]]; then
+      printf 'Refusing cleanup for unexpected smoke image tags: API=%s Web=%s.\n' \
+        "${API_IMAGE:-}" "${WEB_IMAGE:-}" >&2
+      image_cleanup_status=2
+    else
+      docker image rm "$API_IMAGE" "$WEB_IMAGE"
+      image_cleanup_status=$?
+      if ((image_cleanup_status == 0)); then
+        printf 'Smoke image tags removed.\n'
+      else
+        printf 'Smoke image cleanup failed (exit %s).\n' "$image_cleanup_status" >&2
+      fi
+    fi
+  fi
+
   if [[ -n "${work_dir:-}" ]]; then
     if [[ ! "$work_dir" =~ ^/tmp/meterdesk-smoke-artifacts\.[[:alnum:]]{6}$ ]]; then
       printf 'Refusing cleanup for invalid smoke artifact directory: %s\n' "$work_dir" >&2
@@ -91,6 +109,9 @@ cleanup() {
   fi
   if ((project_cleanup_status != 0)); then
     exit "$project_cleanup_status"
+  fi
+  if ((image_cleanup_status != 0)); then
+    exit "$image_cleanup_status"
   fi
   exit "$artifact_cleanup_status"
 }

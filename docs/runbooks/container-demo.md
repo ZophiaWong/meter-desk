@@ -25,7 +25,8 @@ make container-down
 `container-build` builds the locked API and Web runtime images. `container-up` starts Postgres,
 migrates, seeds, and then starts the API and Web services. `container-smoke` is an isolated,
 no-key verification run: it creates its own Compose project, uses ephemeral host ports, verifies
-the seeded services, and removes only that smoke project and its volume when it exits.
+the seeded services, and removes only that smoke project's services, volume, image tags, and
+temporary artifacts when it exits.
 
 `container-down` stops the normal project and removes its containers and orphaned services. It does
 not remove the normal project database volume.

@@ -492,8 +492,11 @@ The EXIT trap must:
 2. print `compose ps` and the last 200 log lines only when the primary operation fails;
 3. reject cleanup unless the project still begins with `meterdesk-smoke-`;
 4. run `down --volumes --remove-orphans` only for that project;
-5. return the primary failure when both primary work and cleanup fail;
-6. return the cleanup failure only when primary work succeeded.
+5. remove only the exact `meterdesk-api:<project>` and `meterdesk-web:<project>` image tags after
+   validating them against that project;
+6. remove only the validated temporary artifact directory;
+7. return the primary failure when both primary work and cleanup fail;
+8. return a cleanup failure only when primary work succeeded.
 
 After `compose build api web` and `compose up -d --wait`, resolve ephemeral host ports with `compose port`, use bounded curl retries, and assert:
 

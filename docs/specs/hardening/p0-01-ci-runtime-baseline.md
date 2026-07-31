@@ -210,7 +210,8 @@ The smoke harness must:
 - explicitly unset live-provider configuration;
 - verify its ephemeral Postgres, API, and Web publications are loopback-only;
 - print relevant Compose state and service logs on failure;
-- preserve the primary failure code and always clean its own services and volumes.
+- preserve the primary failure code and always clean its own services, volume, project-specific
+  image tags, and temporary artifacts.
 
 Seeded audit history is not a live provider run. Documentation must continue to distinguish seeded
 replay from an explicitly configured live agent execution.
@@ -267,7 +268,7 @@ Current acceptance status:
 |---|---|---|
 | API/Web images and users | Verified locally | Real locked builds; both image configs and running processes are `10001:10001`; API workdir is `/workspace/apps/api` |
 | Five-service seeded runtime | Verified locally | Repeated unique-project `make container-smoke` runs exercised `postgres`, `migrate`, `seed`, `api`, and `web` |
-| No-provider behavior and cleanup | Verified locally | Empty key/model/base URL, expected live-run HTTP 503, project-volume cleanup, and default-volume preservation |
+| No-provider behavior and cleanup | Verified locally | Empty key/model/base URL, expected live-run HTTP 503, project-volume and exact smoke-image-tag cleanup, and default-volume preservation |
 | README/runbook and links | Verified locally | Commands match the Make/Compose interfaces; current link check reports 15 files and 53 local links |
 | Candidate branch quality/database | In progress | Current `make test` passed with API `77 passed, 6 skipped` and Web `21 passed`; cold and current `make test-db` runs passed; `make lint` remains blocked only by the three-file root Ruff format scope decision |
 | GitHub Actions | Planned | Workflow and all four job contracts exist, but no real remote job has succeeded yet |
