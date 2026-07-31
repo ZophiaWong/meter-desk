@@ -9,21 +9,19 @@ from typing import Any
 from meterdesk_api.agent.governance import GOVERNANCE_METADATA_SCHEMA_VERSION
 from meterdesk_api.agent.planning import PLAN_CONTRACTS, InvestigationPlan
 from meterdesk_api.agent.provider import (
-    AgentDraftOutput,
     PLANNER_SYSTEM_PROMPT,
     RESOLUTION_SYSTEM_PROMPT,
+    AgentDraftOutput,
 )
 from meterdesk_api.eval.runner import BLOCKING_DIMENSIONS, DIMENSION_NAMES
 from meterdesk_api.repositories import MeterDeskRepository
 from meterdesk_api.schemas import (
-    ApprovalSummary,
     EvalCaseRegressionSummary,
     EvalCaseSummary,
     EvalDimensionDiff,
     EvalRegressionSummary,
     EvalResultSnapshotSummary,
     EvalResultSummary,
-    EvalRunSummary,
     EvalVersionDiff,
     ToolTraceSummary,
 )
@@ -99,7 +97,9 @@ def build_snapshot_explanations(result: EvalResultSummary) -> list[str]:
         if isinstance(blocked_code, str):
             return [f"Eval is blocked by {blocked_code}."]
         return ["Eval is blocked before agent quality can be judged."]
-    failed_checks = result.details.get("failed_checks", []) if isinstance(result.details, dict) else []
+    failed_checks = (
+        result.details.get("failed_checks", []) if isinstance(result.details, dict) else []
+    )
     missing_evidence = (
         result.details.get("missing_evidence", []) if isinstance(result.details, dict) else []
     )
@@ -367,7 +367,9 @@ def _version_diffs(
         baseline_value = baseline.version_snapshot.get(field)
         current_value = current.version_snapshot.get(field)
         if baseline_value != current_value:
-            diffs.append(EvalVersionDiff(field=field, baseline=baseline_value, current=current_value))
+            diffs.append(
+                EvalVersionDiff(field=field, baseline=baseline_value, current=current_value)
+            )
     return diffs
 
 
