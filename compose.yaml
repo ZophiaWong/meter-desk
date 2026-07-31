@@ -1,7 +1,18 @@
+x-api-image: &api-image
+  image: ${API_IMAGE:-meterdesk-api:local}
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+
+x-api-environment: &api-environment
+  DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://meterdesk:meterdesk@postgres:5432/meterdesk}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: meterdesk-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-meterdesk}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-meterdesk}
@@ -19,6 +30,55 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  migrate:
+    <<: *api-image
+    environment: *api-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+
+  seed:
+    <<: *api-image
+    environment: *api-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["python", "-m", "meterdesk_api.seed"]
+
+  api:
+    <<: *api-image
+    environment: *api-environment
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    ports:
+      - "${API_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    image: ${WEB_IMAGE:-meterdesk-web:local}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:3000"
 
 volumes:
   meterdesk-postgres-data:
