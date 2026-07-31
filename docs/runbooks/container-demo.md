@@ -41,9 +41,32 @@ The container demo is usable without a provider key. Its tickets, audit history,
 outcomes are seeded replay data; they do not represent a live agent execution. In the no-key
 state, attempting a new agent run returns the existing missing-provider response.
 
-To make a live agent run, configure the OpenAI-compatible provider variables privately in your
-untracked local environment, then start the normal container project and initiate the run from the
-Workbench. This is an explicit operator action; seeding never calls a provider and no provider
+To make a live agent run from the seeded pending-approval state, keep the normal container project
+running and use this sequence:
+
+1. In the untracked local `.env`, configure `OPENAI_API_KEY` and `OPENAI_MODEL`. Keep the existing
+   `OPENAI_BASE_URL` default for OpenAI, or change that optional setting for another compatible
+   endpoint. Do not print the values or pass them on a command line.
+2. Reset the Duplicate Charge live runtime rows through the API image:
+
+   ```bash
+   docker compose run --rm --no-deps api \
+     python -m meterdesk_api.demo_reset_live TCK-1042
+   ```
+
+3. Recreate the API and Web containers so they receive the newly configured provider environment,
+   without rerunning their migration and seed dependencies:
+
+   ```bash
+   docker compose up -d --no-deps --force-recreate \
+     --wait --wait-timeout 180 api web
+   ```
+
+4. Open the Workbench and initiate the live run for `TCK-1042`.
+
+Use `TCK-1137` instead of `TCK-1042` in the reset command for the Credit/Refund Dispute path. Run
+`make container-seed` whenever you want to discard live demo runtime rows and restore the seeded
+baseline. This is an explicit operator flow: seeding never calls a provider, and no provider
 configuration is baked into either image. Do not paste, print, commit, or include provider values
 in logs, screenshots, or support artifacts.
 
@@ -70,7 +93,8 @@ docker compose logs --tail 200 postgres migrate seed api web
 
 Avoid commands that render resolved Compose configuration when local environment files may contain
 secrets. The smoke harness prints service state and the last 200 log lines only when its own
-verification fails; it never prints provider or database secret values.
+verification fails; it does not render environment files or their values. Review application logs
+before sharing them because they can contain local demo data.
 
 To rerun migrations and reset only the demo-owned seed rows, use:
 
@@ -96,9 +120,11 @@ Keep both forms in an untracked local environment file and do not echo either fo
 log, issue, or commit. Database credentials in this demo are local-only and must not be reused for
 any external or production database.
 
-The smoke command overrides all relevant runtime configuration, including ports, database settings,
-image tags, and provider variables. It does not source, read, or print `.env` values, so it remains
-a no-key seeded verification path even when a local environment is configured for live use.
+Only `make container-smoke` has strict dotenv isolation. Make skips its normal `.env` include for
+that target, and the smoke script pins the repository `compose.yaml`, uses `/dev/null` as the Compose
+environment file, disables automatic dotenv loading, neutralizes inherited Compose selectors, and
+overrides ports, database settings, image tags, and provider variables. It does not read or print
+`.env` values. Normal container targets intentionally continue to consume the local environment.
 
 ## Port overrides and Compose state
 
@@ -119,14 +145,32 @@ volume. The smoke harness always uses a unique `meterdesk-smoke-...` project, ne
 
 ### Destructive volume removal
 
-The following command destroys the selected Compose project database volume and its data:
+**This workflow permanently destroys the verified Compose project database volume and its data.**
+First list the active project names and volume names:
 
 ```bash
-docker compose down --volumes --remove-orphans
+docker compose ls
+docker volume ls --format '{{.Name}}'
 ```
 
-Run it only when you intend to discard that selected project data. It is never part of normal
-`make container-down`; use `make container-seed` when a demo-data reset is sufficient.
+Choose the exact project name that owns the data you intend to discard. The repository directory
+normally produces `meter-desk`, but use that name only when `docker compose ls` confirms it and the
+volume list shows the matching `meter-desk_meterdesk-postgres-data` volume. Verify the selected
+project services before deleting anything:
+
+```bash
+docker compose --project-name meter-desk ps
+```
+
+If the confirmed project has another name, replace the literal `meter-desk` with that exact name in
+both commands. Only after the project and its services are verified, remove that project and volume:
+
+```bash
+docker compose --project-name meter-desk down --volumes --remove-orphans
+```
+
+This destructive command is never part of normal `make container-down`. Use `make container-seed`
+when a demo-data reset is sufficient.
 
 ## Troubleshooting
 
