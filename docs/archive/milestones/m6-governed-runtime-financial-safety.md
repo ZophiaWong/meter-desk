@@ -1,5 +1,9 @@
 # M6 Governed Runtime + Financial Safety
 
+> **Archive status:** Historical implementation spec from the completed M0-M10 program. It is
+> non-authoritative and cannot override `AGENTS.md`, current foundational specs, or an approved
+> active workstream spec. Start from the [documentation index](../../README.md).
+
 ## Purpose
 
 M6 upgrades MeterDesk's current governance implementation from a V0 trace kernel into a

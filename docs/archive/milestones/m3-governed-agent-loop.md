@@ -1,5 +1,9 @@
 # M3 Governed Agent Loop
 
+> **Archive status:** Historical implementation spec from the completed M0-M10 program. It is
+> non-authoritative and cannot override `AGENTS.md`, current foundational specs, or an approved
+> active workstream spec. Start from the [documentation index](../../README.md).
+
 ## Purpose
 
 M3 implements the first real governed agent loop for the Duplicate Charge golden path. FastAPI owns

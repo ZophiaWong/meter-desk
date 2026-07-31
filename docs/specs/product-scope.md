@@ -48,6 +48,24 @@ MeterDesk should communicate three capabilities:
 - Agent infrastructure core: governed tools, traces, approvals, and durable audit state.
 - Applied AI decision quality: policy-grounded reasoning and offline evals.
 
+## Post-M10 Hardening Direction (Planned)
+
+The approved hardening phase improves engineering evidence without changing the product thesis or
+adding a new product line. Planned work may make the existing application easier to build, operate,
+recover, audit, and evaluate, but it must preserve:
+
+- Duplicate Charge as the golden path.
+- Credit/Refund Dispute and Usage Spike as supporting scenarios.
+- the ticket-first Support Workbench, Approval Queue, and Eval Lab surfaces.
+- backend authority for evidence, deterministic decisions, approval gates, and mutations.
+- draft-only customer replies and mock-only financial mutations.
+
+Hardening may introduce authentication for trusted demo approval actors, background execution,
+operational telemetry, typed tool/context contracts, and a repository-local mock billing HTTP
+service. The HTTP service proves a network boundary without becoming a real Stripe, payment,
+support, or accounting integration. Any real third-party adapter requires a separate product-scope
+decision before design or implementation.
+
 ## Out of Scope
 
 - Real payment system integrations.

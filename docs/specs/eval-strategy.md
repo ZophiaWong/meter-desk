@@ -106,10 +106,28 @@ For v1 to be considered credible:
 
 ## Regression History
 
-Focused regression history is defined in `docs/specs/m10-eval-regression-history.md`.
+Historical regression-history design context is archived in
+`docs/archive/milestones/m10-eval-regression-history.md`.
 The v1 comparison model is latest non-baseline eval run versus seeded canonical baseline. Blocked
 provider or environment states are incomparable, not agent regressions. Usage Spike remains a
 coverage gap until its governed runner is implemented.
+
+## Post-M10 Hardening Direction (Planned)
+
+Eval Lab retains the nine canonical business scenario cases defined above. A later hardening
+workstream may add at least 30 focused engineering regression fixtures/checks without turning them
+into new product scenario cards. Planned coverage includes:
+
+- prompt injection and policy spoofing.
+- PII leakage and context redaction.
+- malformed provider output, timeout classification, retry exhaustion, and cancellation.
+- concurrent approval, duplicate delivery, and worker crash/recovery.
+- Chinese and English draft safety, including indirect financial promises.
+- latency and cost threshold calculations once the runtime emits reliable measurements.
+
+Governance, evidence, approval, concurrency, and recovery checks remain deterministic. LLM-as-judge
+may supplement open-ended language quality only. Each earlier workstream must add its own tests;
+the later expansion assembles cross-system regression evidence rather than postponing quality work.
 
 ## Deferred Eval Work
 

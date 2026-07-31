@@ -10,8 +10,11 @@ This file is the operating guide for AI coding agents working in this repository
 4. `docs/specs/agent-governance.md`
 5. `docs/specs/eval-strategy.md`
 6. `docs/specs/implementation-roadmap.md`
+7. `docs/specs/hardening/roadmap.md`
 
-If a future task adds a more specific spec, read that spec after the files above and treat it as the local source of truth for that subsystem.
+If a task targets an active workstream, read its focused spec after the files above and treat it as
+the local source of truth for that subsystem. Files under `docs/archive/` are historical context only
+and must not override current specs or an approved active workstream spec.
 
 ## Product Guardrails
 
@@ -60,3 +63,5 @@ If a future task adds a more specific spec, read that spec after the files above
 - Do not commit `.superpowers/`; it is a local brainstorming artifact.
 - Do not add `AGENT.md`; this repository uses `AGENTS.md` only.
 - Update the relevant spec when a code change intentionally changes product scope, architecture boundaries, agent governance, or eval behavior.
+- When handoff or archived material conflicts with `AGENTS.md` or a current foundational spec, pause
+  the affected work and ask the maintainer to decide; do not silently choose either side.

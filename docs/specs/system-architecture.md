@@ -77,6 +77,27 @@ Mock systems should be realistic enough to support credible investigation:
 
 Mock systems must not call real Stripe, payment, support, messaging, or accounting APIs in v1.
 
+## Post-M10 Hardening Direction (Planned)
+
+The active hardening roadmap proposes these architecture changes. They are target directions, not
+claims about the current implementation:
+
+- package the API and Web as non-root runtime images and verify a seeded full-stack Compose path.
+- derive approval identity from a server-verified local/demo principal with role enforcement.
+- manage the async database engine and session factory through FastAPI lifespan.
+- separate case workflow state from HTTP request lifetime with explicit transitions, retries,
+  cancellation, checkpoints, and idempotency.
+- replace blocking provider I/O with an async resilience contract and structured usage metadata.
+- correlate domain audit identifiers with operational logs, traces, metrics, latency, and cost.
+- prove typed tool execution through one repository-local, read-only mock billing HTTP service with
+  tested authentication and failure behavior.
+- introduce versioned evidence references and auditable context snapshots without vector memory or
+  large-scale RAG.
+
+The networked mock service does not relax the prohibition on real Stripe, payment, support,
+messaging, or accounting integrations. Detailed interfaces require focused, approved workstream
+specs before implementation.
+
 ## Deferred Architecture Work
 
 - Detailed database schema.
@@ -84,4 +105,4 @@ Mock systems must not call real Stripe, payment, support, messaging, or accounti
 - Detailed UI component architecture.
 - Real MCP server implementation.
 - Real provider integrations.
-- Deployment and production monitoring.
+- Cloud deployment and production SRE operations.

@@ -1,0 +1,38 @@
+[
+  {
+    "path": "HANDOFF-MANIFEST.md",
+    "bytes": 1527
+  },
+  {
+    "path": "docs/codex-handoff/portfolio-hardening/README.md",
+    "bytes": 8040
+  },
+  {
+    "path": "docs/codex-handoff/portfolio-hardening/codex-execution-prompt.md",
+    "bytes": 3074
+  },
+  {
+    "path": "docs/codex-handoff/portfolio-hardening/current-state.md",
+    "bytes": 10624
+  },
+  {
+    "path": "docs/codex-handoff/portfolio-hardening/dependency-map.md",
+    "bytes": 7303
+  },
+  {
+    "path": "docs/codex-handoff/portfolio-hardening/evidence-matrix.md",
+    "bytes": 7640
+  },
+  {
+    "path": "docs/codex-handoff/portfolio-hardening/specs/P0-01-ci-runtime-baseline.md",
+    "bytes": 14485
+  },
+  {
+    "path": "docs/codex-handoff/portfolio-hardening/workstreams-overview.md",
+    "bytes": 10786
+  },
+  {
+    "path": "docs/superpowers/plans/2026-07-30-meterdesk-ci-runtime-baseline.md",
+    "bytes": 27070
+  }
+]

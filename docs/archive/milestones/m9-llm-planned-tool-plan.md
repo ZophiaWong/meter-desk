@@ -1,5 +1,9 @@
 # M9 LLM-Planned, Backend-Verified Tool Plan
 
+> **Archive status:** Historical implementation spec from the completed M0-M10 program. It is
+> non-authoritative and cannot override `AGENTS.md`, current foundational specs, or an approved
+> active workstream spec. Start from the [documentation index](../../README.md).
+
 ## Purpose
 
 M9 makes the live governed agent loop show real LLM investigation planning before backend tools run.

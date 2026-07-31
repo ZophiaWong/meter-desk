@@ -103,6 +103,25 @@ Mock refund and credit mutations must:
 
 Mock mutations are product evidence for governance behavior. They are not a path toward real payment processing in v1.
 
+## Post-M10 Hardening Direction (Planned)
+
+Later workstreams may strengthen governance only through focused specs and automated evidence:
+
+- approval actors must come from a server-verified principal, not a client-selected request field.
+- approval roles and audit identity must be enforced and persisted at the backend boundary.
+- queued, retried, cancelled, or replayed execution must not duplicate approvals or mutations.
+- workflow states and terminal outcomes must distinguish investigation completion, approval waiting,
+  rejection, cancellation, failure, and executed mock mutation where applicable.
+- provider and tool failures must use stable categories, bounded retries, deadlines, sanitization,
+  and trace propagation.
+- typed tool contracts must retain risk, evidence, gate, executor, and trace requirements.
+- context construction must record selected/excluded evidence, versions, redactions, and trust
+  classification without granting the model new financial authority.
+
+The planned network boundary is a repository-local read-only mock billing service. It does not
+authorize real external reads or writes. Detailed tool schemas remain deferred until the focused
+typed-tool workstream is explicitly designed and approved.
+
 ## Failure Handling
 
 If the agent lacks required evidence, it should say so and avoid unsupported recommendations.

@@ -1,5 +1,9 @@
 # M5 Polish + Portfolio Readiness
 
+> **Archive status:** Historical implementation spec from the completed M0-M10 program. It is
+> non-authoritative and cannot override `AGENTS.md`, current foundational specs, or an approved
+> active workstream spec. Start from the [documentation index](../../README.md).
+
 ## Purpose
 
 M5 turns the working MeterDesk vertical slice into a stable interview and portfolio demo. The

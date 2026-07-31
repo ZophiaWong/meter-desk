@@ -1,5 +1,9 @@
 # M10 Eval Regression History + Model/Prompt Diff
 
+> **Archive status:** Historical implementation spec from the completed M0-M10 program. It is
+> non-authoritative and cannot override `AGENTS.md`, current foundational specs, or an approved
+> active workstream spec. Start from the [documentation index](../../README.md).
+
 ## Purpose
 
 M10 upgrades Eval Lab from latest-only eval results to lightweight regression history. The goal is
