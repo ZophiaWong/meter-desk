@@ -17,8 +17,8 @@ The architecture should favor simple, explicit interfaces over broad abstraction
 
 The application boundaries above now have a repository-local container runtime. This packaging is
 implemented on the P0-01 candidate branch; local image and full-stack smoke evidence is verified,
-while branch-wide quality/database verification and the first remote GitHub Actions run remain in
-progress.
+while branch-wide quality/database verification remains in progress. The first remote GitHub
+Actions run has not yet occurred, so remote CI verification is pending.
 
 - `apps/api/Dockerfile` builds from the repository root with the committed `apps/api/uv.lock`, keeps
   the source layout at `/workspace/apps/api`, sets `PYTHONPATH=/workspace/apps/api/src`, and runs

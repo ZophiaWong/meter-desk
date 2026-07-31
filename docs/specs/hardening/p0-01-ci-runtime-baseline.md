@@ -6,8 +6,9 @@
 - Design status: approved; runtime architecture implementation is Implemented on the candidate
   branch.
 - Evidence status: API/Web images, seeded runtime, no-provider smoke behavior, and Markdown links
-  are locally Verified; final branch-wide quality/database verification and remote CI are in
-  progress.
+  are locally Verified; final branch-wide quality/database verification is in progress. Remote CI
+  verification is pending and all four GitHub jobs remain Planned because no remote run has yet
+  occurred.
 - Depends on: post-M10 baseline commit `86c737d` and the P0-01 candidate commits.
 - Blocks: every later hardening workstream.
 - Intended product behavior change: none.
