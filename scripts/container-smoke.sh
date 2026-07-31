@@ -24,7 +24,8 @@ compose() {
 
 cleanup() {
   local primary_status=$?
-  local cleanup_status=0
+  local project_cleanup_status=0
+  local artifact_cleanup_status=0
   trap - EXIT
   set +e
 
@@ -36,21 +37,41 @@ cleanup() {
 
   if [[ "$project" != meterdesk-smoke-* ]]; then
     printf 'Refusing cleanup for non-smoke project: %s\n' "$project" >&2
-    cleanup_status=2
+    project_cleanup_status=2
   else
     compose down --volumes --remove-orphans
-    cleanup_status=$?
-    if ((cleanup_status == 0)); then
+    project_cleanup_status=$?
+    if ((project_cleanup_status == 0)); then
       printf 'Smoke cleanup complete for %s.\n' "$project"
     else
-      printf 'Smoke cleanup failed for %s (exit %s).\n' "$project" "$cleanup_status" >&2
+      printf 'Smoke cleanup failed for %s (exit %s).\n' \
+        "$project" "$project_cleanup_status" >&2
+    fi
+  fi
+
+  if [[ -n "${work_dir:-}" ]]; then
+    if [[ ! "$work_dir" =~ ^/tmp/meterdesk-smoke-artifacts\.[[:alnum:]]{6}$ ]]; then
+      printf 'Refusing cleanup for invalid smoke artifact directory: %s\n' "$work_dir" >&2
+      artifact_cleanup_status=2
+    else
+      rm -r -- "$work_dir"
+      artifact_cleanup_status=$?
+      if ((artifact_cleanup_status == 0)); then
+        printf 'Smoke artifacts removed.\n'
+      else
+        printf 'Smoke artifact cleanup failed (exit %s).\n' \
+          "$artifact_cleanup_status" >&2
+      fi
     fi
   fi
 
   if ((primary_status != 0)); then
     exit "$primary_status"
   fi
-  exit "$cleanup_status"
+  if ((project_cleanup_status != 0)); then
+    exit "$project_cleanup_status"
+  fi
+  exit "$artifact_cleanup_status"
 }
 trap cleanup EXIT
 
@@ -61,7 +82,7 @@ export WEB_PORT=0
 export POSTGRES_USER=meterdesk
 export POSTGRES_PASSWORD=meterdesk
 export POSTGRES_DB=meterdesk
-export DATABASE_URL=postgresql+psycopg://meterdesk:meterdesk@postgres:5432/meterdesk
+export CONTAINER_DATABASE_URL=postgresql+psycopg://meterdesk:meterdesk@postgres:5432/meterdesk
 export API_IMAGE="meterdesk-api:${project}"
 export WEB_IMAGE="meterdesk-web:${project}"
 export OPENAI_API_KEY=
@@ -111,7 +132,7 @@ assert_contains() {
   fi
 }
 
-work_dir=$(mktemp -d)
+work_dir=$(mktemp -d /tmp/meterdesk-smoke-artifacts.XXXXXX)
 readonly work_dir
 
 compose build api web

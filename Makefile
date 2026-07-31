@@ -47,7 +47,7 @@ db-up:
 	$(COMPOSE) up -d postgres
 
 db-down:
-	$(COMPOSE) down
+	$(COMPOSE) rm --stop --force postgres
 
 db-migrate:
 	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run --frozen alembic upgrade head
