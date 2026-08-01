@@ -33,7 +33,9 @@
 - `make test` passes with API `68 passed, 6 skipped` and Web `21 passed` under Node 22.22.2 with temp directories rooted at `/tmp`.
 - `compose.yaml` defines only `postgres`, fixes `container_name: meterdesk-postgres`, and retains the named volume `meterdesk-postgres-data`.
 - No `.github/workflows`, Dockerfiles, root `.dockerignore`, container smoke harness, or container runbook exists.
-- Official action documentation confirms the approved majors: `actions/checkout@v6`, `actions/setup-python@v6`, `actions/setup-node@v6`, and `astral-sh/setup-uv@v8`; pin uv itself to `0.11.16`.
+- Official action documentation confirms `actions/checkout@v6`, `actions/setup-python@v6`, and
+  `actions/setup-node@v6`. The first remote run proved that setup-uv publishes versioned v8 tags but
+  no `v8` alias; use verified tag `astral-sh/setup-uv@v8.3.2` and pin uv itself to `0.11.16`.
 
 ## File and Interface Map
 
@@ -199,7 +201,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.3.2
         with:
           version: "0.11.16"
           enable-cache: true
@@ -248,7 +250,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v8.3.2
         with:
           version: "0.11.16"
           enable-cache: true

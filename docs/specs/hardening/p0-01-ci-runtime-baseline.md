@@ -7,8 +7,8 @@
   branch.
 - Evidence status: API/Web images, seeded runtime, no-provider smoke behavior, host lint/tests/
   database, dependency reachability triage, and Markdown links are locally Verified. Remote CI
-  verification is pending and all four GitHub jobs remain Planned because no remote run has yet
-  occurred.
+  verification is pending and all four GitHub jobs remain Planned because no final PR head has yet
+  produced four successful jobs.
 - Depends on: post-M10 baseline commit `86c737d` and the P0-01 candidate commits.
 - Blocks: every later hardening workstream.
 - Intended product behavior change: none.
@@ -23,7 +23,8 @@ The starting repository had local install, lint, test, database, seed, reset, an
 commands but no publicly repeatable build/runtime contract. P0-01 adds that contract without moving
 application authority: locked installs, production images, migrations, seed, API/Web networking,
 and no-provider-key behavior now share one repository-local command surface. The remaining problem
-is remote evidence closure: no real GitHub workflow run exists yet.
+is remote evidence closure: the first PR run exposed an invalid action alias and did not produce the
+required four successful jobs.
 
 ## Implementation and Evidence Snapshot
 
@@ -87,7 +88,11 @@ claims.
 - The current local runtime snapshot is Docker Engine client/server `28.1.1` and Docker Compose
   `v2.35.1-desktop.1`.
 - Final candidate-branch `make lint`, `make test`, and isolated `make test-db` runs are recorded
-  above. No GitHub Actions job has a real remote result yet.
+  above. PR [run 30679074517](https://github.com/ZophiaWong/meter-desk/actions/runs/30679074517)
+  produced a successful `frontend-quality` job; `backend-quality` and `database-integration` failed
+  during setup because setup-uv publishes versioned v8 tags but no `v8` alias, and
+  `container-smoke` was skipped by its dependency gate. The workflow now uses verified tag
+  `astral-sh/setup-uv@v8.3.2`; corrected-head results are pending.
 
 P0-01 must establish a clean quality baseline. The narrow Ruff cleanup belongs in this workstream
 because new CI would otherwise fail immediately, but it must not change eval or domain behavior.
@@ -214,7 +219,7 @@ container job passes all three provider variables as empty and runs `make contai
 after the other jobs succeed.
 
 Pinned workflow interfaces are `actions/checkout@v6`, `actions/setup-python@v6`,
-`actions/setup-node@v6`, `astral-sh/setup-uv@v8`, Python 3.12, Node 22, and uv `0.11.16`.
+`actions/setup-node@v6`, `astral-sh/setup-uv@v8.3.2`, Python 3.12, Node 22, and uv `0.11.16`.
 
 CI and smoke runs must not receive or require `OPENAI_API_KEY`, `OPENAI_MODEL`, payment secrets, or
 support-system credentials.
@@ -267,7 +272,7 @@ containers must be non-root. Demo database credentials must be documented as loc
   notes.
 - State that financial mutations remain mock-only and customer replies remain drafts.
 - Update the engineering evidence matrix with exact files, check names, commands, and artifacts.
-  Keep CI rows `Planned` until an actual workflow run is available.
+  Keep CI rows `Planned` until all four jobs succeed on the corrected final PR head.
 
 ## Acceptance Criteria
 
@@ -296,7 +301,7 @@ Current acceptance status:
 | README/runbook and links | Verified locally | Commands match the Make/Compose interfaces; current link check reports 15 files and 53 local links |
 | Candidate branch quality/database | Verified locally | `make lint` passed all Ruff/ESLint/TypeScript checks; `make test` passed with API `77 passed, 6 skipped` and Web `21 passed`; isolated `make test-db` passed all migrations, seed, and the M5 check |
 | Production dependency reachability | Verified with accepted limitations | Next.js `15.5.21` removed the reachable Server Actions advisories; production audit still exits `1` for nested PostCSS `8.4.31` and optional Sharp `0.34.5`, whose required attacker-controlled inputs are absent from current P0-01 |
-| GitHub Actions | Planned | Workflow and all four job contracts exist, but no real remote job has succeeded yet |
+| GitHub Actions | Planned | Initial PR run `30679074517` proved frontend quality but exposed an invalid setup-uv alias before both Python jobs; the corrected final head still needs all four successful jobs |
 
 ## Verification Contract
 
@@ -330,4 +335,4 @@ Current execution status:
 - Frozen install and runtime checks resolved Next.js `15.5.21`. The production-only audit exited
   `1` because the accepted PostCSS/Sharp limitations above remain; it is not recorded as audit-clean.
 - `backend-quality`, `frontend-quality`, `database-integration`, and `container-smoke` remain
-  Planned until actual GitHub job results are available.
+  Planned until the corrected final PR head produces all four successful GitHub job results.
