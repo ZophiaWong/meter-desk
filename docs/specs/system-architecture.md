@@ -6,12 +6,43 @@ MeterDesk should be a full-stack product with clear boundaries between UI, backe
 
 The architecture should favor simple, explicit interfaces over broad abstractions. V1 should be easy to understand, seed, demo, test, and evaluate.
 
-## Planned Stack
+## Application Stack
 
 - **Next.js**: frontend application and product UI.
 - **FastAPI**: backend API, agent run orchestration, approval handling, eval execution, and mock system access.
 - **Postgres**: durable state for tickets, mock billing data, approvals, agent runs, tool traces, mock mutations, and eval results.
 - **OpenAI-compatible LLM interface**: provider-agnostic boundary with one live provider in v1.
+
+## P0-01 Runtime Packaging (Implemented)
+
+The application boundaries above now have a repository-local container runtime. This packaging is
+implemented on the P0-01 candidate branch; local image and full-stack smoke evidence is verified,
+and branch-wide lint, test, and database verification is complete. Corrected implementation-head
+CI run `30679673344` completed all four required jobs successfully; the evidence-finalized PR head
+must repeat them before merge.
+
+- `apps/api/Dockerfile` builds from the repository root with the committed `apps/api/uv.lock`, keeps
+  the source layout at `/workspace/apps/api`, sets `PYTHONPATH=/workspace/apps/api/src`, and runs
+  Uvicorn as numeric user `10001:10001`. The same image supplies the Alembic and seed entrypoints.
+- `apps/web/Dockerfile` installs from `apps/web/package-lock.json` with `npm ci`, copies the Next.js
+  standalone output to `/app`, and runs `node server.js` as numeric user `10001:10001`.
+- `.dockerignore` excludes `.env` files, repository metadata, local agent artifacts, dependency
+  directories, build output, test artifacts, coverage, and logs from the shared root build context.
+- `compose.yaml` defines the dependency chain `postgres` -> `migrate` -> `seed` -> `api` -> `web`.
+  `postgres` is Postgres 16 Alpine; `migrate` and `seed` are one-shot API-image services; `api` and
+  `web` are health-ordered long-running services.
+- Application containers use `postgres:5432` through `CONTAINER_DATABASE_URL` or coupled
+  `POSTGRES_*` defaults. The Web server uses `API_BASE_URL=http://api:8000`. Host defaults remain
+  Postgres `5432`, API `8000`, and Web `3000`.
+- `Makefile` exposes `container-build`, `container-up`, `container-seed`, `container-smoke`, and
+  `container-down`. Normal teardown preserves the named Postgres volume.
+- `scripts/container-smoke.sh` binds the repository `compose.yaml` explicitly, disables automatic
+  dotenv and inherited Compose selectors, uses a unique project with ephemeral host ports, passes
+  empty provider configuration, and removes only its project services, network, response artifacts,
+  volume, and two exact project-specific image tags.
+
+The runtime adds packaging and orchestration only. FastAPI still owns business and governance
+authority; no agent, approval, mutation, trace, or eval contract moved into Compose or the images.
 
 ## Boundary Rules
 
@@ -77,12 +108,12 @@ Mock systems should be realistic enough to support credible investigation:
 
 Mock systems must not call real Stripe, payment, support, messaging, or accounting APIs in v1.
 
-## Post-M10 Hardening Direction (Planned)
+## Post-M10 Hardening Direction
 
-The active hardening roadmap proposes these architecture changes. They are target directions, not
-claims about the current implementation:
+P0-01 implemented the runtime packaging described above. The remaining active hardening roadmap
+proposes these later architecture changes; they are target directions, not claims about the current
+implementation:
 
-- package the API and Web as non-root runtime images and verify a seeded full-stack Compose path.
 - derive approval identity from a server-verified local/demo principal with role enforcement.
 - manage the async database engine and session factory through FastAPI lifespan.
 - separate case workflow state from HTTP request lifetime with explicit transitions, retries,

@@ -1477,6 +1477,4 @@ def _baseline_trace_signature(eval_case: EvalCaseSummary) -> dict[str, object]:
     }
 
 
-EVAL_RESULT_SNAPSHOTS = [
-    _baseline_snapshot_for_case(eval_case) for eval_case in EVAL_CASES
-]
+EVAL_RESULT_SNAPSHOTS = [_baseline_snapshot_for_case(eval_case) for eval_case in EVAL_CASES]

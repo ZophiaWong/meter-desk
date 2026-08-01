@@ -124,7 +124,9 @@ make db-down
 
 `make demo-reset-live` clears only `TCK-1042` runtime state by default so a configured OpenAI-compatible provider can run the live Duplicate Charge agent path from the Workbench. Use `make demo-reset-live TICKET_ID=TCK-1137` to reset the Credit/Refund Dispute path.
 
-`make test-db` starts local Postgres, runs migrations, seeds demo data, and checks the M3 seed and run-preflight APIs against the real database. The default `make test` stays fast and does not require Docker/Postgres.
+`make test-db` starts local Postgres, waits for its healthcheck, runs migrations, seeds demo data,
+and checks the M3 seed and run-preflight APIs against the real database. The default `make test`
+stays fast and does not require Docker/Postgres.
 
 To run the M3 agent loop locally, configure `OPENAI_API_KEY` and `OPENAI_MODEL` in `.env`. `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1` and can point at another OpenAI-compatible endpoint.
 
@@ -138,6 +140,26 @@ curl --fail http://localhost:8000/health/db
 `/health` verifies FastAPI liveness. `/health/db` verifies the backend can execute a simple Postgres query.
 
 If `/health/db` returns 503 while Postgres appears healthy in Docker, see [WSL2 Docker Desktop Postgres troubleshooting](docs/troubleshooting/wsl-docker-postgres-health-db.md).
+
+### Seeded container demo
+
+The host-development workflow above remains the recommended path for local changes. To run the
+complete seeded demo in containers instead, use:
+
+```bash
+make container-build
+make container-up
+make container-smoke
+make container-down
+```
+
+The default container URLs are the same: Web at `http://localhost:3000`, API at
+`http://localhost:8000`, and Postgres at `localhost:5432`, all published on loopback by default. The
+seeded runtime works without a provider key; its histories are a deterministic replay, not a live
+agent run. Remote network access is an explicit operator choice through
+`CONTAINER_BIND_ADDRESS`. See the
+[Container Demo Runbook](docs/runbooks/container-demo.md) for reset behavior, live-provider setup,
+health checks, logs, port and bind-address overrides, and cleanup guidance.
 
 ## Guided walkthrough
 
@@ -157,7 +179,7 @@ Current sources:
 - [Eval Strategy](docs/specs/eval-strategy.md) - offline eval cases, grading dimensions, and Eval Lab expectations
 - [Implementation Roadmap](docs/specs/implementation-roadmap.md) - completed v1 program and current phase
 - [Post-M10 Hardening Roadmap](docs/specs/hardening/roadmap.md) - active workstreams, dependencies, gates, and re-review points
-- [P0-01 CI and Runtime Baseline](docs/specs/hardening/p0-01-ci-runtime-baseline.md) - approved first hardening workstream; implementation not started
+- [P0-01 CI and Runtime Baseline](docs/specs/hardening/p0-01-ci-runtime-baseline.md) - implemented CI/runtime baseline; the evidence matrix records current verification status
 - [Engineering Evidence Matrix](docs/evidence/engineering-evidence-matrix.md) - current claims, gaps, planned evidence, and verification rules
 
 Historical context:
