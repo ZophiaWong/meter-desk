@@ -66,7 +66,7 @@
 ### Runtime Interfaces
 
 - Compose consumes `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`, `API_PORT`,
-  `WEB_PORT`, `CONTAINER_BIND_ADDRESS`, `METERDESK_API_IMAGE`, `METERDESK_WEB_IMAGE`, and optional
+  `WEB_PORT`, `CONTAINER_BIND_ADDRESS`, `API_IMAGE`, `WEB_IMAGE`, and optional
   explicit live-provider variables.
 - Compose produces internal endpoints `postgres:5432` and `http://api:8000`; host defaults remain Postgres `5432`, API `8000`, and Web `3000`.
 - `migrate`, `seed`, and `api` consume the same API image. `api` starts only after successful seed; `web` starts only after API health succeeds.

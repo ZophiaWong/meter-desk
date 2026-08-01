@@ -46,7 +46,8 @@ governance traces, compliance checks, and eval regression history.
 
 P0-01 now supplies API/Web runtime images, a seeded five-service Compose path, an isolated no-key
 smoke harness, and a four-job GitHub Actions workflow contract. Local image and smoke evidence is
-verified, but public CI evidence and final candidate-branch quality/database evidence remain open.
+verified, as are final candidate-branch lint, test, and database evidence; public CI evidence
+remains open.
 The baseline still lacks trusted approval identity, application-lifetime database resources,
 explicit workflow state semantics, background execution, provider resilience, operational
 telemetry, typed networked tool execution, structured context snapshots, and broad
@@ -101,8 +102,8 @@ runbook, and the Markdown link checker. Compose runs `postgres`, `migrate`, `see
 both application images run as `10001:10001`, with the API repository layout preserved at
 `/workspace/apps/api`. Local image builds, isolated seeded runtime, no-provider 503 behavior, and
 cleanup/default-volume preservation are verified. All four GitHub jobs remain Planned until a real
-remote run succeeds, and final branch-wide quality/database verification is still in progress. No
-agent, approval, mutation, governance, trace, or eval behavior changed.
+remote run succeeds; local branch-wide quality/database verification is complete. No agent,
+approval, mutation, governance, trace, or eval behavior changed.
 
 Detailed requirements: [P0-01 CI and Runtime Baseline](p0-01-ci-runtime-baseline.md).
 
@@ -185,9 +186,9 @@ explicit optional target.
 P0-01 must provide automated backend quality, frontend quality/build, Postgres integration, image
 build, and seeded full-stack smoke evidence without a real provider key.
 
-Status: implementation and local runtime evidence are present. The gate remains open pending final
-candidate-branch quality/database commands and successful remote results for `backend-quality`,
-`frontend-quality`, `database-integration`, and `container-smoke`.
+Status: implementation and local lint, test, database, and runtime evidence are present. The gate
+remains open only for successful remote results from `backend-quality`, `frontend-quality`,
+`database-integration`, and `container-smoke`.
 
 ### Gate B — Trusted Actor
 

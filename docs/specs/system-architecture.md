@@ -17,8 +17,8 @@ The architecture should favor simple, explicit interfaces over broad abstraction
 
 The application boundaries above now have a repository-local container runtime. This packaging is
 implemented on the P0-01 candidate branch; local image and full-stack smoke evidence is verified,
-while branch-wide quality/database verification remains in progress. The first remote GitHub
-Actions run has not yet occurred, so remote CI verification is pending.
+and branch-wide lint, test, and database verification is complete. The first remote GitHub Actions
+run has not yet occurred, so remote CI verification is pending.
 
 - `apps/api/Dockerfile` builds from the repository root with the committed `apps/api/uv.lock`, keeps
   the source layout at `/workspace/apps/api`, sets `PYTHONPATH=/workspace/apps/api/src`, and runs
@@ -38,7 +38,7 @@ Actions run has not yet occurred, so remote CI verification is pending.
 - `scripts/container-smoke.sh` binds the repository `compose.yaml` explicitly, disables automatic
   dotenv and inherited Compose selectors, uses a unique project with ephemeral host ports, passes
   empty provider configuration, and removes only its project services, network, response artifacts,
-  and volume.
+  volume, and two exact project-specific image tags.
 
 The runtime adds packaging and orchestration only. FastAPI still owns business and governance
 authority; no agent, approval, mutation, trace, or eval contract moved into Compose or the images.
