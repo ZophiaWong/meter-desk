@@ -43,27 +43,28 @@ the program roadmap alone remains a **Gap** until its focused spec is approved.
 pre-implementation full test snapshot was API `68 passed, 6 skipped` and Web `21 passed` under
 Node 22.22.2. P0-01 focused checks later reported `15` passing Eval Lab tests and `9` passing
 Markdown-link tests. The current candidate `make test` run passed with API `77 passed, 6 skipped`
-and Web `21 passed`; `make lint-web` separately passed ESLint and TypeScript. Current and cold
-unique-project `make test-db` runs passed after Postgres health waiting, migrations, seed, and the M5
-integration check. The five allowed Ruff findings were fixed, but root format verification reports
-pre-existing drift in `repositories.py`, `seed_data.py`, and `test_m4_eval_lab.py`; maintainer
-direction is pending. The locally verified container environment was Docker Engine `28.1.1` and
-Docker Compose `v2.35.1-desktop.1`. These counts and versions are execution context, not product
-performance claims.
+and Web `21 passed`; `make lint` passed Ruff check/format over `52` files, ESLint, and TypeScript.
+Current and cold unique-project `make test-db` runs passed after Postgres health waiting, migrations,
+seed, and the M5 integration check. The five allowed Ruff findings were fixed; after explicit
+maintainer approval, three pre-existing format-only files were formatted with unchanged Python AST
+hashes. The locally verified container environment was Docker Engine `28.1.1` and Docker Compose
+`v2.35.1-desktop.1`. These counts and versions are execution context, not product performance
+claims.
 
 ## Hardening Target Evidence
 
 | Requirement | Current state | Target evidence | Workstream | Status |
 |---|---|---|---|---|
-| PR backend quality checks | `.github/workflows/ci.yml` runs frozen Ruff check/format, pytest, and Markdown links | Actual successful `backend-quality` GitHub job URL/result; final local root format check still has three-file drift pending maintainer direction | P0-01 | Planned |
-| PR frontend quality/build checks | `.github/workflows/ci.yml` runs `npm ci`, lint, typecheck, Vitest, and build; current local Web lint/typecheck and `21` tests passed, and the production image build completed | Actual successful `frontend-quality` GitHub job URL/result | P0-01 | Planned |
+| PR backend quality checks | `.github/workflows/ci.yml` runs frozen Ruff check/format, pytest, and Markdown links; current local `make lint` and API `77 passed, 6 skipped` are green | Actual successful `backend-quality` GitHub job URL/result | P0-01 | Planned |
+| PR frontend quality/build checks | `.github/workflows/ci.yml` runs `npm ci`, lint, typecheck, Vitest, and build; current local checks, `21` tests, Next.js `15.5.21` build, and production image build completed | Actual successful `frontend-quality` GitHub job URL/result | P0-01 | Planned |
 | Automated Postgres integration | `.github/workflows/ci.yml` runs `make test-db` with unique project/port and unconditional cleanup; cold unique-project and current local runs passed after health wait, migrations, seed, and the M5 check | Actual successful `database-integration` GitHub job logs | P0-01 | Planned |
 | CI container smoke | Dependency-gated `container-smoke` job runs with empty provider variables | Actual successful `container-smoke` GitHub job URL/result | P0-01 | Planned |
 | Locked non-root API image | `apps/api/Dockerfile`, `.dockerignore`; `meterdesk-api:local`, workdir `/workspace/apps/api` | Current `make container-build`; image and process checks returned `10001:10001`; Alembic/seed entrypoints and repository root `/workspace` resolved; Docker-context exclusion contract passed | P0-01 | Verified |
-| Locked non-root Web image | `apps/web/Dockerfile`, `apps/web/next.config.ts`, `.dockerignore`; `meterdesk-web:local`, workdir `/app` | Current `make container-build`; image and process checks returned `10001:10001`; `node server.js` standalone runtime built; generated `tsconfig.tsbuildinfo` was excluded from context | P0-01 | Verified |
-| Seeded full-stack runtime | `compose.yaml`, `Makefile`, and `scripts/container-smoke.sh` implement `postgres`, `migrate`, `seed`, `api`, `web` | Multiple unique-project `make container-smoke` runs, including current candidate project ending `488082`, verified `/health`, `/health/db`, tickets `TCK-1042`/`TCK-1137`, Web content, loopback ports, project cleanup, and default-volume preservation | P0-01 | Verified |
+| Locked non-root Web image | `apps/web/Dockerfile`, `apps/web/next.config.ts`, `.dockerignore`; `meterdesk-web:local`, workdir `/app` | Current `make container-build`; image and process checks returned `10001:10001`; `node server.js` standalone runtime contains Next.js `15.5.21`; generated `tsconfig.tsbuildinfo` was excluded from context | P0-01 | Verified |
+| Seeded full-stack runtime | `compose.yaml`, `Makefile`, and `scripts/container-smoke.sh` implement `postgres`, `migrate`, `seed`, `api`, `web` | Multiple unique-project `make container-smoke` runs, including current candidate project ending `538112`, verified `/health`, `/health/db`, tickets `TCK-1042`/`TCK-1137`, Web content, loopback ports, project cleanup, and default-volume preservation | P0-01 | Verified |
 | No-provider-key smoke behavior | Smoke pins empty key/model/base URL and isolates dotenv/Compose selectors | `make container-smoke` verified empty provider environment, expected HTTP 503 `OpenAI-compatible provider is not configured.`, and removal of its exact project image tags without exposing configuration values | P0-01 | Verified |
 | Current-document link integrity | `scripts/check_markdown_links.py` and `apps/api/tests/test_markdown_links.py` | `9` focused tests passed; `python3 scripts/check_markdown_links.py` reported 15 Markdown files and 53 local links | P0-01 | Verified |
+| Production dependency reachability triage | `apps/web/package.json` and lock pin Next.js `15.5.21`; no current attacker-controlled CSS/source-map or untrusted image-processing path | `npm ci`; `npm ls next postcss sharp --omit=dev`; Web lint/typecheck/test/build; standalone image version check; `npm audit --omit=dev --json` exited `1` with direct Next Server Actions advisories removed and accepted PostCSS `8.4.31`/Sharp `0.34.5` limitations plus explicit re-evaluation triggers recorded in the focused spec | P0-01 | Verified |
 | Client cannot choose approver | `decided_by` comes from request body | Forged actor test and persisted server principal | P0-02 | Gap |
 | Approval role enforcement | No route role dependency | 401/403/success tests for operator, approver, admin | P0-02 | Gap |
 | Approval actor audit | Untrusted actor string | Subject, role, request ID persistence evidence | P0-02 | Gap |
