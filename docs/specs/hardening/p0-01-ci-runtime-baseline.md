@@ -6,9 +6,9 @@
 - Design status: approved; runtime architecture implementation is Implemented on the candidate
   branch.
 - Evidence status: API/Web images, seeded runtime, no-provider smoke behavior, host lint/tests/
-  database, dependency reachability triage, and Markdown links are locally Verified. Remote CI
-  verification is pending and all four GitHub jobs remain Planned because no final PR head has yet
-  produced four successful jobs.
+  database, dependency reachability triage, and Markdown links are locally Verified. All four jobs
+  are remotely Verified on the corrected implementation head; the evidence-finalized PR head must
+  repeat them before merge.
 - Depends on: post-M10 baseline commit `86c737d` and the P0-01 candidate commits.
 - Blocks: every later hardening workstream.
 - Intended product behavior change: none.
@@ -22,9 +22,9 @@ The current implementation plan is
 The starting repository had local install, lint, test, database, seed, reset, and development
 commands but no publicly repeatable build/runtime contract. P0-01 adds that contract without moving
 application authority: locked installs, production images, migrations, seed, API/Web networking,
-and no-provider-key behavior now share one repository-local command surface. The remaining problem
-is remote evidence closure: the first PR run exposed an invalid action alias and did not produce the
-required four successful jobs.
+and no-provider-key behavior now share one repository-local command surface. The remaining work is
+to commit the first successful remote evidence, require the same four jobs on that final head, and
+merge the verified tree.
 
 ## Implementation and Evidence Snapshot
 
@@ -47,7 +47,8 @@ claims.
   `/workspace/apps/api`; `meterdesk-web:local` runs from `/app`; both image configs use
   `10001:10001`.
 - Multiple unique-project `make container-smoke` runs succeeded, including projects ending in
-  `372842`, `379294`, `388927`, `462530`, `488082`, and current candidate run `538112`. They
+  `372842`, `379294`, `388927`, `462530`, `488082`, `538112`, and final pre-publication run
+  `555946`. They
   verified API health, database reachability,
   seeded `TCK-1042` and `TCK-1137`, Web content, the key/model-only provider base-URL default,
   loopback-only ephemeral publications, explicit-empty no-key configuration, expected HTTP 503 on
@@ -63,6 +64,9 @@ claims.
   project volume. An initial attempt on `55432` stopped before migration because the existing
   default-project Postgres owned that port; the unique failed-attempt resources were cleaned and
   the existing container and default volume were left untouched.
+- The synchronized publication candidate repeated the database contract in unique project
+  `meterdesk-db-171156e-final` on loopback port `55439`; all seven migrations, seed, and the M5 check
+  passed, and only its disposable project volume was removed.
 - A Docker-context contract failed before broader generated-artifact exclusions because
   `apps/web/tsconfig.tsbuildinfo` was present, then passed after `.dockerignore` was aligned with
   local build, coverage, test-report, and database artifacts. Required production image builds
@@ -92,7 +96,15 @@ claims.
   produced a successful `frontend-quality` job; `backend-quality` and `database-integration` failed
   during setup because setup-uv publishes versioned v8 tags but no `v8` alias, and
   `container-smoke` was skipped by its dependency gate. The workflow now uses verified tag
-  `astral-sh/setup-uv@v8.3.2`; corrected-head results are pending.
+  `astral-sh/setup-uv@v8.3.2`.
+- Corrected implementation-head workflow `CI`
+  [run 30679673344](https://github.com/ZophiaWong/meter-desk/actions/runs/30679673344)
+  succeeded on 2026-08-01: [`backend-quality`](https://github.com/ZophiaWong/meter-desk/actions/runs/30679673344/job/91314054456)
+  in `21s`, [`database-integration`](https://github.com/ZophiaWong/meter-desk/actions/runs/30679673344/job/91314054440)
+  in `31s`, [`frontend-quality`](https://github.com/ZophiaWong/meter-desk/actions/runs/30679673344/job/91314054485)
+  in `1m11s`, and [`container-smoke`](https://github.com/ZophiaWong/meter-desk/actions/runs/30679673344/job/91314171178)
+  in `1m26s`. These are the first actual remote evidence results for
+  [PR #4](https://github.com/ZophiaWong/meter-desk/pull/4).
 
 P0-01 must establish a clean quality baseline. The narrow Ruff cleanup belongs in this workstream
 because new CI would otherwise fail immediately, but it must not change eval or domain behavior.
@@ -272,7 +284,8 @@ containers must be non-root. Demo database credentials must be documented as loc
   notes.
 - State that financial mutations remain mock-only and customer replies remain drafts.
 - Update the engineering evidence matrix with exact files, check names, commands, and artifacts.
-  Keep CI rows `Planned` until all four jobs succeed on the corrected final PR head.
+  Promote the four CI rows after all four jobs succeed on a corrected implementation head, then
+  require the same four jobs to repeat on the evidence-finalized PR head before merge.
 
 ## Acceptance Criteria
 
@@ -301,7 +314,7 @@ Current acceptance status:
 | README/runbook and links | Verified locally | Commands match the Make/Compose interfaces; current link check reports 15 files and 53 local links |
 | Candidate branch quality/database | Verified locally | `make lint` passed all Ruff/ESLint/TypeScript checks; `make test` passed with API `77 passed, 6 skipped` and Web `21 passed`; isolated `make test-db` passed all migrations, seed, and the M5 check |
 | Production dependency reachability | Verified with accepted limitations | Next.js `15.5.21` removed the reachable Server Actions advisories; production audit still exits `1` for nested PostCSS `8.4.31` and optional Sharp `0.34.5`, whose required attacker-controlled inputs are absent from current P0-01 |
-| GitHub Actions | Planned | Initial PR run `30679074517` proved frontend quality but exposed an invalid setup-uv alias before both Python jobs; the corrected final head still needs all four successful jobs |
+| GitHub Actions | Verified remotely | Corrected implementation-head run `30679673344` completed all four exact jobs successfully; the evidence-finalized PR head must repeat them before merge |
 
 ## Verification Contract
 
@@ -334,5 +347,6 @@ Current execution status:
   seed, and the M5 integration check.
 - Frozen install and runtime checks resolved Next.js `15.5.21`. The production-only audit exited
   `1` because the accepted PostCSS/Sharp limitations above remain; it is not recorded as audit-clean.
-- `backend-quality`, `frontend-quality`, `database-integration`, and `container-smoke` remain
-  Planned until the corrected final PR head produces all four successful GitHub job results.
+- Corrected implementation-head run `30679673344` Verified `backend-quality`, `frontend-quality`,
+  `database-integration`, and `container-smoke`. The evidence-finalized PR head must repeat the same
+  four jobs before merge.

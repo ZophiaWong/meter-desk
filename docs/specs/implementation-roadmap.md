@@ -39,8 +39,8 @@ The first workstream is
 images, five-service Compose runtime, smoke harness, Make targets, runbook, and link checker are
 implemented on the candidate branch. Real API/Web builds and repeated isolated no-key smoke runs are
 locally verified, as are branch-wide lint, test, and database checks. P0-01 remains the active
-workstream while a real four-job GitHub Actions run, remote evidence promotion, and merge are
-unresolved. Later workstreams cover trusted approval identity,
+workstream while the first successful four-job GitHub Actions evidence is promoted, the resulting
+final head is reverified, and the PR is merged. Later workstreams cover trusted approval identity,
 persistence lifecycle, workflow state, recoverable execution, provider resilience, operational
 evidence, a repository-local networked mock tool boundary, auditable context, and focused security
 and failure regression checks.

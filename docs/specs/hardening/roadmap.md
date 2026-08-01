@@ -46,8 +46,9 @@ governance traces, compliance checks, and eval regression history.
 
 P0-01 now supplies API/Web runtime images, a seeded five-service Compose path, an isolated no-key
 smoke harness, and a four-job GitHub Actions workflow contract. Local image and smoke evidence is
-verified, as are final candidate-branch lint, test, and database evidence; public CI evidence
-remains open.
+verified, as are final candidate-branch lint, test, and database evidence. Corrected
+implementation-head CI run `30679673344` completed all four required jobs; evidence-finalized-head
+reverification and merge remain open.
 The baseline still lacks trusted approval identity, application-lifetime database resources,
 explicit workflow state semantics, background execution, provider resilience, operational
 telemetry, typed networked tool execution, structured context snapshots, and broad
@@ -101,9 +102,10 @@ Implemented artifacts are `.github/workflows/ci.yml`, `.dockerignore`, the API a
 runbook, and the Markdown link checker. Compose runs `postgres`, `migrate`, `seed`, `api`, and `web`;
 both application images run as `10001:10001`, with the API repository layout preserved at
 `/workspace/apps/api`. Local image builds, isolated seeded runtime, no-provider 503 behavior, and
-cleanup/default-volume preservation are verified. All four GitHub jobs remain Planned until a real
-remote run succeeds; local branch-wide quality/database verification is complete. No agent,
-approval, mutation, governance, trace, or eval behavior changed.
+cleanup/default-volume preservation are verified. All four GitHub jobs are Verified by run
+`30679673344`, and the evidence-finalized head must repeat them before merge. Local branch-wide
+quality/database verification is complete. No agent, approval, mutation, governance, trace, or eval
+behavior changed.
 
 Detailed requirements: [P0-01 CI and Runtime Baseline](p0-01-ci-runtime-baseline.md).
 
@@ -186,9 +188,10 @@ explicit optional target.
 P0-01 must provide automated backend quality, frontend quality/build, Postgres integration, image
 build, and seeded full-stack smoke evidence without a real provider key.
 
-Status: implementation and local lint, test, database, and runtime evidence are present. The gate
-remains open only for successful remote results from `backend-quality`, `frontend-quality`,
-`database-integration`, and `container-smoke`.
+Status: implementation and local lint, test, database, and runtime evidence are present. Corrected
+implementation-head run `30679673344` satisfied the remote gate for `backend-quality`,
+`frontend-quality`, `database-integration`, and `container-smoke`; the evidence-finalized head must
+repeat the gate before merge.
 
 ### Gate B — Trusted Actor
 
