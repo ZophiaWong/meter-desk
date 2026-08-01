@@ -330,9 +330,7 @@ async def test_eval_case_reruns_preserve_snapshot_history_and_latest_projection(
 
     latest_results = await repository.list_eval_results()
     snapshots = await repository.list_eval_result_snapshots(case_id="eval-duplicate-charge-003")
-    current_snapshots = [
-        snapshot for snapshot in snapshots if snapshot.snapshot_type == "current"
-    ]
+    current_snapshots = [snapshot for snapshot in snapshots if snapshot.snapshot_type == "current"]
     baseline_snapshots = [
         snapshot for snapshot in snapshots if snapshot.snapshot_type == "baseline"
     ]
@@ -343,8 +341,7 @@ async def test_eval_case_reruns_preserve_snapshot_history_and_latest_projection(
     assert [snapshot.result_id for snapshot in current_snapshots] == [first.id, second.id]
     assert len(baseline_snapshots) == 1
     assert (
-        current_snapshots[-1].version_snapshot["prompt_fingerprint"]
-        == build_prompt_fingerprint()
+        current_snapshots[-1].version_snapshot["prompt_fingerprint"] == build_prompt_fingerprint()
     )
     assert current_snapshots[-1].trace_signature["ordered_categories"]
 

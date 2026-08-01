@@ -335,9 +335,7 @@ class InMemoryMeterDeskRepository:
 
     async def get_latest_eval_run(self) -> EvalRunSummary | None:
         runs = [
-            run
-            for run in self._eval_runs
-            if run.run_type != "baseline" and run.status != "running"
+            run for run in self._eval_runs if run.run_type != "baseline" and run.status != "running"
         ]
         return max(runs, key=lambda run: run.started_at, default=None)
 
