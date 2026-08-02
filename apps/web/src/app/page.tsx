@@ -1,7 +1,7 @@
 import { MeterDeskShell } from "@/components/meterdesk-shell";
 import { getWorkbenchScenario } from "@/lib/meterdesk-view";
 import { getSystemStatus } from "@/lib/status";
-import { requireDemoSession } from "@/lib/session";
+import { handleProtectedApiError, requireDemoSession } from "@/lib/session";
 
 type HomeProps = {
   searchParams?: Promise<{ ticket?: string }>;
@@ -18,9 +18,12 @@ export default async function Home({ searchParams }: HomeProps) {
     getSystemStatus(),
     getWorkbenchScenario(ticketId, session.accessToken)
       .then((scenario) => ({ scenario }))
-      .catch((error: unknown) => ({
-        dataError: error instanceof Error ? error.message : "FastAPI domain data unavailable",
-      })),
+      .catch((error: unknown) => {
+        handleProtectedApiError(error, returnTo);
+        return {
+          dataError: error instanceof Error ? error.message : "FastAPI domain data unavailable",
+        };
+      }),
   ]);
 
   return (

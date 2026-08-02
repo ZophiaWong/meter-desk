@@ -13,12 +13,13 @@ const adminSession = {
 };
 
 vi.mock("@/lib/session", () => ({
+  handleProtectedApiError: vi.fn(),
   requireDemoSession: vi.fn(async () => adminSession),
 }));
 
 import ApprovalsPage from "./approvals/page";
 import EvalLabPage from "./eval-lab/page";
-import { requireDemoSession } from "@/lib/session";
+import { handleProtectedApiError, requireDemoSession } from "@/lib/session";
 
 const tickets = [
   {
@@ -217,6 +218,7 @@ const evalRegressionSummary = {
 };
 
 afterEach(() => {
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -233,6 +235,10 @@ function mockApi(payloads: Record<string, unknown>) {
 
       if (payload === undefined) {
         return new Response("Not found", { status: 404 });
+      }
+
+      if (payload instanceof Response) {
+        return payload;
       }
 
       return new Response(JSON.stringify(payload), {
@@ -321,6 +327,30 @@ describe("M3 API-backed routes", () => {
     expect(screen.getByRole("button", { name: "Approve" })).toHaveAttribute(
       "title",
       "Requires the approver or admin role",
+    );
+  });
+
+  it("recovers from a protected approval read 401 instead of rendering a data error", async () => {
+    vi.mocked(handleProtectedApiError).mockImplementationOnce(() => {
+      throw new Error("SESSION_RECOVERY:/approvals");
+    });
+    mockApi({
+      "/approvals": new Response(
+        JSON.stringify({
+          code: "auth.invalid_token",
+          message: "Invalid token",
+          details: {},
+          request_id: "req_expired",
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 401 },
+      ),
+      "/tickets": tickets,
+    });
+
+    await expect(ApprovalsPage({})).rejects.toThrow("SESSION_RECOVERY:/approvals");
+    expect(handleProtectedApiError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "auth.invalid_token", status: 401 }),
+      "/approvals",
     );
   });
 

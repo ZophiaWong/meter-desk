@@ -5,6 +5,7 @@ import {
   canDecideApproval,
   type DemoPrincipal,
 } from "@/lib/demo-auth";
+import { handleProtectedApiError } from "@/lib/session";
 import Link from "next/link";
 
 const STATUSES: ApprovalQueueStatus[] = ["pending", "approved", "rejected", "all"];
@@ -109,6 +110,8 @@ export async function ApprovalQueue({
       </section>
     );
   } catch (error) {
+    const returnTo = status === "pending" ? "/approvals" : `/approvals?status=${status}`;
+    handleProtectedApiError(error, returnTo);
     return <ApprovalQueueError message={error instanceof Error ? error.message : undefined} />;
   }
 }

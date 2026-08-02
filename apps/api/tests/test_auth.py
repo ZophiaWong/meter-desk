@@ -9,7 +9,7 @@ from collections.abc import Iterator
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from meterdesk_api.main import app
+from meterdesk_api.main import app, create_app
 from meterdesk_api.settings import get_settings
 
 TEST_SIGNING_KEY = "test-only-meterdesk-demo-signing-key-at-least-32-bytes"
@@ -99,6 +99,31 @@ async def test_demo_identity_registry_is_public_and_every_response_has_a_unique_
     assert REQUEST_ID_PATTERN.fullmatch(identity_request_id)
     assert REQUEST_ID_PATTERN.fullmatch(health_request_id)
     assert identity_request_id != health_request_id
+
+
+@pytest.mark.asyncio
+async def test_unhandled_error_returns_a_structured_request_id() -> None:
+    test_app = create_app()
+
+    @test_app.get("/_test/unhandled")
+    async def raise_unhandled_error() -> None:
+        raise RuntimeError("deliberate test failure")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=test_app, raise_app_exceptions=False),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/_test/unhandled")
+
+    request_id = response.headers["X-Request-ID"]
+    assert response.status_code == 500
+    assert REQUEST_ID_PATTERN.fullmatch(request_id)
+    assert response.json() == {
+        "code": "api.internal_error",
+        "message": "Unexpected internal server error.",
+        "details": {},
+        "request_id": request_id,
+    }
 
 
 @pytest.mark.asyncio

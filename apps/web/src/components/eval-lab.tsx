@@ -7,6 +7,7 @@ import {
   canRunEval,
   type DemoPrincipal,
 } from "@/lib/demo-auth";
+import { handleProtectedApiError } from "@/lib/session";
 
 const SCENARIO_ORDER = ["Duplicate Charge", "Usage Spike", "Credit/Refund Dispute"];
 
@@ -238,6 +239,7 @@ export async function EvalLab({ accessToken, currentPrincipal }: EvalLabProps) {
       </section>
     );
   } catch (error) {
+    handleProtectedApiError(error, "/eval-lab");
     return <EvalLabError message={error instanceof Error ? error.message : undefined} />;
   }
 }

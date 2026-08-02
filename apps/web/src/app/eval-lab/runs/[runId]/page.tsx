@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { getEvalRunComparison, type EvalRegressionCaseResource } from "@/lib/meterdesk-api";
-import { requireDemoSession } from "@/lib/session";
+import { handleProtectedApiError, requireDemoSession } from "@/lib/session";
 
 type PageProps = {
   params: Promise<{ runId: string }>;
@@ -9,7 +9,8 @@ type PageProps = {
 
 export default async function EvalRunDiffPage({ params }: PageProps) {
   const { runId } = await params;
-  const session = await requireDemoSession(`/eval-lab/runs/${encodeURIComponent(runId)}`);
+  const returnTo = `/eval-lab/runs/${encodeURIComponent(runId)}`;
+  const session = await requireDemoSession(returnTo);
   try {
     const comparison = await getEvalRunComparison(runId, undefined, session.accessToken);
     return (
@@ -60,6 +61,7 @@ export default async function EvalRunDiffPage({ params }: PageProps) {
       </main>
     );
   } catch (error) {
+    handleProtectedApiError(error, returnTo);
     return (
       <main className="min-h-screen bg-[#f7f8fb] text-meter-ink">
         <section className="mx-auto w-full max-w-5xl px-6 py-8">

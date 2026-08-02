@@ -47,7 +47,7 @@ describe("demo auth actions", () => {
       "REDIRECT:/approvals?status=pending",
     );
     expect(demoLogin).toHaveBeenCalledWith("demo-approver");
-    expect(setDemoSessionCookie).toHaveBeenCalledWith("signed-jwt");
+    expect(setDemoSessionCookie).toHaveBeenCalledWith("signed-jwt", 28_800);
   });
 
   it("does not allow an external returnTo during identity switching", async () => {
@@ -56,7 +56,7 @@ describe("demo auth actions", () => {
     formData.set("returnTo", "https://evil.example/phish");
 
     await expect(switchIdentityAction(formData)).rejects.toThrow("REDIRECT:/");
-    expect(setDemoSessionCookie).toHaveBeenCalledWith("signed-jwt");
+    expect(setDemoSessionCookie).toHaveBeenCalledWith("signed-jwt", 28_800);
   });
 
   it("clears the shared cookie on logout", async () => {

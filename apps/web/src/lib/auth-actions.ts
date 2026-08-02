@@ -27,6 +27,6 @@ async function authenticateSelectedIdentity(formData: FormData): Promise<void> {
 
   const returnTo = safeReturnTo(String(formData.get("returnTo") ?? "/"));
   const login = await demoLogin(subject);
-  await setDemoSessionCookie(login.access_token);
+  await setDemoSessionCookie(login.access_token, login.expires_in);
   redirect(returnTo);
 }

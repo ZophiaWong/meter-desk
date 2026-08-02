@@ -34,6 +34,7 @@ import { getCurrentDemoPrincipal, MeterDeskApiError } from "@/lib/meterdesk-api"
 import {
   clearDemoSessionCookie,
   DEMO_SESSION_COOKIE,
+  handleProtectedApiError,
   requireDemoSession,
   setDemoSessionCookie,
 } from "./session";
@@ -51,16 +52,16 @@ describe("demo session DAL", () => {
     headerStore.get.mockReturnValue(null);
   });
 
-  it("stores the JWT only in an eight-hour HttpOnly cookie and enables Secure for HTTPS", async () => {
+  it("stores the JWT for the API-reported lifetime in an HttpOnly cookie", async () => {
     headerStore.get.mockImplementation((name: string) =>
       name === "x-forwarded-proto" ? "https" : null,
     );
 
-    await setDemoSessionCookie("signed-jwt");
+    await setDemoSessionCookie("signed-jwt", 3_600);
 
     expect(cookieStore.set).toHaveBeenCalledWith(DEMO_SESSION_COOKIE, "signed-jwt", {
       httpOnly: true,
-      maxAge: 28_800,
+      maxAge: 3_600,
       path: "/",
       sameSite: "lax",
       secure: true,
@@ -72,7 +73,7 @@ describe("demo session DAL", () => {
       name === "origin" ? "http://localhost:3000" : null,
     );
 
-    await setDemoSessionCookie("signed-jwt");
+    await setDemoSessionCookie("signed-jwt", 28_800);
 
     expect(cookieStore.set).toHaveBeenCalledWith(
       DEMO_SESSION_COOKIE,
@@ -92,17 +93,32 @@ describe("demo session DAL", () => {
     expect(getCurrentDemoPrincipal).toHaveBeenCalledWith("signed-jwt");
   });
 
-  it("clears an invalid cookie and redirects to login with a safe return path", async () => {
+  it("routes an invalid cookie through a handler that can clear it", async () => {
     cookieStore.get.mockReturnValue({ value: "expired-jwt" });
     vi.mocked(getCurrentDemoPrincipal).mockRejectedValue(
       new MeterDeskApiError("Invalid token", 401, "auth.invalid_token"),
     );
 
     await expect(requireDemoSession("/approvals?status=pending")).rejects.toThrow(
-      "REDIRECT:/login?reason=session-expired&returnTo=%2Fapprovals%3Fstatus%3Dpending",
+      "REDIRECT:/auth/session-expired?returnTo=%2Fapprovals%3Fstatus%3Dpending",
     );
-    expect(cookieStore.delete).toHaveBeenCalledWith(DEMO_SESSION_COOKIE);
+    expect(cookieStore.delete).not.toHaveBeenCalled();
     expect(redirect).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes a protected business API 401 through the same cookie-clearing handler", () => {
+    const error = new MeterDeskApiError("Invalid token", 401, "auth.invalid_token");
+
+    expect(() => handleProtectedApiError(error, "/eval-lab")).toThrow(
+      "REDIRECT:/auth/session-expired?returnTo=%2Feval-lab",
+    );
+  });
+
+  it("does not intercept non-authentication business API failures", () => {
+    const error = new MeterDeskApiError("Unavailable", 503, "provider.unavailable");
+
+    expect(handleProtectedApiError(error, "/eval-lab")).toBeUndefined();
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("redirects an anonymous request without treating it as an expired session", async () => {
