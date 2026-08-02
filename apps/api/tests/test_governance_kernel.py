@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from api_client import authenticate_demo_client
 from meterdesk_api.agent.governance import (
     GovernanceKernel,
     GovernanceViolation,
@@ -261,6 +262,7 @@ async def test_governance_tool_policy_api_returns_read_only_matrix() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         response = await client.get("/governance/tool-policies")
 
     assert response.status_code == 200

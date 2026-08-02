@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from api_client import authenticate_demo_client
 from meterdesk_api.db import create_engine
 from meterdesk_api.demo_reset_live import reset_live_demo_state
 from meterdesk_api.main import app
@@ -26,6 +27,7 @@ async def test_seeded_postgres_resources_are_queryable() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         tickets = await client.get("/tickets")
         evidence = await client.get("/tickets/TCK-1042/billing-evidence")
         credit_refund_evidence = await client.get("/tickets/TCK-1137/billing-evidence")
@@ -57,6 +59,7 @@ async def test_agent_run_requires_provider_configuration() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         response = await client.post("/tickets/TCK-1042/agent-runs")
 
     assert response.status_code == 503
@@ -117,6 +120,7 @@ async def test_seed_restores_m5_portfolio_baseline_for_demo_tickets() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         tickets = await client.get("/tickets")
         runs = await client.get("/tickets/TCK-1042/agent-runs")
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
@@ -220,6 +224,7 @@ async def test_demo_reset_live_clears_only_duplicate_charge_runtime_rows() -> No
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         evidence = await client.get("/tickets/TCK-1042/billing-evidence")
         runs = await client.get("/tickets/TCK-1042/agent-runs")
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")

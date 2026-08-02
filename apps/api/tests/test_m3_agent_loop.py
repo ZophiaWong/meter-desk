@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from api_client import authenticate_demo_client
 from meterdesk_api.agent.orchestrator import AgentRunOrchestrator
 from meterdesk_api.agent.planning import (
     InvestigationPlan,
@@ -239,6 +240,7 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         start_response = await client.post("/tickets/TCK-1042/agent-runs")
         approvals_response = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         run = start_response.json()
@@ -316,6 +318,7 @@ async def test_start_agent_run_supports_credit_refund_goodwill_credit_workflow()
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         start_response = await client.post("/tickets/TCK-1137/agent-runs")
         approvals_response = await client.get("/approvals?ticket_id=TCK-1137&status=all")
         run = start_response.json()
@@ -385,6 +388,7 @@ async def test_start_agent_run_is_blocked_while_approval_is_pending() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         first = await client.post("/tickets/TCK-1042/agent-runs")
         second = await client.post("/tickets/TCK-1042/agent-runs")
 
@@ -399,6 +403,7 @@ async def test_start_agent_run_is_blocked_while_approval_is_pending() -> None:
                 "amount:124800|currency:USD"
             )
         },
+        "request_id": second.headers["X-Request-ID"],
     }
 
 
@@ -420,6 +425,7 @@ async def test_provider_validation_failure_retries_once_then_persists_failed_run
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         response = await client.post("/tickets/TCK-1042/agent-runs")
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
 
@@ -445,6 +451,7 @@ async def test_planner_verifier_retries_once_then_runs_accepted_plan() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         response = await client.post("/tickets/TCK-1042/agent-runs")
         run = response.json()
         trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
@@ -514,6 +521,7 @@ async def test_planner_verifier_blocks_run_after_two_invalid_plans() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         response = await client.post("/tickets/TCK-1042/agent-runs")
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         run = response.json()
@@ -548,6 +556,7 @@ async def test_missing_provider_config_returns_503_without_creating_run() -> Non
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         response = await client.post("/tickets/TCK-1042/agent-runs")
         runs = await client.get("/tickets/TCK-1042/agent-runs")
 
@@ -556,6 +565,7 @@ async def test_missing_provider_config_returns_503_without_creating_run() -> Non
         "code": "provider.not_configured",
         "message": "OpenAI-compatible provider is not configured.",
         "details": {},
+        "request_id": response.headers["X-Request-ID"],
     }
     assert runs.json() == []
 
@@ -566,6 +576,7 @@ async def test_unsupported_scenario_has_no_side_effects() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         response = await client.post("/tickets/TCK-1098/agent-runs")
         runs = await client.get("/tickets/TCK-1098/agent-runs")
 
@@ -580,6 +591,7 @@ async def test_reject_does_not_create_mutation_and_allows_rerun() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         await client.post("/tickets/TCK-1042/agent-runs")
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         approval_id = approvals.json()[0]["id"]
@@ -604,6 +616,7 @@ async def test_approve_executes_one_mock_mutation_and_is_idempotent() -> None:
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         run_response = await client.post("/tickets/TCK-1042/agent-runs")
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         approval_id = approvals.json()[0]["id"]

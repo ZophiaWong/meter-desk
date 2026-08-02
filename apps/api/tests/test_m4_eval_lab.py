@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from api_client import authenticate_demo_client
 from meterdesk_api.agent.planning import (
     InvestigationPlan,
     InvestigationPlanStep,
@@ -532,6 +533,7 @@ async def test_eval_lab_api_runs_one_case_and_all_cases() -> None:
             transport=ASGITransport(app=app),
             base_url="http://testserver",
         ) as client:
+            await authenticate_demo_client(client)
             single = await client.post("/eval-cases/eval-duplicate-charge-002/run")
             regression = await client.get("/eval-regression/summary")
             runs = await client.get("/eval-runs")

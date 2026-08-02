@@ -1,6 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from api_client import authenticate_demo_client
 from meterdesk_api.agent.runtime import get_agent_provider
 from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.main import app
@@ -34,6 +35,7 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         list_response = await client.get("/tickets")
         detail_response = await client.get("/tickets/TCK-1042")
         evidence_response = await client.get("/tickets/TCK-1042/billing-evidence")
@@ -114,6 +116,7 @@ async def test_missing_resource_returns_404_and_empty_collections_return_arrays(
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         missing_ticket = await client.get("/tickets/TCK-0000")
         missing_summary = await client.get("/tickets/TCK-0000/decision-summary")
         missing_traces = await client.get("/agent-runs/RUN-0000/traces")
@@ -132,6 +135,7 @@ async def test_m5_seed_starts_with_portfolio_baseline_governance_artifacts() -> 
         transport=ASGITransport(app=app),
         base_url="http://testserver",
     ) as client:
+        await authenticate_demo_client(client)
         approvals_response = await client.get("/approvals")
         traces_response = await client.get("/agent-runs/RUN-2042/traces")
         eval_cases_response = await client.get("/eval-cases")
