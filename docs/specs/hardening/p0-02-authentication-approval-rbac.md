@@ -4,7 +4,8 @@
 
 - Priority: P0.
 - Design status: approved for implementation.
-- Implementation status: in progress on the candidate branch.
+- Implementation status: implemented on the candidate branch; final database/container
+  verification remains in progress.
 - Depends on: P0-01 CI and Runtime Baseline.
 - Blocks: later hardening work that requires a trustworthy human actor or permission boundary.
 - Intended deployment boundary: local development and seeded demo only.

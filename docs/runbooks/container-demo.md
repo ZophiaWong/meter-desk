@@ -28,6 +28,10 @@ no-key verification run: it creates its own Compose project, uses ephemeral host
 the seeded services, and removes only that smoke project's services, volume, image tags, and
 temporary artifacts when it exits.
 
+The smoke path also verifies anonymous API rejection, operator read access, operator approval
+denial, an approver decision with persisted actor/request audit data, the Web login page, and the
+authenticated no-provider `503` path.
+
 `container-down` stops the normal project and removes its containers and orphaned services. It does
 not remove the normal project database volume.
 
@@ -36,6 +40,10 @@ The default URLs are:
 - Web: `http://localhost:3000`
 - API: `http://localhost:8000`
 - Postgres: `localhost:5432`
+
+Open the Web URL and choose a fixed demo identity. Use **Demo Support Operator** to start an Agent
+run, **Demo Approver** to decide approvals, or **Demo Admin** to run Eval Lab. All roles may read the
+business resources.
 
 Compose publishes all three ports on `127.0.0.1` by default. They are not reachable from another
 host unless an operator explicitly changes the bind address as described below.
@@ -68,7 +76,8 @@ running and use this sequence:
      --wait --wait-timeout 180 api web
    ```
 
-4. Open the Workbench and initiate the live run for `TCK-1042`.
+4. Open the Workbench as Demo Support Operator or Demo Admin and initiate the live run for
+   `TCK-1042`.
 
 Use `TCK-1137` instead of `TCK-1042` in the reset command for the Credit/Refund Dispute path. Run
 `make container-seed` whenever you want to discard live demo runtime rows and restore the seeded
@@ -78,6 +87,23 @@ in logs, screenshots, or support artifacts.
 
 Financial actions remain mock-only, including after a live run. Customer-facing replies remain
 draft-only and are never sent by MeterDesk.
+
+## Local demo authentication boundary
+
+Compose passes `ENVIRONMENT=development`, an eight-hour token TTL, and a long demo-only signing-key
+default to every API-image service. For a normal shared demo, override `DEMO_AUTH_SIGNING_KEY` in
+the untracked `.env` with a private value of at least 32 characters. Do not put a real secret in
+`.env.example`, Compose, screenshots, logs, or shell history.
+
+FastAPI signs and verifies the JWT. Next.js stores it only in an `HttpOnly`, `SameSite=Lax`,
+path-wide cookie and adds `Secure` when the incoming Web request is HTTPS. All browser tabs share
+the selected identity. There is no refresh token, password, user table, revocation service, or
+server-side session record; expiration, logout, or switching identity requires another one-click
+demo login.
+
+This boundary must not be exposed as production authentication. Setting `ENVIRONMENT=production`
+or `prod` makes the API fail closed during startup. Use loopback bindings unless a trusted demo
+network and host controls have been explicitly chosen.
 
 ## Health, logs, and reseeding
 
@@ -152,9 +178,9 @@ CONTAINER_BIND_ADDRESS=0.0.0.0 make container-up
 ```
 
 This exposes Postgres, the API, and the Web server on every host interface. Use it only on a trusted
-network with host firewall controls; the local demo credentials are not production credentials and
-MeterDesk does not yet provide the authentication/RBAC boundary planned for a later workstream.
-Prefer the loopback default when remote access is unnecessary.
+network with host firewall controls. MeterDesk has local demo RBAC, but it does not provide
+production account security, credential lifecycle management, MFA, revocation, rate limiting, or
+enterprise IAM. Prefer the loopback default when remote access is unnecessary.
 
 Compose names containers and volumes by project. The normal project uses its persistent named
 database volume across `make container-down` and future `make container-up` invocations. If you set

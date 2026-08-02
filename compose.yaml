@@ -9,6 +9,9 @@ x-api-environment: &api-environment
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   OPENAI_MODEL: ${OPENAI_MODEL:-}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL-https://api.openai.com/v1}
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DEMO_AUTH_SIGNING_KEY: ${DEMO_AUTH_SIGNING_KEY:-meterdesk-local-demo-only-hs256-signing-key-change-before-sharing-2026}
+  DEMO_AUTH_TOKEN_TTL_SECONDS: ${DEMO_AUTH_TOKEN_TTL_SECONDS:-28800}
 
 services:
   postgres:

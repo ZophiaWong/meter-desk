@@ -15,7 +15,7 @@ protocol below.
 3. [Implementation Roadmap](specs/implementation-roadmap.md) identifies the current delivery phase.
 4. [Post-M10 Hardening Roadmap](specs/hardening/roadmap.md) defines the active workstream sequence and gates.
 5. The active workstream feature spec defines its accepted requirements. The current workstream is
-   [P0-01 CI and Runtime Baseline](specs/hardening/p0-01-ci-runtime-baseline.md).
+   [P0-02 Authentication and Approval RBAC](specs/hardening/p0-02-authentication-approval-rbac.md).
 6. A fresh implementation plan may sequence an approved feature spec, but cannot change its public
    contracts, invariants, or acceptance criteria.
 7. [Engineering Evidence Matrix](evidence/engineering-evidence-matrix.md) records evidence status; it

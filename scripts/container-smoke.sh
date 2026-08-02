@@ -129,6 +129,9 @@ export WEB_IMAGE="meterdesk-web:${project}"
 export OPENAI_API_KEY=
 export OPENAI_MODEL=
 export OPENAI_BASE_URL=
+export ENVIRONMENT=development
+export DEMO_AUTH_SIGNING_KEY=meterdesk-container-smoke-only-hs256-signing-key-never-use-in-production
+export DEMO_AUTH_TOKEN_TTL_SECONDS=28800
 
 (
   unset OPENAI_BASE_URL
@@ -142,9 +145,12 @@ environment = json.load(sys.stdin)["services"]["api"]["environment"]
 assert environment["OPENAI_API_KEY"] == "meterdesk-smoke-contract-key"
 assert environment["OPENAI_MODEL"] == "meterdesk-smoke-contract-model"
 assert environment["OPENAI_BASE_URL"] == "https://api.openai.com/v1"
+assert environment["ENVIRONMENT"] == "development"
+assert len(environment["DEMO_AUTH_SIGNING_KEY"]) >= 32
+assert environment["DEMO_AUTH_TOKEN_TTL_SECONDS"] == "28800"
 '
 )
-printf 'Provider default contract: key/model-only configuration keeps the OpenAI base URL.\n'
+printf 'Runtime config contract: provider defaults and demo auth settings are present.\n'
 
 wait_timeout=${CONTAINER_WAIT_TIMEOUT:-180}
 curl_attempts=${SMOKE_CURL_ATTEMPTS:-30}
@@ -189,6 +195,27 @@ assert_contains() {
   fi
 }
 
+login_identity() {
+  local subject=$1
+  local response_file=$2
+  local token_file=$3
+
+  curl --fail --silent --show-error --connect-timeout 2 --max-time 10 \
+    --header 'Content-Type: application/json' \
+    --data "{\"subject\":\"${subject}\"}" \
+    --output "$response_file" \
+    "$api_url/auth/demo-login"
+  python3 -c '
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["principal"]["subject"] == sys.argv[2]
+assert payload["expires_in"] == 28800
+print(payload["access_token"], end="")
+' "$response_file" "$subject" >"$token_file"
+}
+
 work_dir=$(mktemp -d /tmp/meterdesk-smoke-artifacts.XXXXXX)
 readonly work_dir
 
@@ -230,16 +257,61 @@ request_with_retries "$api_url/health/db" "$work_dir/health-db.json"
 assert_contains "$work_dir/health-db.json" '"database":"reachable"' '/health/db response'
 printf 'Database health: database=reachable.\n'
 
-request_with_retries "$api_url/tickets" "$work_dir/tickets.json"
+anonymous_status=$(curl --silent --show-error --connect-timeout 2 --max-time 10 \
+  --dump-header "$work_dir/anonymous.headers" \
+  --output "$work_dir/anonymous.json" \
+  --write-out '%{http_code}' \
+  "$api_url/tickets")
+if [[ "$anonymous_status" != 401 ]]; then
+  printf 'Expected anonymous tickets status 401, received %s.\n' "$anonymous_status" >&2
+  exit 1
+fi
+python3 -c '
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+assert payload["code"] == "auth.authentication_required"
+assert payload["request_id"].startswith("req_")
+' "$work_dir/anonymous.json"
+if ! grep --ignore-case --fixed-strings --quiet \
+  'x-request-id:' "$work_dir/anonymous.headers"; then
+  printf 'Anonymous response did not include X-Request-ID.\n' >&2
+  exit 1
+fi
+printf 'Anonymous business API: HTTP 401 with structured request ID.\n'
+
+request_with_retries "$api_url/auth/demo-identities" "$work_dir/identities.json"
+assert_contains "$work_dir/identities.json" 'demo-support-operator' 'demo identities response'
+assert_contains "$work_dir/identities.json" 'demo-approver' 'demo identities response'
+assert_contains "$work_dir/identities.json" 'demo-admin' 'demo identities response'
+printf 'Demo identity registry: operator, approver, and admin are public.\n'
+
+login_identity demo-support-operator "$work_dir/operator-login.json" "$work_dir/operator.token"
+operator_token=$(<"$work_dir/operator.token")
+curl --fail --silent --show-error --connect-timeout 2 --max-time 10 \
+  --header "Authorization: Bearer ${operator_token}" \
+  --output "$work_dir/tickets.json" \
+  "$api_url/tickets"
 assert_contains "$work_dir/tickets.json" 'TCK-1042' '/tickets response'
 assert_contains "$work_dir/tickets.json" 'TCK-1137' '/tickets response'
-printf 'Seeded API tickets: TCK-1042 and TCK-1137.\n'
+printf 'Operator read: seeded tickets TCK-1042 and TCK-1137.\n'
 
-request_with_retries "$web_url/" "$work_dir/web.html"
-assert_contains "$work_dir/web.html" 'MeterDesk' 'Web page'
-assert_contains "$work_dir/web.html" 'TCK-1042' 'Web page'
-assert_contains "$work_dir/web.html" 'TCK-1137' 'Web page'
-printf 'Web content: MeterDesk, TCK-1042, and TCK-1137.\n'
+operator_approval_status=$(curl --silent --show-error --connect-timeout 2 --max-time 10 \
+  --header "Authorization: Bearer ${operator_token}" \
+  --header 'Content-Type: application/json' \
+  --data '{}' \
+  --output "$work_dir/operator-approval.json" \
+  --write-out '%{http_code}' \
+  --request POST \
+  "$api_url/approvals/APR-2042/approve")
+if [[ "$operator_approval_status" != 403 ]]; then
+  printf 'Expected operator approval status 403, received %s.\n' \
+    "$operator_approval_status" >&2
+  exit 1
+fi
+assert_contains "$work_dir/operator-approval.json" 'auth.forbidden' 'operator approval response'
+printf 'Operator approval: HTTP 403.\n'
 
 compose exec -T api sh -c \
   'test -z "${OPENAI_API_KEY:-}" && test -z "${OPENAI_MODEL:-}" && test -z "${OPENAI_BASE_URL:-}"'
@@ -247,6 +319,7 @@ printf 'Provider environment: key, model, and base URL are empty.\n'
 
 provider_status=$(curl --silent --show-error --connect-timeout 2 --max-time 10 \
   --output "$work_dir/provider.json" --write-out '%{http_code}' \
+  --header "Authorization: Bearer ${operator_token}" \
   --request POST "$api_url/tickets/TCK-1042/agent-runs")
 if [[ "$provider_status" != 503 ]]; then
   printf 'Expected missing-provider status 503, received %s.\n' "$provider_status" >&2
@@ -255,6 +328,66 @@ fi
 assert_contains "$work_dir/provider.json" 'OpenAI-compatible provider is not configured.' \
   'missing-provider response'
 printf 'No-provider agent run: HTTP 503 with the expected message.\n'
+
+login_identity demo-approver "$work_dir/approver-login.json" "$work_dir/approver.token"
+approver_token=$(<"$work_dir/approver.token")
+curl --fail --silent --show-error --connect-timeout 2 --max-time 10 \
+  --dump-header "$work_dir/approver-decision.headers" \
+  --header "Authorization: Bearer ${approver_token}" \
+  --header 'Content-Type: application/json' \
+  --data '{"decision_note":"Container smoke approval."}' \
+  --output "$work_dir/approver-decision.json" \
+  --request POST \
+  "$api_url/approvals/APR-2042/approve"
+python3 -c '
+import json
+import sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+approval = payload["approval"]
+actor = approval["decision_actor"]
+assert approval["status"] == "approved"
+assert actor == {
+    "subject": "demo-approver",
+    "display_name": "Demo Approver",
+    "role": "approver",
+    "source": "demo_session",
+}
+assert approval["decision_request_id"].startswith("req_")
+print(approval["decision_request_id"], end="")
+' "$work_dir/approver-decision.json" >"$work_dir/decision-request-id"
+decision_request_id=$(<"$work_dir/decision-request-id")
+if ! grep --ignore-case --fixed-strings --quiet \
+  "x-request-id: ${decision_request_id}" "$work_dir/approver-decision.headers"; then
+  printf 'Approval response header did not match the persisted decision request ID.\n' >&2
+  exit 1
+fi
+
+curl --fail --silent --show-error --connect-timeout 2 --max-time 10 \
+  --header "Authorization: Bearer ${approver_token}" \
+  --output "$work_dir/persisted-approval.json" \
+  "$api_url/approvals?status=approved&ticket_id=TCK-1042"
+assert_contains "$work_dir/persisted-approval.json" 'demo-approver' 'persisted approval actor'
+assert_contains "$work_dir/persisted-approval.json" "$decision_request_id" \
+  'persisted approval request ID'
+printf 'Approver decision: trusted actor and matching request ID persisted.\n'
+
+web_home_status=$(curl --silent --show-error --connect-timeout 2 --max-time 10 \
+  --dump-header "$work_dir/web-home.headers" \
+  --output "$work_dir/web-home.html" \
+  --write-out '%{http_code}' \
+  "$web_url/")
+if [[ "$web_home_status" != 307 && "$web_home_status" != 308 ]]; then
+  printf 'Expected anonymous Web redirect, received HTTP %s.\n' "$web_home_status" >&2
+  exit 1
+fi
+assert_contains "$work_dir/web-home.headers" '/login?returnTo=%2F' 'Web login redirect'
+request_with_retries "$web_url/login" "$work_dir/web-login.html"
+assert_contains "$work_dir/web-login.html" 'Choose a demo identity' 'Web login page'
+assert_contains "$work_dir/web-login.html" 'Demo Support Operator' 'Web login page'
+assert_contains "$work_dir/web-login.html" 'Demo Approver' 'Web login page'
+assert_contains "$work_dir/web-login.html" 'Demo Admin' 'Web login page'
+printf 'Web authentication: anonymous redirect and three-identity login page verified.\n'
 
 api_user=$(docker image inspect --format '{{.Config.User}}' "$API_IMAGE")
 web_user=$(docker image inspect --format '{{.Config.User}}' "$WEB_IMAGE")

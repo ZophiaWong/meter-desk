@@ -13,6 +13,8 @@ The Workbench puts the ticket, billing evidence, policy citations, decision path
 - Investigations start from a billing dispute ticket instead of an open-ended chat box.
 - FastAPI owns the read, decision, draft, approval, and mock mutation boundaries.
 - Refund and credit actions stay blocked until a human approves the exact request.
+- FastAPI authenticates fixed local demo principals and enforces role permissions at every business
+  API boundary.
 - Agent runs, tool calls, policy citations, approval decisions, and mock mutations are stored for review.
 - Eval Lab checks the final answer and the trace path, including evidence coverage and approval routing.
 
@@ -102,6 +104,25 @@ The default local services are:
 
 The frontend reads health status and governed agent resources from FastAPI.
 
+### Demo authentication and roles
+
+Open the Web app and choose one of the three fixed identities on `/login`:
+
+- **Demo Support Operator** can read business resources and start Agent investigations.
+- **Demo Approver** can read resources and approve or reject financial actions.
+- **Demo Admin** can do both and run Eval Lab cases.
+
+Next.js stores the FastAPI-issued eight-hour JWT in an `HttpOnly`, `SameSite=Lax` cookie and
+forwards it as a Bearer token from server-side code. The browser cannot choose the approval actor:
+FastAPI resolves the token subject through its static principal registry and persists the verified
+subject, role, source, and request ID. Switching identity or logging out replaces or clears the
+shared browser cookie; no user table or server-side session store exists.
+
+This authentication mode is for local and portfolio demos only. Set a private, long
+`DEMO_AUTH_SIGNING_KEY` in an untracked `.env` when sharing a demo environment. FastAPI refuses to
+start when `ENVIRONMENT=production` or `prod`; MeterDesk does not claim production identity
+security, account lifecycle management, MFA, or enterprise IAM.
+
 ### Development commands
 
 ```bash
@@ -138,6 +159,8 @@ curl --fail http://localhost:8000/health/db
 ```
 
 `/health` verifies FastAPI liveness. `/health/db` verifies the backend can execute a simple Postgres query.
+Those health routes, API documentation, and the demo identity/login routes are public. All other
+API routes require a valid demo Bearer token.
 
 If `/health/db` returns 503 while Postgres appears healthy in Docker, see [WSL2 Docker Desktop Postgres troubleshooting](docs/troubleshooting/wsl-docker-postgres-health-db.md).
 
@@ -156,7 +179,8 @@ make container-down
 The default container URLs are the same: Web at `http://localhost:3000`, API at
 `http://localhost:8000`, and Postgres at `localhost:5432`, all published on loopback by default. The
 seeded runtime works without a provider key; its histories are a deterministic replay, not a live
-agent run. Remote network access is an explicit operator choice through
+agent run. The Web app still requires selecting a demo identity. Remote network access is an
+explicit operator choice through
 `CONTAINER_BIND_ADDRESS`. See the
 [Container Demo Runbook](docs/runbooks/container-demo.md) for reset behavior, live-provider setup,
 health checks, logs, port and bind-address overrides, and cleanup guidance.
@@ -180,6 +204,7 @@ Current sources:
 - [Implementation Roadmap](docs/specs/implementation-roadmap.md) - completed v1 program and current phase
 - [Post-M10 Hardening Roadmap](docs/specs/hardening/roadmap.md) - active workstreams, dependencies, gates, and re-review points
 - [P0-01 CI and Runtime Baseline](docs/specs/hardening/p0-01-ci-runtime-baseline.md) - implemented CI/runtime baseline; the evidence matrix records current verification status
+- [P0-02 Authentication and Approval RBAC](docs/specs/hardening/p0-02-authentication-approval-rbac.md) - local demo JWT chain, role policy, and trusted approval audit contract
 - [Engineering Evidence Matrix](docs/evidence/engineering-evidence-matrix.md) - current claims, gaps, planned evidence, and verification rules
 
 Historical context:
@@ -198,4 +223,6 @@ Historical context:
 - pgvector or large-scale RAG.
 - Multi-provider model gateway.
 - Enterprise multi-tenant permission systems.
+- Production account authentication, passwords, MFA, external identity providers, SCIM, and
+  session administration.
 - Security incident or SLA incident workflows.

@@ -51,6 +51,15 @@ hashes. The locally verified container environment was Docker Engine `28.1.1` an
 `v2.35.1-desktop.1`. These counts and versions are execution context, not product performance
 claims.
 
+On the P0-02 candidate, the current non-container rerun passed API `97 passed, 6 skipped` (the six
+real-Postgres cases remain dependency-gated) and Web `56 passed`. Ruff check and format over `59`
+Python files, ESLint, TypeScript, the optimized Next.js build, `bash -n` for the smoke harness,
+Compose configuration parsing, and the Markdown link checker (`16` files, `58` links) passed. The
+P0-02 Alembic range `20260701_0007:20260802_0008` generated 44 lines of PostgreSQL SQL offline.
+Docker Desktop's Linux engine was unavailable in this environment and its Windows service could not
+be started without administrator access, so the updated real-Postgres and container smoke checks
+are not recorded as passed.
+
 ## Hardening Target Evidence
 
 | Requirement | Current state | Target evidence | Workstream | Status |
@@ -65,9 +74,13 @@ claims.
 | No-provider-key smoke behavior | Smoke pins empty key/model/base URL and isolates dotenv/Compose selectors | `make container-smoke` verified empty provider environment, expected HTTP 503 `OpenAI-compatible provider is not configured.`, and removal of its exact project image tags without exposing configuration values | P0-01 | Verified |
 | Current-document link integrity | `scripts/check_markdown_links.py` and `apps/api/tests/test_markdown_links.py` | `9` focused tests passed; `python3 scripts/check_markdown_links.py` reported 15 Markdown files and 53 local links | P0-01 | Verified |
 | Production dependency reachability triage | `apps/web/package.json` and lock pin Next.js `15.5.21`; no current attacker-controlled CSS/source-map or untrusted image-processing path | `npm ci`; `npm ls next postcss sharp --omit=dev`; Web lint/typecheck/test/build; standalone image version check; `npm audit --omit=dev --json` exited `1` with direct Next Server Actions advisories removed and accepted PostCSS `8.4.31`/Sharp `0.34.5` limitations plus explicit re-evaluation triggers recorded in the focused spec | P0-01 | Verified |
-| Client cannot choose approver | `decided_by` comes from request body | Forged actor test and persisted server principal | P0-02 | Gap |
-| Approval role enforcement | No route role dependency | 401/403/success tests for operator, approver, admin | P0-02 | Gap |
-| Approval actor audit | Untrusted actor string | Subject, role, request ID persistence evidence | P0-02 | Gap |
+| Demo authentication boundary | Static FastAPI principal registry, fixed-claim HS256 JWT issue/verify, protected resource router, production fail-closed settings | Current backend suite passed `test_auth.py`, `test_rbac.py`, and settings coverage within `97 passed, 6 skipped` | P0-02 | Verified |
+| Client cannot choose approver | Approval decision input accepts only optional `decision_note`; backend derives actor from the authenticated principal | Forged `decided_by` request stays `422` and leaves approval/mutation state unchanged in the passing backend suite | P0-02 | Verified |
+| Approval role enforcement | FastAPI permission dependencies implement read/Agent/approval/Eval matrix; Web keeps disallowed controls visible and disabled | Backend role-matrix tests plus Web operator/approver/admin route/component tests passed | P0-02 | Verified |
+| Demo browser session boundary | Next.js server actions and session DAL use one eight-hour `HttpOnly`, `SameSite=Lax`, path-wide cookie, HTTPS `Secure`, safe return paths, and Bearer forwarding | Web `56 passed`, ESLint, TypeScript, and optimized Next.js build passed; no local-storage token path exists | P0-02 | Verified |
+| Request correlation | FastAPI middleware emits `req_<uuid>` in every response header and structured API error; approval decisions persist the first request ID | Request-ID, structured-error, and immutable retry tests passed in the backend suite | P0-02 | Verified |
+| Approval actor audit | Alembic `20260802_0008`, repository mapping, and seed fixture implement subject/display/role/source/request persistence and legacy provenance | Backend repository/API tests passed and offline PostgreSQL SQL compiled; real `make test-db` migration/seed persistence rerun remains required | P0-02 | Planned |
+| P0-02 container authentication smoke | Compose carries explicit demo-only auth settings; smoke asserts anonymous `401`, role denial, approver persistence, Web login, and authenticated no-provider `503` | `bash -n` and Compose config parsing passed; Docker Linux engine was unavailable, so `make container-smoke` remains required | P0-02 | Planned |
 | Application-lifetime DB engine | Engine created/disposed per request | Lifespan lifecycle tests | P1-04 | Gap |
 | Async DB readiness | Sync socket/psycopg inside async function | Async query health tests | P1-04 | Gap |
 | Concurrent approval safety | Constraints exist; concurrent DB proof missing | Real Postgres approve/approve and approve/reject tests | P1-04 | Gap |

@@ -18,7 +18,7 @@ CONTAINER_WAIT_TIMEOUT ?= 180
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down db-migrate test test-api test-web test-db lint lint-api lint-web seed demo-reset-live health container-build container-up container-seed container-smoke container-down
+.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down db-migrate test test-api test-web test-db lint lint-api lint-web build-web seed demo-reset-live health container-build container-up container-seed container-smoke container-down
 
 help:
 	@printf "MeterDesk commands:\n"
@@ -29,6 +29,7 @@ help:
 	@printf "  make test      Run API and Web tests\n"
 	@printf "  make test-db   Run Postgres-backed M3 migration/seed/API checks\n"
 	@printf "  make lint      Run API and Web lint/type checks\n"
+	@printf "  make build-web Build the optimized Next.js application\n"
 	@printf "  make seed      Reset and load M5 portfolio baseline data\n"
 	@printf "  make demo-reset-live Reset live runtime state; override with TICKET_ID=TCK-1137\n"
 	@printf "  make container-build Build API and Web runtime images\n"
@@ -89,6 +90,9 @@ lint-api:
 lint-web:
 	cd $(WEB_DIR) && npm run lint
 	cd $(WEB_DIR) && npm run typecheck
+
+build-web:
+	cd $(WEB_DIR) && npm run build
 
 seed: db-migrate
 	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run --frozen python -m meterdesk_api.seed
