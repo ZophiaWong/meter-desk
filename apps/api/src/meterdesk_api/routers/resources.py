@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from meterdesk_api.agent.approvals import ApprovalDecisionError, ApprovalDecisionService
 from meterdesk_api.agent.compliance import RunComplianceChecker
@@ -13,6 +13,7 @@ from meterdesk_api.agent.runtime import (
     get_optional_eval_judge,
 )
 from meterdesk_api.auth import (
+    DemoPrincipal,
     get_authenticated_principal,
     require_agent_run,
     require_approval_decision,
@@ -26,6 +27,7 @@ from meterdesk_api.repositories import get_repository
 from meterdesk_api.schemas import (
     AgentDecisionSummary,
     AgentRunSummary,
+    ApprovalDecisionActor,
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
     ApprovalSummary,
@@ -50,6 +52,16 @@ REPOSITORY_DEPENDENCY = Depends(get_repository)
 PROVIDER_DEPENDENCY = Depends(get_agent_provider)
 OPTIONAL_PROVIDER_DEPENDENCY = Depends(get_optional_agent_provider)
 OPTIONAL_JUDGE_DEPENDENCY = Depends(get_optional_eval_judge)
+APPROVAL_PRINCIPAL = Annotated[DemoPrincipal, Depends(require_approval_decision)]
+
+
+def _demo_session_actor(principal: DemoPrincipal) -> ApprovalDecisionActor:
+    return ApprovalDecisionActor(
+        subject=principal.subject,
+        display_name=principal.display_name,
+        role=principal.role,
+        source="demo_session",
+    )
 
 
 @router.get("/tickets", response_model=list[TicketSummary])
@@ -159,18 +171,20 @@ async def list_approvals(
 @router.post(
     "/approvals/{approval_id}/approve",
     response_model=ApprovalDecisionResponse,
-    dependencies=[Depends(require_approval_decision)],
 )
 async def approve_request(
     approval_id: str,
     decision: ApprovalDecisionRequest,
+    request: Request,
+    principal: APPROVAL_PRINCIPAL,
     repository=REPOSITORY_DEPENDENCY,
 ) -> ApprovalDecisionResponse:
     service = ApprovalDecisionService(repository)
     try:
         return await service.approve(
             approval_id,
-            decided_by=decision.decided_by,
+            decision_actor=_demo_session_actor(principal),
+            decision_request_id=request.state.request_id,
             decision_note=decision.decision_note,
         )
     except ApprovalDecisionError as error:
@@ -180,18 +194,20 @@ async def approve_request(
 @router.post(
     "/approvals/{approval_id}/reject",
     response_model=ApprovalDecisionResponse,
-    dependencies=[Depends(require_approval_decision)],
 )
 async def reject_request(
     approval_id: str,
     decision: ApprovalDecisionRequest,
+    request: Request,
+    principal: APPROVAL_PRINCIPAL,
     repository=REPOSITORY_DEPENDENCY,
 ) -> ApprovalDecisionResponse:
     service = ApprovalDecisionService(repository)
     try:
         return await service.reject(
             approval_id,
-            decided_by=decision.decided_by,
+            decision_actor=_demo_session_actor(principal),
+            decision_request_id=request.state.request_id,
             decision_note=decision.decision_note,
         )
     except ApprovalDecisionError as error:

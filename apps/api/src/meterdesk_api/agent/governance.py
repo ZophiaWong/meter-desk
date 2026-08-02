@@ -6,6 +6,7 @@ from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.repositories import MeterDeskRepository
 from meterdesk_api.schemas import (
+    ApprovalDecisionActor,
     ApprovalDecisionResponse,
     ApprovalSummary,
     GovernanceMetadata,
@@ -401,12 +402,14 @@ class GovernanceKernel:
         self,
         approval_id: str,
         *,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalDecisionResponse:
         return await self.execute_approved_mock_financial_action(
             approval_id=approval_id,
-            decided_by=decided_by,
+            decision_actor=decision_actor,
+            decision_request_id=decision_request_id,
             decision_note=decision_note,
         )
 
@@ -414,7 +417,8 @@ class GovernanceKernel:
         self,
         approval_id: str,
         *,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalDecisionResponse:
         approval = await self._repository.get_approval(approval_id)
@@ -427,7 +431,7 @@ class GovernanceKernel:
         if approval.status == "rejected":
             raise MeterDeskAPIError(
                 status_code=409,
-                code="approval.rejected_terminal",
+                code="approval.terminal_conflict",
                 message="Rejected approval requests cannot be approved.",
             )
         if approval.status == "approved":
@@ -439,7 +443,8 @@ class GovernanceKernel:
         try:
             approval, mutation = await self._repository.approve_request(
                 approval_id=approval_id,
-                decided_by=decided_by,
+                decision_actor=decision_actor,
+                decision_request_id=decision_request_id,
                 decision_note=decision_note,
             )
         except MeterDeskAPIError as error:

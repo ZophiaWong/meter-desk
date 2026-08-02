@@ -10,6 +10,7 @@ from meterdesk_api.agent.governance import (
     list_tool_policy_summaries,
 )
 from meterdesk_api.main import app
+from meterdesk_api.schemas import ApprovalDecisionActor
 from meterdesk_api.seed_data import build_seed_repository
 
 
@@ -216,7 +217,13 @@ async def test_governance_kernel_blocks_approval_creation_for_executed_fingerpri
     )
     await kernel.execute_approved_mock_refund(
         approval.id,
-        decided_by="Demo Operator",
+        decision_actor=ApprovalDecisionActor(
+            subject="demo-approver",
+            display_name="Demo Approver",
+            role="approver",
+            source="demo_session",
+        ),
+        decision_request_id="req_test_governance_approval",
         decision_note="Approved.",
     )
     second_run = await repository.create_agent_run(

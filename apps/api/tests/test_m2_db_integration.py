@@ -11,7 +11,7 @@ from meterdesk_api.demo_reset_live import reset_live_demo_state
 from meterdesk_api.main import app
 from meterdesk_api.models import EvalSuiteRun
 from meterdesk_api.repositories import SqlAlchemyMeterDeskRepository
-from meterdesk_api.schemas import EvalResultSummary
+from meterdesk_api.schemas import ApprovalDecisionActor, EvalResultSummary
 from meterdesk_api.seed import seed_demo_data
 from meterdesk_api.seed_data import utc
 
@@ -108,7 +108,13 @@ async def test_seed_restores_m5_portfolio_baseline_for_demo_tickets() -> None:
             )
             await repository.approve_request(
                 approval_id=approval.id,
-                decided_by="DB Test",
+                decision_actor=ApprovalDecisionActor(
+                    subject="demo-admin",
+                    display_name="Demo Admin",
+                    role="admin",
+                    source="demo_session",
+                ),
+                decision_request_id="req_db_test_seed_reset",
                 decision_note="Approved to verify seed reset.",
             )
     finally:

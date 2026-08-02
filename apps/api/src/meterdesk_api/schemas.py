@@ -10,6 +10,8 @@ RiskLevel = Literal["Low", "Medium", "High"]
 RunComplianceStatus = Literal["passed", "failed", "unsupported"]
 EvalRunType = Literal["baseline", "suite", "case_rerun"]
 EvalSnapshotType = Literal["baseline", "current"]
+ApprovalActorRole = Literal["support_operator", "approver", "admin"]
+ApprovalActorSource = Literal["demo_session", "seed_fixture", "legacy_unverified"]
 EvalRegressionLabel = Literal[
     "regressed",
     "improved",
@@ -202,6 +204,13 @@ class GovernanceMetadata(BaseModel):
     reason_code: str
 
 
+class ApprovalDecisionActor(BaseModel):
+    subject: str | None = None
+    display_name: str | None = None
+    role: ApprovalActorRole | None = None
+    source: ApprovalActorSource
+
+
 class ApprovalSummary(BaseModel):
     id: str
     ticket_id: str
@@ -218,7 +227,8 @@ class ApprovalSummary(BaseModel):
     action_fingerprint: str
     decided_at: datetime | None = None
     decision: str | None = None
-    decided_by: str | None = None
+    decision_actor: ApprovalDecisionActor | None = None
+    decision_request_id: str | None = None
     decision_note: str | None = None
 
 
@@ -348,7 +358,8 @@ class RunComplianceResult(BaseModel):
 
 
 class ApprovalDecisionRequest(BaseModel):
-    decided_by: str = "Demo Operator"
+    model_config = ConfigDict(extra="forbid")
+
     decision_note: str | None = None
 
 

@@ -386,7 +386,21 @@ async def seed_demo_data() -> None:
                         created_at=utc(2026, 6, 5, 12, 6),
                         decided_at=approval.decided_at,
                         decision=approval.decision,
-                        decided_by=approval.decided_by,
+                        decision_actor_subject=(
+                            approval.decision_actor.subject if approval.decision_actor else None
+                        ),
+                        decision_actor_display_name=(
+                            approval.decision_actor.display_name
+                            if approval.decision_actor
+                            else None
+                        ),
+                        decision_actor_role=(
+                            approval.decision_actor.role if approval.decision_actor else None
+                        ),
+                        decision_actor_source=(
+                            approval.decision_actor.source if approval.decision_actor else None
+                        ),
+                        decision_request_id=approval.decision_request_id,
                         decision_note=approval.decision_note,
                         seed_marker=DEMO_SEED_MARKER,
                     )

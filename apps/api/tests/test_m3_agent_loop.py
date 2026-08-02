@@ -598,14 +598,14 @@ async def test_reject_does_not_create_mutation_and_allows_rerun() -> None:
 
         reject = await client.post(
             f"/approvals/{approval_id}/reject",
-            json={"decided_by": "Demo Operator", "decision_note": "Needs finance review."},
+            json={"decision_note": "Needs finance review."},
         )
         mutations = await client.get("/mock-mutations?ticket_id=TCK-1042")
         rerun = await client.post("/tickets/TCK-1042/agent-runs")
 
     assert reject.status_code == 200
     assert reject.json()["approval"]["status"] == "rejected"
-    assert reject.json()["approval"]["decided_by"] == "Demo Operator"
+    assert reject.json()["approval"]["decision_actor"]["subject"] == "demo-admin"
     assert mutations.json() == []
     assert rerun.status_code == 201
 
@@ -623,15 +623,15 @@ async def test_approve_executes_one_mock_mutation_and_is_idempotent() -> None:
 
         first = await client.post(
             f"/approvals/{approval_id}/approve",
-            json={"decided_by": "Demo Operator", "decision_note": "Approved for demo."},
+            json={"decision_note": "Approved for demo."},
         )
         second = await client.post(
             f"/approvals/{approval_id}/approve",
-            json={"decided_by": "Demo Operator"},
+            json={},
         )
         opposite = await client.post(
             f"/approvals/{approval_id}/reject",
-            json={"decided_by": "Demo Operator"},
+            json={},
         )
         mutations = await client.get("/mock-mutations?ticket_id=TCK-1042")
         trace_response = await client.get(f"/agent-runs/{run_response.json()['id']}/traces")
