@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { getEvalRunComparison, type EvalRegressionCaseResource } from "@/lib/meterdesk-api";
+import { requireDemoSession } from "@/lib/session";
 
 type PageProps = {
   params: Promise<{ runId: string }>;
@@ -8,8 +9,9 @@ type PageProps = {
 
 export default async function EvalRunDiffPage({ params }: PageProps) {
   const { runId } = await params;
+  const session = await requireDemoSession(`/eval-lab/runs/${encodeURIComponent(runId)}`);
   try {
-    const comparison = await getEvalRunComparison(runId);
+    const comparison = await getEvalRunComparison(runId, undefined, session.accessToken);
     return (
       <main className="min-h-screen bg-[#f7f8fb] text-meter-ink">
         <section className="mx-auto w-full max-w-6xl px-6 py-8">

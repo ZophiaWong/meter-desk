@@ -86,6 +86,27 @@ describe("EvalRunForm", () => {
     const submittedData = rerun.action.mock.calls[0]?.[0] as FormData;
     expect(submittedData.get("caseId")).toBe("eval-credit-refund-001");
   });
+
+  it("keeps an unauthorized eval control visible with the required-role explanation", () => {
+    render(
+      <EvalRunControlsProvider>
+        <EvalRunForm
+          action={vi.fn()}
+          defaultLabel="Run all evals"
+          disabledReason="Requires the admin role"
+          pendingLabel="Running all evals..."
+          runKey="all"
+          variant="primary"
+        />
+      </EvalRunControlsProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "Run all evals" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run all evals" })).toHaveAttribute(
+      "title",
+      "Requires the admin role",
+    );
+  });
 });
 
 function deferredAction() {

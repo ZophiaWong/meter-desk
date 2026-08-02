@@ -1,12 +1,84 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getDecisionSummary, MeterDeskApiError, startAgentRun } from "./meterdesk-api";
+import {
+  approveRequest,
+  demoLogin,
+  getCurrentDemoPrincipal,
+  getDecisionSummary,
+  getDemoIdentities,
+  MeterDeskApiError,
+  startAgentRun,
+} from "./meterdesk-api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
 });
 
 describe("meterdesk-api", () => {
+  it("uses the public demo auth endpoints and verifies the returned token via /auth/me", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              subject: "demo-approver",
+              display_name: "Demo Approver",
+              role: "approver",
+            },
+          ]),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "signed-jwt",
+            token_type: "bearer",
+            expires_in: 28_800,
+            principal: {
+              subject: "demo-approver",
+              display_name: "Demo Approver",
+              role: "approver",
+            },
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            subject: "demo-approver",
+            display_name: "Demo Approver",
+            role: "approver",
+          }),
+          { headers: { "Content-Type": "application/json" }, status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    const identities = await getDemoIdentities("http://api.test");
+    const login = await demoLogin("demo-approver", "http://api.test");
+    const principal = await getCurrentDemoPrincipal("signed-jwt", "http://api.test");
+
+    expect(identities[0]?.subject).toBe("demo-approver");
+    expect(login.expires_in).toBe(28_800);
+    expect(principal.role).toBe("approver");
+    expect(fetchSpy).toHaveBeenNthCalledWith(1, "http://api.test/auth/demo-identities", {
+      cache: "no-store",
+    });
+    expect(fetchSpy).toHaveBeenNthCalledWith(2, "http://api.test/auth/demo-login", {
+      body: JSON.stringify({ subject: "demo-approver" }),
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    });
+    expect(fetchSpy).toHaveBeenNthCalledWith(3, "http://api.test/auth/me", {
+      cache: "no-store",
+      headers: { Authorization: "Bearer signed-jwt" },
+    });
+  });
+
   it("fetches the agent decision summary for a ticket", async () => {
     const fetchSpy = vi.fn(async () =>
       new Response(
@@ -64,10 +136,11 @@ describe("meterdesk-api", () => {
     );
     vi.stubGlobal("fetch", fetchSpy);
 
-    const summary = await getDecisionSummary("TCK-1042", "http://api.test");
+    const summary = await getDecisionSummary("TCK-1042", "http://api.test", "session-token");
 
     expect(fetchSpy).toHaveBeenCalledWith("http://api.test/tickets/TCK-1042/decision-summary", {
       cache: "no-store",
+      headers: { Authorization: "Bearer session-token" },
     });
     expect(summary.state).toBe("pending_approval");
     expect(summary.tiles.map((tile) => tile.kind)).toEqual([
@@ -76,6 +149,28 @@ describe("meterdesk-api", () => {
       "risk_gate",
       "draft",
     ]);
+  });
+
+  it("forwards bearer auth without allowing an approval actor in the request body", async () => {
+    const fetchSpy = vi.fn(async () =>
+      new Response(JSON.stringify({ approval: {}, mock_mutation: null }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await approveRequest("APR-2042", "http://api.test", "approver-token");
+
+    expect(fetchSpy).toHaveBeenCalledWith("http://api.test/approvals/APR-2042/approve", {
+      body: "{}",
+      cache: "no-store",
+      headers: {
+        Authorization: "Bearer approver-token",
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
   });
 
   it("preserves structured API error codes and details", async () => {

@@ -23,6 +23,7 @@ import {
   type TicketSummaryResource,
   type ToolTraceResource,
 } from "@/lib/meterdesk-api";
+import { formatDemoRole } from "@/lib/demo-auth";
 
 export type ServiceSurface = {
   label: string;
@@ -117,6 +118,11 @@ export type ApprovalRequest = {
   blocker: string;
   policyCitation: string;
   actionFingerprint: string;
+  decisionActorSource: NonNullable<ApprovalResource["decision_actor"]>["source"] | null;
+  decisionActorSubject: string | null;
+  decisionActorSummary: string | null;
+  decisionNote: string | null;
+  decisionRequestId: string | null;
 };
 
 export type AgentRunView = {
@@ -246,6 +252,11 @@ export type ApprovalQueueItem = {
   reason: string;
   blocker: string;
   policyCitation: string;
+  decisionActorSource: ApprovalRequest["decisionActorSource"];
+  decisionActorSubject: string | null;
+  decisionActorSummary: string | null;
+  decisionNote: string | null;
+  decisionRequestId: string | null;
 };
 
 export type ApprovalQueueStatus = "pending" | "approved" | "rejected" | "all";
@@ -300,27 +311,28 @@ export const NAV_ITEMS: ServiceSurface[] = [
 
 const DEFAULT_TICKET_ID = "TCK-1042";
 
-export async function getDefaultWorkbenchScenario(): Promise<WorkbenchScenario> {
-  return getWorkbenchScenario(DEFAULT_TICKET_ID);
+export async function getDefaultWorkbenchScenario(accessToken?: string): Promise<WorkbenchScenario> {
+  return getWorkbenchScenario(DEFAULT_TICKET_ID, accessToken);
 }
 
 export async function getWorkbenchScenario(
   ticketId = DEFAULT_TICKET_ID,
+  accessToken?: string,
 ): Promise<WorkbenchScenario> {
   const [tickets, ticket, evidence, decisionSummary, runs, approvals, mutations, toolPolicies] =
     await Promise.all([
-      getTickets(),
-      getTicket(ticketId),
-      getBillingEvidence(ticketId),
-      getDecisionSummary(ticketId),
-      getAgentRuns(ticketId),
-      getApprovalsByStatus("all", ticketId),
-      getMockMutations(ticketId),
-      getGovernanceToolPolicies(),
+      getTickets(undefined, accessToken),
+      getTicket(ticketId, undefined, accessToken),
+      getBillingEvidence(ticketId, undefined, accessToken),
+      getDecisionSummary(ticketId, undefined, accessToken),
+      getAgentRuns(ticketId, undefined, accessToken),
+      getApprovalsByStatus("all", ticketId, undefined, accessToken),
+      getMockMutations(ticketId, undefined, accessToken),
+      getGovernanceToolPolicies(undefined, accessToken),
     ]);
   const run = runs.at(-1) ?? null;
-  const traces = run ? await getToolTraces(run.id) : [];
-  const compliance = run ? await getRunCompliance(run.id) : null;
+  const traces = run ? await getToolTraces(run.id, undefined, accessToken) : [];
+  const compliance = run ? await getRunCompliance(run.id, undefined, accessToken) : null;
   const approval = approvals.at(-1) ?? null;
   const latestMutation = mutations.at(-1) ?? null;
   const drafts =
@@ -448,8 +460,12 @@ export async function getWorkbenchScenario(
 
 export async function getApprovalQueueItems(
   status: ApprovalQueueStatus = "pending",
+  accessToken?: string,
 ): Promise<ApprovalQueueItem[]> {
-  const [approvals, tickets] = await Promise.all([getApprovalsByStatus(status), getTickets()]);
+  const [approvals, tickets] = await Promise.all([
+    getApprovalsByStatus(status, undefined, undefined, accessToken),
+    getTickets(undefined, accessToken),
+  ]);
   const ticketById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
 
   return approvals.map((approval) => ({
@@ -462,18 +478,23 @@ export async function getApprovalQueueItems(
     reason: approval.reason,
     blocker: approval.blocker,
     policyCitation: approval.policy_citation,
+    decisionActorSource: approval.decision_actor?.source ?? null,
+    decisionActorSubject: approval.decision_actor?.subject ?? null,
+    decisionActorSummary: formatDecisionActor(approval),
+    decisionNote: approval.decision_note,
+    decisionRequestId: approval.decision_request_id,
   }));
 }
 
-export async function getEvalCaseViews(): Promise<EvalCaseView[]> {
-  return (await getEvalLabView()).cases;
+export async function getEvalCaseViews(accessToken?: string): Promise<EvalCaseView[]> {
+  return (await getEvalLabView(accessToken)).cases;
 }
 
-export async function getEvalLabView(): Promise<EvalLabView> {
+export async function getEvalLabView(accessToken?: string): Promise<EvalLabView> {
   const [cases, results, regression] = await Promise.all([
-    getEvalCases(),
-    getEvalResults(),
-    getEvalRegressionSummary(),
+    getEvalCases(undefined, accessToken),
+    getEvalResults(undefined, accessToken),
+    getEvalRegressionSummary(undefined, accessToken),
   ]);
   const resultByCaseId = new Map(results.map((result) => [result.case_id, result]));
   const regressionByCaseId = new Map(regression.cases.map((item) => [item.case_id, item]));
@@ -791,6 +812,10 @@ function buildApprovalNode(context: GraphContext): DecisionGraphNode {
       ["Status", titleCase(context.approval.status)],
       ["Amount", context.approval.amount.display],
       ["Policy", context.approval.policy_citation],
+      ["Decision actor", formatDecisionActor(context.approval)],
+      ["Actor subject", context.approval.decision_actor?.subject],
+      ["Actor source", context.approval.decision_actor?.source],
+      ["Request ID", context.approval.decision_request_id],
       ["Trace ids", context.approvalTrace?.id],
     ]),
   };
@@ -975,7 +1000,28 @@ function mapApproval(approval: ApprovalResource): ApprovalRequest {
     blocker: approval.blocker,
     policyCitation: approval.policy_citation,
     actionFingerprint: approval.action_fingerprint,
+    decisionActorSource: approval.decision_actor?.source ?? null,
+    decisionActorSubject: approval.decision_actor?.subject ?? null,
+    decisionActorSummary: formatDecisionActor(approval),
+    decisionNote: approval.decision_note,
+    decisionRequestId: approval.decision_request_id,
   };
+}
+
+function formatDecisionActor(approval: ApprovalResource): string | null {
+  const actor = approval.decision_actor;
+  if (!actor) {
+    return null;
+  }
+
+  const name = actor.display_name ?? actor.subject ?? "Unverified legacy actor";
+  const qualifier = actor.role
+    ? formatDemoRole(actor.role)
+    : actor.source
+        .split("_")
+        .map((part) => titleCase(part))
+        .join(" ");
+  return `${name} (${qualifier})`;
 }
 
 function mapCompliance(compliance: RunComplianceResource): RunComplianceView {

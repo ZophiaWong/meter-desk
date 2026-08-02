@@ -1,12 +1,28 @@
 import { getApprovalQueueItems, type ApprovalQueueStatus } from "@/lib/meterdesk-view";
 import { approveRequestAction, rejectRequestAction } from "@/lib/meterdesk-actions";
+import {
+  APPROVAL_PERMISSION_EXPLANATION,
+  canDecideApproval,
+  type DemoPrincipal,
+} from "@/lib/demo-auth";
 import Link from "next/link";
 
 const STATUSES: ApprovalQueueStatus[] = ["pending", "approved", "rejected", "all"];
 
-export async function ApprovalQueue({ status = "pending" }: { status?: ApprovalQueueStatus }) {
+type ApprovalQueueProps = {
+  accessToken: string;
+  currentPrincipal: DemoPrincipal;
+  status?: ApprovalQueueStatus;
+};
+
+export async function ApprovalQueue({
+  accessToken,
+  currentPrincipal,
+  status = "pending",
+}: ApprovalQueueProps) {
   try {
-    const approvals = await getApprovalQueueItems(status);
+    const approvals = await getApprovalQueueItems(status, accessToken);
+    const canDecide = canDecideApproval(currentPrincipal);
 
     return (
       <section className="mx-auto w-full max-w-5xl">
@@ -54,12 +70,21 @@ export async function ApprovalQueue({ status = "pending" }: { status?: ApprovalQ
                 <p className="mt-4 text-sm leading-6 text-slate-700">{approval.reason}</p>
                 <p className="mt-3 text-sm font-semibold text-meter-amber">{approval.blocker}</p>
                 <p className="mt-2 text-xs text-slate-500">Policy: {approval.policyCitation}</p>
+                {approval.decisionActorSummary ? (
+                  <div className="mt-3 rounded-md border border-meter-line bg-[#fbfcfe] p-3 text-xs text-slate-600">
+                    <p className="font-semibold text-slate-800">
+                      Decided by {approval.decisionActorSummary}
+                    </p>
+                    {approval.decisionNote ? <p className="mt-1">{approval.decisionNote}</p> : null}
+                  </div>
+                ) : null}
                 <div className="mt-4 grid max-w-sm grid-cols-2 gap-2">
                   <form action={approveRequestAction}>
                     <input name="approvalId" type="hidden" value={approval.id} />
                     <button
                       className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:text-slate-400"
-                      disabled={!isPending}
+                      disabled={!isPending || !canDecide}
+                      title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
                       type="submit"
                     >
                       Approve
@@ -69,7 +94,8 @@ export async function ApprovalQueue({ status = "pending" }: { status?: ApprovalQ
                     <input name="approvalId" type="hidden" value={approval.id} />
                     <button
                       className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:text-slate-400"
-                      disabled={!isPending}
+                      disabled={!isPending || !canDecide}
+                      title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
                       type="submit"
                     >
                       Reject

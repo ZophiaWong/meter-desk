@@ -1,3 +1,4 @@
+import type { DemoPrincipal } from "@/lib/demo-auth";
 import type { SystemStatus } from "@/lib/status";
 import type { WorkbenchScenario } from "@/lib/meterdesk-view";
 
@@ -5,15 +6,20 @@ import { AppShell } from "./app-shell";
 import { TicketWorkbench } from "./workbench";
 
 type MeterDeskShellProps = {
+  currentPrincipal: DemoPrincipal;
   dataError?: string;
   scenario?: WorkbenchScenario;
   status: SystemStatus;
 };
 
-export function MeterDeskShell({ dataError, scenario, status }: MeterDeskShellProps) {
+export function MeterDeskShell({ currentPrincipal, dataError, scenario, status }: MeterDeskShellProps) {
   return (
-    <AppShell activeSurface="Ticket Workbench" status={status}>
-      {scenario ? <TicketWorkbench scenario={scenario} /> : <DataErrorPanel message={dataError} />}
+    <AppShell activeSurface="Ticket Workbench" currentPrincipal={currentPrincipal} status={status}>
+      {scenario ? (
+        <TicketWorkbench currentPrincipal={currentPrincipal} scenario={scenario} />
+      ) : (
+        <DataErrorPanel message={dataError} />
+      )}
     </AppShell>
   );
 }

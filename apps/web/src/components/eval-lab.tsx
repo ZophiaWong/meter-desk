@@ -2,13 +2,24 @@ import { getEvalLabView, type EvalCaseView } from "@/lib/meterdesk-view";
 import Link from "next/link";
 import { rerunEvalCaseAction, runAllEvalCasesAction } from "@/lib/meterdesk-actions";
 import { EvalRunControlsProvider, EvalRunForm } from "@/components/eval-run-form";
+import {
+  EVAL_PERMISSION_EXPLANATION,
+  canRunEval,
+  type DemoPrincipal,
+} from "@/lib/demo-auth";
 
 const SCENARIO_ORDER = ["Duplicate Charge", "Usage Spike", "Credit/Refund Dispute"];
 
-export async function EvalLab() {
+type EvalLabProps = {
+  accessToken: string;
+  currentPrincipal: DemoPrincipal;
+};
+
+export async function EvalLab({ accessToken, currentPrincipal }: EvalLabProps) {
   try {
-    const view = await getEvalLabView();
+    const view = await getEvalLabView(accessToken);
     const grouped = groupByScenario(view.cases);
+    const disabledReason = canRunEval(currentPrincipal) ? undefined : EVAL_PERMISSION_EXPLANATION;
 
     return (
       <section className="mx-auto w-full max-w-6xl">
@@ -22,6 +33,7 @@ export async function EvalLab() {
           <EvalRunForm
             action={runAllEvalCasesAction}
             defaultLabel="Run all evals"
+            disabledReason={disabledReason}
             formClassName="mt-5"
             pendingLabel="Running all evals..."
             runKey="all"
@@ -201,6 +213,7 @@ export async function EvalLab() {
                           action={rerunEvalCaseAction}
                           ariaLabel={`Rerun ${evalCase.id}`}
                           defaultLabel="Rerun"
+                          disabledReason={disabledReason}
                           formClassName="mt-4"
                           hiddenFields={[{ name: "caseId", value: evalCase.id }]}
                           pendingLabel="Rerunning..."

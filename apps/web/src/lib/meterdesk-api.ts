@@ -1,4 +1,15 @@
+import type { DemoPrincipal } from "@/lib/demo-auth";
+
 const DEFAULT_API_BASE_URL = "http://localhost:8000";
+
+export type DemoIdentity = DemoPrincipal;
+
+export type DemoLoginResponse = {
+  access_token: string;
+  token_type: "bearer";
+  expires_in: number;
+  principal: DemoPrincipal;
+};
 
 export type Scenario = "duplicate_charge" | "usage_spike" | "credit_refund_dispute";
 
@@ -209,7 +220,13 @@ export type ApprovalResource = {
   action_fingerprint: string;
   decided_at: string | null;
   decision: string | null;
-  decided_by: string | null;
+  decision_actor: {
+    subject: string | null;
+    display_name: string | null;
+    role: DemoPrincipal["role"] | null;
+    source: "demo_session" | "seed_fixture" | "legacy_unverified";
+  } | null;
+  decision_request_id: string | null;
   decision_note: string | null;
 };
 
@@ -359,6 +376,7 @@ export class MeterDeskApiError extends Error {
     readonly status?: number,
     readonly code = "api.request_failed",
     readonly details: Record<string, unknown> = {},
+    readonly requestId?: string,
   ) {
     super(message);
   }
@@ -368,6 +386,7 @@ type StructuredApiError = {
   code?: unknown;
   message?: unknown;
   details?: unknown;
+  request_id?: unknown;
 };
 
 async function buildApiError(response: Response, path: string): Promise<MeterDeskApiError> {
@@ -380,6 +399,7 @@ async function buildApiError(response: Response, path: string): Promise<MeterDes
         response.status,
         payload.code,
         isRecord(payload.details) ? payload.details : {},
+        typeof payload.request_id === "string" ? payload.request_id : undefined,
       );
     }
   } catch {
@@ -395,10 +415,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export async function fetchApi<T>(
   path: string,
   apiBaseUrl = process.env.API_BASE_URL ?? DEFAULT_API_BASE_URL,
+  accessToken?: string,
 ): Promise<T> {
   const normalizedBaseUrl = apiBaseUrl.replace(/\/$/, "");
+  const headers = authorizationHeaders(accessToken);
   const response = await fetch(`${normalizedBaseUrl}${path}`, {
     cache: "no-store",
+    ...(headers ? { headers } : {}),
   });
 
   if (!response.ok) {
@@ -412,12 +435,14 @@ export async function postApi<T>(
   path: string,
   body?: unknown,
   apiBaseUrl = process.env.API_BASE_URL ?? DEFAULT_API_BASE_URL,
+  accessToken?: string,
 ): Promise<T> {
   const normalizedBaseUrl = apiBaseUrl.replace(/\/$/, "");
+  const headers = authorizationHeaders(accessToken, body !== undefined);
   const response = await fetch(`${normalizedBaseUrl}${path}`, {
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    ...(headers ? { headers } : {}),
     method: "POST",
   });
 
@@ -428,113 +453,220 @@ export async function postApi<T>(
   return (await response.json()) as T;
 }
 
-export async function getTickets(apiBaseUrl?: string) {
-  return fetchApi<TicketSummaryResource[]>("/tickets", apiBaseUrl);
+function authorizationHeaders(
+  accessToken: string | undefined,
+  includeJsonContentType = false,
+): Record<string, string> | undefined {
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers.Authorization = `Bearer ${accessToken}`;
+  }
+  if (includeJsonContentType) {
+    headers["Content-Type"] = "application/json";
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
 }
 
-export async function getTicket(ticketId: string, apiBaseUrl?: string) {
-  return fetchApi<TicketDetailResource>(`/tickets/${ticketId}`, apiBaseUrl);
+export async function getDemoIdentities(apiBaseUrl?: string) {
+  return fetchApi<DemoIdentity[]>("/auth/demo-identities", apiBaseUrl);
 }
 
-export async function getBillingEvidence(ticketId: string, apiBaseUrl?: string) {
-  return fetchApi<BillingEvidenceResource>(`/tickets/${ticketId}/billing-evidence`, apiBaseUrl);
+export async function demoLogin(subject: string, apiBaseUrl?: string) {
+  return postApi<DemoLoginResponse>("/auth/demo-login", { subject }, apiBaseUrl);
 }
 
-export async function getDecisionSummary(ticketId: string, apiBaseUrl?: string) {
-  return fetchApi<AgentDecisionSummaryResource>(
-    `/tickets/${ticketId}/decision-summary`,
+export async function getCurrentDemoPrincipal(accessToken: string, apiBaseUrl?: string) {
+  return fetchApi<DemoPrincipal>("/auth/me", apiBaseUrl, accessToken);
+}
+
+export async function getTickets(apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<TicketSummaryResource[]>("/tickets", apiBaseUrl, accessToken);
+}
+
+export async function getTicket(ticketId: string, apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<TicketDetailResource>(`/tickets/${ticketId}`, apiBaseUrl, accessToken);
+}
+
+export async function getBillingEvidence(
+  ticketId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<BillingEvidenceResource>(
+    `/tickets/${ticketId}/billing-evidence`,
     apiBaseUrl,
+    accessToken,
   );
 }
 
-export async function getAgentRuns(ticketId: string, apiBaseUrl?: string) {
-  return fetchApi<AgentRunResource[]>(`/tickets/${ticketId}/agent-runs`, apiBaseUrl);
+export async function getDecisionSummary(
+  ticketId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<AgentDecisionSummaryResource>(
+    `/tickets/${ticketId}/decision-summary`,
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function getToolTraces(agentRunId: string, apiBaseUrl?: string) {
-  return fetchApi<ToolTraceResource[]>(`/agent-runs/${agentRunId}/traces`, apiBaseUrl);
+export async function getAgentRuns(ticketId: string, apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<AgentRunResource[]>(`/tickets/${ticketId}/agent-runs`, apiBaseUrl, accessToken);
 }
 
-export async function getRunCompliance(agentRunId: string, apiBaseUrl?: string) {
-  return fetchApi<RunComplianceResource>(`/agent-runs/${agentRunId}/compliance`, apiBaseUrl);
+export async function getToolTraces(
+  agentRunId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<ToolTraceResource[]>(
+    `/agent-runs/${agentRunId}/traces`,
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function getGovernanceToolPolicies(apiBaseUrl?: string) {
-  return fetchApi<ToolPolicyResource[]>("/governance/tool-policies", apiBaseUrl);
+export async function getRunCompliance(
+  agentRunId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<RunComplianceResource>(
+    `/agent-runs/${agentRunId}/compliance`,
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function getApprovals(apiBaseUrl?: string) {
-  return fetchApi<ApprovalResource[]>("/approvals", apiBaseUrl);
+export async function getGovernanceToolPolicies(apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<ToolPolicyResource[]>("/governance/tool-policies", apiBaseUrl, accessToken);
+}
+
+export async function getApprovals(apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<ApprovalResource[]>("/approvals", apiBaseUrl, accessToken);
 }
 
 export async function getApprovalsByStatus(
   status: "pending" | "approved" | "rejected" | "all" = "pending",
   ticketId?: string,
   apiBaseUrl?: string,
+  accessToken?: string,
 ) {
   const params = new URLSearchParams({ status });
   if (ticketId) {
     params.set("ticket_id", ticketId);
   }
-  return fetchApi<ApprovalResource[]>(`/approvals?${params.toString()}`, apiBaseUrl);
+  return fetchApi<ApprovalResource[]>(
+    `/approvals?${params.toString()}`,
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function startAgentRun(ticketId: string, apiBaseUrl?: string) {
-  return postApi<AgentRunResource>(`/tickets/${ticketId}/agent-runs`, undefined, apiBaseUrl);
+export async function startAgentRun(
+  ticketId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return postApi<AgentRunResource>(
+    `/tickets/${ticketId}/agent-runs`,
+    undefined,
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function approveRequest(approvalId: string, apiBaseUrl?: string) {
+export async function approveRequest(
+  approvalId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+  decisionNote?: string,
+) {
   return postApi<ApprovalDecisionResponseResource>(
     `/approvals/${approvalId}/approve`,
-    { decided_by: "Demo Operator" },
+    decisionNote ? { decision_note: decisionNote } : {},
     apiBaseUrl,
+    accessToken,
   );
 }
 
-export async function rejectRequest(approvalId: string, apiBaseUrl?: string) {
+export async function rejectRequest(
+  approvalId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+  decisionNote?: string,
+) {
   return postApi<ApprovalDecisionResponseResource>(
     `/approvals/${approvalId}/reject`,
-    { decided_by: "Demo Operator" },
+    decisionNote ? { decision_note: decisionNote } : {},
     apiBaseUrl,
+    accessToken,
   );
 }
 
-export async function getMockMutations(ticketId?: string, apiBaseUrl?: string) {
+export async function getMockMutations(
+  ticketId?: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
   const query = ticketId ? `?ticket_id=${encodeURIComponent(ticketId)}` : "";
-  return fetchApi<MockMutationResource[]>(`/mock-mutations${query}`, apiBaseUrl);
+  return fetchApi<MockMutationResource[]>(`/mock-mutations${query}`, apiBaseUrl, accessToken);
 }
 
-export async function getEvalCases(apiBaseUrl?: string) {
-  return fetchApi<EvalCaseResource[]>("/eval-cases", apiBaseUrl);
+export async function getEvalCases(apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<EvalCaseResource[]>("/eval-cases", apiBaseUrl, accessToken);
 }
 
-export async function getEvalResults(apiBaseUrl?: string) {
-  return fetchApi<EvalResultResource[]>("/eval-results", apiBaseUrl);
+export async function getEvalResults(apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<EvalResultResource[]>("/eval-results", apiBaseUrl, accessToken);
 }
 
-export async function getEvalRegressionSummary(apiBaseUrl?: string) {
-  return fetchApi<EvalRegressionSummaryResource>("/eval-regression/summary", apiBaseUrl);
+export async function getEvalRegressionSummary(apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<EvalRegressionSummaryResource>(
+    "/eval-regression/summary",
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function getEvalRuns(apiBaseUrl?: string) {
-  return fetchApi<EvalRunResource[]>("/eval-runs", apiBaseUrl);
+export async function getEvalRuns(apiBaseUrl?: string, accessToken?: string) {
+  return fetchApi<EvalRunResource[]>("/eval-runs", apiBaseUrl, accessToken);
 }
 
-export async function getEvalRunComparison(evalRunId: string, apiBaseUrl?: string) {
+export async function getEvalRunComparison(
+  evalRunId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
   return fetchApi<EvalRegressionSummaryResource>(
     `/eval-runs/${evalRunId}/comparison`,
     apiBaseUrl,
+    accessToken,
   );
 }
 
-export async function getEvalCaseHistory(caseId: string, apiBaseUrl?: string) {
-  return fetchApi<EvalResultSnapshotResource[]>(`/eval-cases/${caseId}/history`, apiBaseUrl);
+export async function getEvalCaseHistory(
+  caseId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<EvalResultSnapshotResource[]>(
+    `/eval-cases/${caseId}/history`,
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function runEvalCase(caseId: string, apiBaseUrl?: string) {
-  return postApi<EvalResultResource>(`/eval-cases/${caseId}/run`, undefined, apiBaseUrl);
+export async function runEvalCase(caseId: string, apiBaseUrl?: string, accessToken?: string) {
+  return postApi<EvalResultResource>(
+    `/eval-cases/${caseId}/run`,
+    undefined,
+    apiBaseUrl,
+    accessToken,
+  );
 }
 
-export async function runAllEvalCases(apiBaseUrl?: string) {
-  return postApi<EvalResultResource[]>("/eval-runs", undefined, apiBaseUrl);
+export async function runAllEvalCases(apiBaseUrl?: string, accessToken?: string) {
+  return postApi<EvalResultResource[]>("/eval-runs", undefined, apiBaseUrl, accessToken);
 }
