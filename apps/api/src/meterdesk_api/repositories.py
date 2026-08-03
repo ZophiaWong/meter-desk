@@ -15,6 +15,7 @@ from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.schemas import (
     AgentRunSummary,
+    ApprovalDecisionActor,
     ApprovalSummary,
     BillingEvidence,
     EvalCaseSummary,
@@ -187,7 +188,8 @@ class MeterDeskRepository(Protocol):
         self,
         *,
         approval_id: str,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> tuple[ApprovalSummary, MockMutationSummary]: ...
 
@@ -195,7 +197,8 @@ class MeterDeskRepository(Protocol):
         self,
         *,
         approval_id: str,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalSummary: ...
 
@@ -603,24 +606,38 @@ class InMemoryMeterDeskRepository:
         self,
         *,
         approval_id: str,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> tuple[ApprovalSummary, MockMutationSummary]:
         current = await self.get_approval(approval_id)
-        existing = await self.get_mock_mutation_by_approval(approval_id)
-        if existing is not None:
-            approval = current.model_copy(
-                update={
-                    "status": "approved",
-                    "decision": "approved",
-                    "decided_at": _now(),
-                    "decided_by": decided_by,
-                    "decision_note": decision_note,
-                    "blocker": "Approved; mock mutation executed",
-                }
+        if current is None:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="approval.not_found",
+                message="Approval request not found.",
             )
-            self._replace_approval(approval)
-            return approval, existing
+        existing = await self.get_mock_mutation_by_approval(approval_id)
+        if current.status == "rejected":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.terminal_conflict",
+                message="Rejected approval requests cannot be approved.",
+            )
+        if current.status == "approved":
+            if existing is None:
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="approval.audit_incomplete",
+                    message="Approved request is missing its mock mutation.",
+                )
+            return current, existing
+        if existing is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.audit_incomplete",
+                message="Pending request already has a mock mutation.",
+            )
         duplicate_action = await self.get_executed_mock_mutation_by_fingerprint(
             current.action_fingerprint
         )
@@ -632,12 +649,14 @@ class InMemoryMeterDeskRepository:
                 details={"action_fingerprint": current.action_fingerprint},
             )
 
+        decided_at = _now()
         approval = current.model_copy(
             update={
                 "status": "approved",
                 "decision": "approved",
-                "decided_at": _now(),
-                "decided_by": decided_by,
+                "decided_at": decided_at,
+                "decision_actor": decision_actor,
+                "decision_request_id": decision_request_id,
                 "decision_note": decision_note,
                 "blocker": "Approved; mock mutation executed",
             }
@@ -654,8 +673,8 @@ class InMemoryMeterDeskRepository:
             reason=approval.reason,
             action_metadata=approval.action_metadata,
             action_fingerprint=approval.action_fingerprint,
-            executed_at=_now(),
-            executed_at_display=_format_display_time(_now()),
+            executed_at=decided_at,
+            executed_at_display=_format_display_time(decided_at),
         )
         self._mock_mutations.append(mutation)
         return approval, mutation
@@ -664,15 +683,32 @@ class InMemoryMeterDeskRepository:
         self,
         *,
         approval_id: str,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalSummary:
-        approval = (await self.get_approval(approval_id)).model_copy(
+        current = await self.get_approval(approval_id)
+        if current is None:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="approval.not_found",
+                message="Approval request not found.",
+            )
+        if current.status == "approved":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.terminal_conflict",
+                message="Approved approval requests cannot be rejected.",
+            )
+        if current.status == "rejected":
+            return current
+        approval = current.model_copy(
             update={
                 "status": "rejected",
                 "decision": "rejected",
                 "decided_at": _now(),
-                "decided_by": decided_by,
+                "decision_actor": decision_actor,
+                "decision_request_id": decision_request_id,
                 "decision_note": decision_note,
                 "blocker": "Rejected by human reviewer; no mock mutation executed",
             }
@@ -1259,7 +1295,11 @@ class SqlAlchemyMeterDeskRepository:
             created_at=_now(),
             decided_at=None,
             decision=None,
-            decided_by=None,
+            decision_actor_subject=None,
+            decision_actor_display_name=None,
+            decision_actor_role=None,
+            decision_actor_source=None,
+            decision_request_id=None,
             decision_note=None,
             seed_marker=None,
         )
@@ -1299,65 +1339,88 @@ class SqlAlchemyMeterDeskRepository:
         self,
         *,
         approval_id: str,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> tuple[ApprovalSummary, MockMutationSummary]:
         from meterdesk_api.models import ApprovalRequest, MockMutation
 
         approval = await self._session.get(ApprovalRequest, approval_id)
+        if approval is None:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="approval.not_found",
+                message="Approval request not found.",
+            )
         mutation = (
             await self._session.execute(
                 select(MockMutation).where(MockMutation.approval_request_id == approval.id).limit(1)
             )
         ).scalar_one_or_none()
-        if mutation is None:
-            duplicate_action = (
-                await self._session.execute(
-                    select(MockMutation)
-                    .where(MockMutation.action_fingerprint == approval.action_fingerprint)
-                    .where(MockMutation.status == "mock_executed")
-                    .limit(1)
-                )
-            ).scalar_one_or_none()
-            if duplicate_action is not None:
+        if approval.status == "rejected":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.terminal_conflict",
+                message="Rejected approval requests cannot be approved.",
+            )
+        if approval.status == "approved":
+            if mutation is None:
                 raise MeterDeskAPIError(
                     status_code=409,
-                    code="mutation.duplicate_action",
-                    message="This financial action has already been executed.",
-                    details={"action_fingerprint": approval.action_fingerprint},
+                    code="approval.audit_incomplete",
+                    message="Approved request is missing its mock mutation.",
                 )
-            approval.status = "approved"
-            approval.decision = "approved"
-            approval.decided_at = _now()
-            approval.decided_by = decided_by
-            approval.decision_note = decision_note
-            approval.blocker = "Approved; mock mutation executed"
-            now = _now()
-            mutation = MockMutation(
-                id=_new_id("MM"),
-                ticket_id=approval.ticket_id,
-                approval_request_id=approval.id,
-                agent_run_id=approval.agent_run_id,
-                mutation_type=approval.action_type,
-                status="mock_executed",
-                amount_cents=approval.amount_cents,
-                amount_display=approval.amount_display,
-                currency=approval.currency,
-                reason=approval.reason,
-                action_metadata=approval.action_metadata,
-                action_fingerprint=approval.action_fingerprint,
-                executed_at=now,
-                executed_at_display=_format_display_time(now),
-                seed_marker=None,
+            return _approval_to_summary(approval), _mutation_to_summary(mutation)
+        if mutation is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.audit_incomplete",
+                message="Pending request already has a mock mutation.",
             )
-            self._session.add(mutation)
-        else:
-            approval.status = "approved"
-            approval.decision = "approved"
-            approval.decided_at = _now()
-            approval.decided_by = decided_by
-            approval.decision_note = decision_note
-            approval.blocker = "Approved; mock mutation executed"
+        duplicate_action = (
+            await self._session.execute(
+                select(MockMutation)
+                .where(MockMutation.action_fingerprint == approval.action_fingerprint)
+                .where(MockMutation.status == "mock_executed")
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if duplicate_action is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="mutation.duplicate_action",
+                message="This financial action has already been executed.",
+                details={"action_fingerprint": approval.action_fingerprint},
+            )
+        now = _now()
+        approval.status = "approved"
+        approval.decision = "approved"
+        approval.decided_at = now
+        approval.decision_actor_subject = decision_actor.subject
+        approval.decision_actor_display_name = decision_actor.display_name
+        approval.decision_actor_role = decision_actor.role
+        approval.decision_actor_source = decision_actor.source
+        approval.decision_request_id = decision_request_id
+        approval.decision_note = decision_note
+        approval.blocker = "Approved; mock mutation executed"
+        mutation = MockMutation(
+            id=_new_id("MM"),
+            ticket_id=approval.ticket_id,
+            approval_request_id=approval.id,
+            agent_run_id=approval.agent_run_id,
+            mutation_type=approval.action_type,
+            status="mock_executed",
+            amount_cents=approval.amount_cents,
+            amount_display=approval.amount_display,
+            currency=approval.currency,
+            reason=approval.reason,
+            action_metadata=approval.action_metadata,
+            action_fingerprint=approval.action_fingerprint,
+            executed_at=now,
+            executed_at_display=_format_display_time(now),
+            seed_marker=None,
+        )
+        self._session.add(mutation)
 
         try:
             await self._session.commit()
@@ -1375,16 +1438,35 @@ class SqlAlchemyMeterDeskRepository:
         self,
         *,
         approval_id: str,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalSummary:
         from meterdesk_api.models import ApprovalRequest
 
         approval = await self._session.get(ApprovalRequest, approval_id)
+        if approval is None:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="approval.not_found",
+                message="Approval request not found.",
+            )
+        if approval.status == "approved":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.terminal_conflict",
+                message="Approved approval requests cannot be rejected.",
+            )
+        if approval.status == "rejected":
+            return _approval_to_summary(approval)
         approval.status = "rejected"
         approval.decision = "rejected"
         approval.decided_at = _now()
-        approval.decided_by = decided_by
+        approval.decision_actor_subject = decision_actor.subject
+        approval.decision_actor_display_name = decision_actor.display_name
+        approval.decision_actor_role = decision_actor.role
+        approval.decision_actor_source = decision_actor.source
+        approval.decision_request_id = decision_request_id
         approval.decision_note = decision_note
         approval.blocker = "Rejected by human reviewer; no mock mutation executed"
         await self._session.commit()
@@ -1750,6 +1832,14 @@ def _eval_snapshot_to_summary(snapshot) -> EvalResultSnapshotSummary:
 
 
 def _approval_to_summary(approval) -> ApprovalSummary:
+    decision_actor = None
+    if approval.decision_actor_source is not None:
+        decision_actor = ApprovalDecisionActor(
+            subject=approval.decision_actor_subject,
+            display_name=approval.decision_actor_display_name,
+            role=approval.decision_actor_role,
+            source=approval.decision_actor_source,
+        )
     return ApprovalSummary(
         id=approval.id,
         ticket_id=approval.ticket_id,
@@ -1770,7 +1860,8 @@ def _approval_to_summary(approval) -> ApprovalSummary:
         action_fingerprint=approval.action_fingerprint,
         decided_at=approval.decided_at,
         decision=approval.decision,
-        decided_by=approval.decided_by,
+        decision_actor=decision_actor,
+        decision_request_id=approval.decision_request_id,
         decision_note=approval.decision_note,
     )
 

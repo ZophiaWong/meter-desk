@@ -34,13 +34,16 @@ foundational specs and current code.
 The active phase is [Post-M10 Hardening](hardening/roadmap.md). Its purpose is to add repeatable
 engineering evidence without broadening MeterDesk into a generic platform or real billing system.
 
-The first workstream is
-[P0-01 CI and Runtime Baseline](hardening/p0-01-ci-runtime-baseline.md). Its workflow, non-root
-images, five-service Compose runtime, smoke harness, Make targets, runbook, and link checker are
-implemented on the candidate branch. Real API/Web builds and repeated isolated no-key smoke runs are
-locally verified, as are branch-wide lint, test, and database checks. P0-01 remains the active
-workstream while the first successful four-job GitHub Actions evidence is promoted, the resulting
-final head is reverified, and the PR is merged. Later workstreams cover trusted approval identity,
+[P0-01 CI and Runtime Baseline](hardening/p0-01-ci-runtime-baseline.md) is merged and supplies the
+workflow, non-root images, five-service Compose runtime, smoke harness, Make targets, runbook, and
+link checker.
+
+The active workstream is
+[P0-02 Authentication and Approval RBAC](hardening/p0-02-authentication-approval-rbac.md). Its local
+demo JWT chain, server-owned role mapping, protected API boundary, trusted approval actor migration,
+Next.js cookie/session flow, and role-aware UI are implemented on the candidate branch. Local unit,
+lint, type, build, and offline migration checks are in progress or recorded in the evidence matrix;
+real Postgres and container reruns remain required before completion. Later workstreams cover
 persistence lifecycle, workflow state, recoverable execution, provider resilience, operational
 evidence, a repository-local networked mock tool boundary, auditable context, and focused security
 and failure regression checks.

@@ -1,14 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import {
   approveRequest,
+  MeterDeskApiError,
   rejectRequest,
   runAllEvalCases,
   runEvalCase,
   startAgentRun,
 } from "@/lib/meterdesk-api";
+import { clearDemoSessionCookie, requireDemoSession } from "@/lib/session";
 
 const DEFAULT_TICKET_ID = "TCK-1042";
 
@@ -17,7 +20,10 @@ export async function startAgentRunAction(formData: FormData) {
   if (!ticketId) {
     throw new Error("ticketId is required");
   }
-  await startAgentRun(ticketId);
+  const returnTo = ticketReturnTo(ticketId);
+  await runAuthenticatedMutation(returnTo, (accessToken) =>
+    startAgentRun(ticketId, undefined, accessToken),
+  );
   revalidatePath("/");
   revalidatePath(`/?ticket=${ticketId}`);
   revalidatePath("/approvals");
@@ -35,7 +41,11 @@ export async function approveRequestAction(formData: FormData) {
     throw new Error("approvalId is required");
   }
   const ticketId = String(formData.get("ticketId") ?? "");
-  await approveRequest(approvalId);
+  const returnTo = ticketId ? ticketReturnTo(ticketId) : "/approvals";
+  const decisionNote = optionalFormValue(formData, "decisionNote");
+  await runAuthenticatedMutation(returnTo, (accessToken) =>
+    approveRequest(approvalId, undefined, accessToken, decisionNote),
+  );
   revalidatePath("/");
   if (ticketId) {
     revalidatePath(`/?ticket=${ticketId}`);
@@ -49,7 +59,11 @@ export async function rejectRequestAction(formData: FormData) {
     throw new Error("approvalId is required");
   }
   const ticketId = String(formData.get("ticketId") ?? "");
-  await rejectRequest(approvalId);
+  const returnTo = ticketId ? ticketReturnTo(ticketId) : "/approvals";
+  const decisionNote = optionalFormValue(formData, "decisionNote");
+  await runAuthenticatedMutation(returnTo, (accessToken) =>
+    rejectRequest(approvalId, undefined, accessToken, decisionNote),
+  );
   revalidatePath("/");
   if (ticketId) {
     revalidatePath(`/?ticket=${ticketId}`);
@@ -58,7 +72,9 @@ export async function rejectRequestAction(formData: FormData) {
 }
 
 export async function runAllEvalCasesAction() {
-  await runAllEvalCases();
+  await runAuthenticatedMutation("/eval-lab", (accessToken) =>
+    runAllEvalCases(undefined, accessToken),
+  );
   revalidatePath("/eval-lab");
 }
 
@@ -67,6 +83,44 @@ export async function rerunEvalCaseAction(formData: FormData) {
   if (!caseId) {
     throw new Error("caseId is required");
   }
-  await runEvalCase(caseId);
+  await runAuthenticatedMutation("/eval-lab", (accessToken) =>
+    runEvalCase(caseId, undefined, accessToken),
+  );
   revalidatePath("/eval-lab");
+}
+
+async function runAuthenticatedMutation(
+  returnTo: string,
+  mutation: (accessToken: string) => Promise<unknown>,
+): Promise<void> {
+  const session = await requireDemoSession(returnTo);
+  try {
+    await mutation(session.accessToken);
+  } catch (error) {
+    if (error instanceof MeterDeskApiError && error.status === 401) {
+      await clearDemoSessionCookie();
+      const params = new URLSearchParams({
+        reason: "session-expired",
+        returnTo,
+      });
+      redirect(`/login?${params.toString()}`);
+    }
+    if (error instanceof MeterDeskApiError && error.status === 403) {
+      const params = new URLSearchParams({ returnTo });
+      if (error.requestId) {
+        params.set("requestId", error.requestId);
+      }
+      redirect(`/forbidden?${params.toString()}`);
+    }
+    throw error;
+  }
+}
+
+function ticketReturnTo(ticketId: string): string {
+  return `/?${new URLSearchParams({ ticket: ticketId }).toString()}`;
+}
+
+function optionalFormValue(formData: FormData, name: string): string | undefined {
+  const value = String(formData.get(name) ?? "").trim();
+  return value || undefined;
 }

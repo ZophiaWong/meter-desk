@@ -44,10 +44,35 @@ must repeat them before merge.
 The runtime adds packaging and orchestration only. FastAPI still owns business and governance
 authority; no agent, approval, mutation, trace, or eval contract moved into Compose or the images.
 
+## P0-02 Local Demo Authentication (Implemented on Candidate Branch)
+
+FastAPI now owns a local/demo identity boundary in addition to business authority. A static registry
+maps `demo-support-operator`, `demo-approver`, and `demo-admin` to their server-side roles. Public
+login issues an eight-hour HS256 JWT containing fixed issuer, audience, subject, issued-at, expiry,
+and token-ID claims; role and display name are deliberately absent and are resolved from the
+registry on every authenticated request.
+
+Next.js is the browser-facing session boundary. Server actions place the token in an `HttpOnly`,
+`SameSite=Lax`, path-wide cookie, add `Secure` for HTTPS, validate it through `GET /auth/me`, and
+forward it to FastAPI as a Bearer token. The cookie is shared across tabs, but there is no
+server-side session store, refresh flow, user table, or external identity provider.
+
+All business resource routes require authentication. Backend permissions are: all roles may read;
+support operator and admin may start Agent runs; approver and admin may decide approvals; only admin
+may run Evals. Health, API documentation, demo identity listing, and demo login stay public. Every
+response carries `X-Request-ID`; structured API errors repeat the ID in their body.
+
+Approval decisions no longer accept a caller-selected actor. Postgres stores the verified actor
+subject, display name, role, source, and decision request ID. Seed-owned terminal history is marked
+`seed_fixture`; unknown migrated external history is marked `legacy_unverified`. The demo
+authentication configuration fails closed when the application environment is production.
+
 ## Boundary Rules
 
-- Next.js owns presentation, client-side interaction, and API consumption.
-- FastAPI owns business workflows, data validation, agent orchestration, tool execution, approval rules, and eval execution.
+- Next.js owns presentation, client-side interaction, the `HttpOnly` demo cookie, and server-side
+  Bearer forwarding.
+- FastAPI owns token issuance/verification, role enforcement, business workflows, data validation,
+  agent orchestration, tool execution, approval rules, and eval execution.
 - Postgres owns durable state and audit history.
 - Mock external systems are internal modules or seeded tables, not real provider integrations.
 - Agent tools access data through backend-controlled interfaces, not directly from frontend components.
@@ -59,12 +84,13 @@ The Duplicate Charge golden path should follow this flow:
 
 1. The frontend opens a ticket and requests current ticket context from FastAPI.
 2. FastAPI reads ticket, account, invoice, charge, credit, and policy data from Postgres-backed mock systems.
-3. The operator starts an agent run.
+3. An authenticated support operator or admin starts an agent run.
 4. The agent uses permission-scoped backend tools.
 5. Each tool call writes a trace envelope with input summary, output summary, permission metadata, and evidence references.
 6. The agent returns a recommendation, internal resolution draft, and customer reply draft.
 7. If the recommendation includes a refund or credit, FastAPI creates an approval request.
-8. A human approval decision updates approval state.
+8. An authenticated approver or admin records a decision; FastAPI persists the verified actor and
+   request ID with approval state.
 9. Approved actions create mock mutations and audit records.
 10. Eval runs reuse stored cases and inspect both final outcome and trace behavior.
 
@@ -93,6 +119,8 @@ V1 APIs should be resource-oriented and boring:
 - approval APIs for queue, approve, and reject actions.
 - eval APIs for listing cases, running cases, and reading results.
 - mock data APIs only where the UI needs direct read access.
+- public demo identity/login APIs and an authenticated current-principal API.
+- consistent `401` authentication and `403` authorization errors with request correlation.
 
 Do not design a public external API in v1. Internal API shape should serve the app and remain easy to change while the product is still forming.
 
@@ -110,11 +138,11 @@ Mock systems must not call real Stripe, payment, support, messaging, or accounti
 
 ## Post-M10 Hardening Direction
 
-P0-01 implemented the runtime packaging described above. The remaining active hardening roadmap
-proposes these later architecture changes; they are target directions, not claims about the current
+P0-01 implemented the runtime packaging described above, and P0-02 implements the local demo
+authentication boundary on its candidate branch. The remaining active hardening roadmap proposes
+these later architecture changes; they are target directions, not claims about the current
 implementation:
 
-- derive approval identity from a server-verified local/demo principal with role enforcement.
 - manage the async database engine and session factory through FastAPI lifespan.
 - separate case workflow state from HTTP request lifetime with explicit transitions, retries,
   cancellation, checkpoints, and idempotency.

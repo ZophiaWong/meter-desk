@@ -1,16 +1,27 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import type { DemoPrincipal } from "@/lib/demo-auth";
+import { formatDemoRole } from "@/lib/demo-auth";
+import { logoutAction } from "@/lib/auth-actions";
 import { NAV_ITEMS, type ServiceSurface } from "@/lib/meterdesk-view";
 import type { SystemStatus } from "@/lib/status";
 
 type AppShellProps = {
   activeSurface: ServiceSurface["label"];
   children: ReactNode;
+  currentPrincipal: DemoPrincipal;
+  returnTo?: string;
   status: SystemStatus;
 };
 
-export function AppShell({ activeSurface, children, status }: AppShellProps) {
+export function AppShell({
+  activeSurface,
+  children,
+  currentPrincipal,
+  returnTo = "/",
+  status,
+}: AppShellProps) {
   return (
     <div className="min-h-screen bg-[#f7f8fb] text-meter-ink">
       <header className="sticky top-0 z-30 border-b border-meter-line bg-white/95 backdrop-blur">
@@ -44,6 +55,23 @@ export function AppShell({ activeSurface, children, status }: AppShellProps) {
                 );
               })}
             </nav>
+            <div className="flex flex-wrap items-center gap-2 border-l border-meter-line pl-3 text-xs">
+              <div>
+                <p className="font-semibold text-meter-ink">{currentPrincipal.display_name}</p>
+                <p className="text-slate-500">{formatDemoRole(currentPrincipal.role)}</p>
+              </div>
+              <Link
+                className="font-semibold text-meter-blue"
+                href={`/login?mode=switch&returnTo=${encodeURIComponent(returnTo)}`}
+              >
+                Switch identity
+              </Link>
+              <form action={logoutAction}>
+                <button className="font-semibold text-slate-600" type="submit">
+                  Log out
+                </button>
+              </form>
+            </div>
             <StatusStrip status={status} />
           </div>
         </div>

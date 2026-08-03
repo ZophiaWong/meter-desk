@@ -3,7 +3,7 @@ from __future__ import annotations
 from meterdesk_api.agent.governance import GovernanceKernel
 from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.repositories import MeterDeskRepository
-from meterdesk_api.schemas import ApprovalDecisionResponse
+from meterdesk_api.schemas import ApprovalDecisionActor, ApprovalDecisionResponse
 
 
 class ApprovalDecisionError(MeterDeskAPIError):
@@ -39,12 +39,14 @@ class ApprovalDecisionService:
         self,
         approval_id: str,
         *,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalDecisionResponse:
         return await GovernanceKernel(self._repository).execute_approved_mock_refund(
             approval_id=approval_id,
-            decided_by=decided_by,
+            decision_actor=decision_actor,
+            decision_request_id=decision_request_id,
             decision_note=decision_note,
         )
 
@@ -52,7 +54,8 @@ class ApprovalDecisionService:
         self,
         approval_id: str,
         *,
-        decided_by: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalDecisionResponse:
         approval = await self._repository.get_approval(approval_id)
@@ -65,7 +68,8 @@ class ApprovalDecisionService:
 
         approval = await self._repository.reject_request(
             approval_id=approval_id,
-            decided_by=decided_by,
+            decision_actor=decision_actor,
+            decision_request_id=decision_request_id,
             decision_note=decision_note,
         )
         return ApprovalDecisionResponse(approval=approval, mock_mutation=None)

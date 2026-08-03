@@ -20,6 +20,7 @@ type EvalRunFormProps = {
   action: EvalRunAction;
   ariaLabel?: string;
   defaultLabel: string;
+  disabledReason?: string;
   formClassName?: string;
   hiddenFields?: HiddenField[];
   pendingLabel: string;
@@ -42,6 +43,7 @@ export function EvalRunForm({
   action,
   ariaLabel,
   defaultLabel,
+  disabledReason,
   formClassName,
   hiddenFields = [],
   pendingLabel,
@@ -67,6 +69,7 @@ export function EvalRunForm({
       <EvalRunSubmitButton
         ariaLabel={ariaLabel}
         defaultLabel={defaultLabel}
+        disabledReason={disabledReason}
         pendingLabel={pendingLabel}
         runKey={runKey}
         variant={variant}
@@ -78,6 +81,7 @@ export function EvalRunForm({
 function EvalRunSubmitButton({
   ariaLabel,
   defaultLabel,
+  disabledReason,
   pendingLabel,
   runKey,
   variant,
@@ -92,7 +96,8 @@ function EvalRunSubmitButton({
     <button
       aria-label={showPending ? undefined : ariaLabel}
       className={buttonClass(variant)}
-      disabled={isLocked || pending}
+      disabled={Boolean(disabledReason) || isLocked || pending}
+      title={disabledReason}
       type="submit"
     >
       {showPending ? (

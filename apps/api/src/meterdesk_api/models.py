@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -187,6 +187,35 @@ class ToolTrace(SeededRow, Base):
 
 class ApprovalRequest(SeededRow, Base):
     __tablename__ = "approval_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "decision_actor_source IS NULL OR decision_actor_source IN "
+            "('demo_session', 'seed_fixture', 'legacy_unverified')",
+            name="ck_approval_actor_source",
+        ),
+        CheckConstraint(
+            "decision_actor_role IS NULL OR decision_actor_role IN "
+            "('support_operator', 'approver', 'admin')",
+            name="ck_approval_actor_role",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND decided_at IS NULL AND decision IS NULL "
+            "AND decision_actor_subject IS NULL AND decision_actor_display_name IS NULL "
+            "AND decision_actor_role IS NULL AND decision_actor_source IS NULL "
+            "AND decision_request_id IS NULL) OR "
+            "(status IN ('approved', 'rejected') AND decided_at IS NOT NULL "
+            "AND decision = status AND decision_actor_source = 'legacy_unverified' "
+            "AND decision_actor_subject IS NULL AND decision_actor_role IS NULL "
+            "AND decision_request_id IS NULL) OR "
+            "(status IN ('approved', 'rejected') AND decided_at IS NOT NULL "
+            "AND decision = status AND decision_actor_source IN ('demo_session', 'seed_fixture') "
+            "AND decision_actor_subject IS NOT NULL "
+            "AND decision_actor_display_name IS NOT NULL "
+            "AND decision_actor_role IN ('approver', 'admin') "
+            "AND decision_request_id IS NOT NULL)",
+            name="ck_approval_decision_audit_shape",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
@@ -206,7 +235,11 @@ class ApprovalRequest(SeededRow, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     decision: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    decided_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decision_actor_subject: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decision_actor_display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    decision_actor_role: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decision_actor_source: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    decision_request_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

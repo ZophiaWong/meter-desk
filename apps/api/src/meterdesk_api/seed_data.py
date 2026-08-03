@@ -15,6 +15,7 @@ from meterdesk_api.financial_actions import build_action_fingerprint
 from meterdesk_api.repositories import InMemoryMeterDeskRepository
 from meterdesk_api.schemas import (
     AgentRunSummary,
+    ApprovalDecisionActor,
     ApprovalSummary,
     BillingEvidence,
     ChargeEvidence,
@@ -1198,7 +1199,13 @@ APPROVALS: list[ApprovalSummary] = [
         ),
         decided_at=utc(2026, 5, 28, 15, 44),
         decision="approved",
-        decided_by="Demo Operator",
+        decision_actor=ApprovalDecisionActor(
+            subject="demo-approver",
+            display_name="Demo Approver",
+            role="approver",
+            source="seed_fixture",
+        ),
+        decision_request_id="req_seed_eval_cr_003_hist",
         decision_note="Historical seeded approval.",
     ),
 ]

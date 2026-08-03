@@ -1,3 +1,4 @@
+import type { DemoPrincipal } from "@/lib/demo-auth";
 import type { WorkbenchScenario } from "@/lib/meterdesk-view";
 
 import { BillingEvidence } from "./billing-evidence";
@@ -7,10 +8,11 @@ import { SafetyRail } from "./safety-rail";
 import { TicketRail } from "./ticket-rail";
 
 type TicketWorkbenchProps = {
+  currentPrincipal: DemoPrincipal;
   scenario: WorkbenchScenario;
 };
 
-export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
+export function TicketWorkbench({ currentPrincipal, scenario }: TicketWorkbenchProps) {
   return (
     <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)_340px] xl:items-start">
       <TicketRail tickets={scenario.tickets} />
@@ -24,7 +26,7 @@ export function TicketWorkbench({ scenario }: TicketWorkbenchProps) {
         />
       </section>
 
-      <SafetyRail scenario={scenario} />
+      <SafetyRail currentPrincipal={currentPrincipal} scenario={scenario} />
 
       <section className="min-w-0 space-y-5 xl:col-start-2">
         <BillingEvidence evidence={scenario.evidence} />
@@ -62,7 +64,7 @@ function GoldenPathStrip() {
   );
 }
 
-function TicketHeader({ scenario }: TicketWorkbenchProps) {
+function TicketHeader({ scenario }: Pick<TicketWorkbenchProps, "scenario">) {
   return (
     <section className="rounded-md border border-meter-line bg-white p-5">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -83,7 +85,7 @@ function TicketHeader({ scenario }: TicketWorkbenchProps) {
   );
 }
 
-function InternalResolution({ scenario }: TicketWorkbenchProps) {
+function InternalResolution({ scenario }: Pick<TicketWorkbenchProps, "scenario">) {
   return (
     <section className="rounded-md border border-meter-line bg-white p-5">
       <h2 className="text-lg font-semibold">Internal resolution</h2>

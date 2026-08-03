@@ -25,10 +25,45 @@ export function ProofAudit({ scenario }: ProofAuditProps) {
         </p>
       </div>
       <div className="mt-4 space-y-3">
+        <ApprovalDecisionAudit scenario={scenario} />
         <TraceDiagnostics traces={scenario.traces} />
         <GovernanceRulesDrawer scenario={scenario} />
       </div>
     </section>
+  );
+}
+
+function ApprovalDecisionAudit({ scenario }: ProofAuditProps) {
+  const approval = scenario.approval;
+  if (!approval?.decisionActorSummary) {
+    return null;
+  }
+
+  return (
+    <details className="rounded-md border border-meter-line bg-[#fbfcfe] p-3">
+      <summary className="cursor-pointer list-none text-sm font-semibold text-meter-blue">
+        Approval decision audit
+      </summary>
+      <dl className="mt-4 grid gap-3 text-xs text-slate-600 md:grid-cols-2">
+        <AuditField label="Actor" value={approval.decisionActorSummary} />
+        <AuditField label="Actor subject" value={approval.decisionActorSubject} />
+        <AuditField label="Actor source" value={approval.decisionActorSource} />
+        <AuditField label="Request ID" value={approval.decisionRequestId} />
+        <AuditField label="Decision note" value={approval.decisionNote} />
+      </dl>
+    </details>
+  );
+}
+
+function AuditField({ label, value }: { label: string; value: string | null }) {
+  if (!value) {
+    return null;
+  }
+  return (
+    <div>
+      <dt className="font-semibold text-slate-500">{label}</dt>
+      <dd className="mt-1 break-all font-medium text-slate-800">{value}</dd>
+    </div>
   );
 }
 

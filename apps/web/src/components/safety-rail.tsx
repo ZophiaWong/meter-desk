@@ -3,13 +3,21 @@ import {
   rejectRequestAction,
   startAgentRunAction,
 } from "@/lib/meterdesk-actions";
+import {
+  AGENT_RUN_PERMISSION_EXPLANATION,
+  APPROVAL_PERMISSION_EXPLANATION,
+  canDecideApproval,
+  canStartAgentRun,
+  type DemoPrincipal,
+} from "@/lib/demo-auth";
 import type { WorkbenchScenario } from "@/lib/meterdesk-view";
 
 type SafetyRailProps = {
+  currentPrincipal: DemoPrincipal;
   scenario: WorkbenchScenario;
 };
 
-export function SafetyRail({ scenario }: SafetyRailProps) {
+export function SafetyRail({ currentPrincipal, scenario }: SafetyRailProps) {
   return (
     <section
       aria-labelledby="safety-rail-heading"
@@ -22,8 +30,8 @@ export function SafetyRail({ scenario }: SafetyRailProps) {
           Safety rail
         </h2>
       </div>
-      <SafetySummaryCard scenario={scenario} />
-      <RunStateCard scenario={scenario} />
+      <SafetySummaryCard currentPrincipal={currentPrincipal} scenario={scenario} />
+      <RunStateCard currentPrincipal={currentPrincipal} scenario={scenario} />
       <ComplianceCard scenario={scenario} />
       <MutationResultList scenario={scenario} />
       <DraftReply scenario={scenario} />
@@ -31,7 +39,7 @@ export function SafetyRail({ scenario }: SafetyRailProps) {
   );
 }
 
-function ComplianceCard({ scenario }: SafetyRailProps) {
+function ComplianceCard({ scenario }: Pick<SafetyRailProps, "scenario">) {
   if (!scenario.compliance) {
     return null;
   }
@@ -58,7 +66,7 @@ function ComplianceCard({ scenario }: SafetyRailProps) {
   );
 }
 
-function SafetySummaryCard({ scenario }: SafetyRailProps) {
+function SafetySummaryCard({ currentPrincipal, scenario }: SafetyRailProps) {
   if (!scenario.approval) {
     return (
       <section
@@ -79,6 +87,7 @@ function SafetySummaryCard({ scenario }: SafetyRailProps) {
     );
   }
   const isPending = scenario.approval.status.toLowerCase() === "pending";
+  const canDecide = canDecideApproval(currentPrincipal);
   const tone = approvalToneClass(scenario.approval.status);
   const hasMutation = scenario.mutations.length > 0;
 
@@ -111,13 +120,19 @@ function SafetySummaryCard({ scenario }: SafetyRailProps) {
       <p className="mt-3 text-sm leading-6 text-slate-700">{scenario.approval.reason}</p>
       <p className={`mt-3 text-sm font-medium ${tone.label}`}>{scenario.approval.blocker}</p>
       <p className="mt-2 text-xs text-slate-500">Policy: {scenario.approval.policyCitation}</p>
+      {!isPending && scenario.approval.decisionActorSummary ? (
+        <p className="mt-3 text-xs font-semibold text-slate-700">
+          Decided by {scenario.approval.decisionActorSummary}
+        </p>
+      ) : null}
       <div className="mt-4 grid grid-cols-2 gap-2">
         <form action={approveRequestAction}>
           <input name="approvalId" type="hidden" value={scenario.approval.id} />
           <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
-            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:text-slate-400"
-            disabled={!isPending}
+            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:cursor-not-allowed disabled:text-slate-400"
+            disabled={!isPending || !canDecide}
+            title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
             type="submit"
           >
             Approve
@@ -127,8 +142,9 @@ function SafetySummaryCard({ scenario }: SafetyRailProps) {
           <input name="approvalId" type="hidden" value={scenario.approval.id} />
           <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
-            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:text-slate-400"
-            disabled={!isPending}
+            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:cursor-not-allowed disabled:text-slate-400"
+            disabled={!isPending || !canDecide}
+            title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
             type="submit"
           >
             Reject
@@ -139,7 +155,7 @@ function SafetySummaryCard({ scenario }: SafetyRailProps) {
   );
 }
 
-function RunStateCard({ scenario }: SafetyRailProps) {
+function RunStateCard({ currentPrincipal, scenario }: SafetyRailProps) {
   const failed = scenario.run?.status.toLowerCase() === "failed";
 
   return (
@@ -172,7 +188,11 @@ function RunStateCard({ scenario }: SafetyRailProps) {
         <form action={startAgentRunAction} className="mt-4">
           <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
-            className="h-10 rounded-md bg-meter-blue px-4 text-sm font-semibold text-white"
+            className="h-10 rounded-md bg-meter-blue px-4 text-sm font-semibold text-white disabled:cursor-not-allowed"
+            disabled={!canStartAgentRun(currentPrincipal)}
+            title={
+              !canStartAgentRun(currentPrincipal) ? AGENT_RUN_PERMISSION_EXPLANATION : undefined
+            }
             type="submit"
           >
             Run investigation
@@ -183,7 +203,7 @@ function RunStateCard({ scenario }: SafetyRailProps) {
   );
 }
 
-function MutationResultList({ scenario }: SafetyRailProps) {
+function MutationResultList({ scenario }: Pick<SafetyRailProps, "scenario">) {
   if (scenario.mutations.length === 0) {
     return (
       <section
@@ -221,7 +241,7 @@ function MutationResultList({ scenario }: SafetyRailProps) {
   );
 }
 
-function DraftReply({ scenario }: SafetyRailProps) {
+function DraftReply({ scenario }: Pick<SafetyRailProps, "scenario">) {
   if (!scenario.drafts) {
     return (
       <section className="mt-5 rounded-md border border-meter-line bg-[#f8fafc] p-4">

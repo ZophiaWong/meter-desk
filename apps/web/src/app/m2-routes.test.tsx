@@ -3,8 +3,23 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const adminSession = {
+  accessToken: "admin-session-token",
+  principal: {
+    subject: "demo-admin",
+    display_name: "Demo Admin",
+    role: "admin" as const,
+  },
+};
+
+vi.mock("@/lib/session", () => ({
+  handleProtectedApiError: vi.fn(),
+  requireDemoSession: vi.fn(async () => adminSession),
+}));
+
 import ApprovalsPage from "./approvals/page";
 import EvalLabPage from "./eval-lab/page";
+import { handleProtectedApiError, requireDemoSession } from "@/lib/session";
 
 const tickets = [
   {
@@ -36,9 +51,12 @@ const approvals = [
       invoice_id: "INV-2026-0418",
       target_charge_id: "ch_2026_0418_B",
     },
+    action_fingerprint:
+      "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
     decided_at: null,
     decision: null,
-    decided_by: null,
+    decision_actor: null,
+    decision_request_id: null,
     decision_note: null,
   },
 ];
@@ -51,7 +69,13 @@ const terminalApprovals = [
     blocker: "Approved; mock mutation executed",
     decided_at: "2026-06-05T12:10:00Z",
     decision: "approved",
-    decided_by: "Demo Operator",
+    decision_actor: {
+      subject: "demo-approver",
+      display_name: "Demo Approver",
+      role: "approver",
+      source: "demo_session",
+    },
+    decision_request_id: "req_approved_demo",
     decision_note: "Approved for demo.",
   },
   {
@@ -61,7 +85,13 @@ const terminalApprovals = [
     blocker: "Rejected by human reviewer; no mock mutation executed",
     decided_at: "2026-06-05T12:11:00Z",
     decision: "rejected",
-    decided_by: "Demo Operator",
+    decision_actor: {
+      subject: "demo-approver",
+      display_name: "Demo Approver",
+      role: "approver",
+      source: "demo_session",
+    },
+    decision_request_id: "req_rejected_demo",
     decision_note: "Rejected for demo.",
   },
 ];
@@ -188,13 +218,13 @@ const evalRegressionSummary = {
 };
 
 afterEach(() => {
+  vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
 
 function mockApi(payloads: Record<string, unknown>) {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
       const rawUrl = input instanceof Request ? input.url : input.toString();
       const url = new URL(rawUrl);
       const payload =
@@ -207,17 +237,22 @@ function mockApi(payloads: Record<string, unknown>) {
         return new Response("Not found", { status: 404 });
       }
 
+      if (payload instanceof Response) {
+        return payload;
+      }
+
       return new Response(JSON.stringify(payload), {
         headers: { "Content-Type": "application/json" },
         status: 200,
       });
-    }),
-  );
+    });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
 }
 
 describe("M3 API-backed routes", () => {
   it("renders pending approval queue entries from FastAPI resources", async () => {
-    mockApi({
+    const fetchMock = mockApi({
       "/approvals": approvals,
       "/tickets": tickets,
     });
@@ -240,6 +275,17 @@ describe("M3 API-backed routes", () => {
     expect(screen.getByText("Mutation blocked until human approval")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+    expect(screen.getByText("Demo Admin")).toBeInTheDocument();
+    const protectedCalls = fetchMock.mock.calls.filter(([input]) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      return url.pathname === "/approvals" || url.pathname === "/tickets";
+    });
+    expect(protectedCalls).toHaveLength(2);
+    for (const [, init] of protectedCalls) {
+      expect(init).toMatchObject({
+        headers: { Authorization: "Bearer admin-session-token" },
+      });
+    }
   });
 
   it("renders approved and rejected approval queue states", async () => {
@@ -258,6 +304,66 @@ describe("M3 API-backed routes", () => {
     expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "Approve" })[0]).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Reject" })[1]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Approve" })[0]).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getAllByRole("button", { name: "Reject" })[1]).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getAllByText("Decided by Demo Approver (Approver)")).toHaveLength(2);
+  });
+
+  it("keeps approval controls visible but disabled for the support operator", async () => {
+    vi.mocked(requireDemoSession).mockResolvedValueOnce({
+      accessToken: "operator-token",
+      principal: {
+        subject: "demo-support-operator",
+        display_name: "Demo Support Operator",
+        role: "support_operator",
+      },
+    });
+    mockApi({
+      "/approvals": approvals,
+      "/tickets": tickets,
+    });
+
+    render(await ApprovalsPage({}));
+
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getByRole("button", { name: "Reject" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveAttribute(
+      "title",
+      "Requires the approver or admin role",
+    );
+  });
+
+  it("recovers from a protected approval read 401 instead of rendering a data error", async () => {
+    vi.mocked(handleProtectedApiError).mockImplementationOnce(() => {
+      throw new Error("SESSION_RECOVERY:/approvals");
+    });
+    mockApi({
+      "/approvals": new Response(
+        JSON.stringify({
+          code: "auth.invalid_token",
+          message: "Invalid token",
+          details: {},
+          request_id: "req_expired",
+        }),
+        { headers: { "Content-Type": "application/json" }, status: 401 },
+      ),
+      "/tickets": tickets,
+    });
+
+    await expect(ApprovalsPage({})).rejects.toThrow("SESSION_RECOVERY:/approvals");
+    expect(handleProtectedApiError).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "auth.invalid_token", status: 401 }),
+      "/approvals",
+    );
   });
 
   it("renders all nine eval cases with no preview result before M4 runs", async () => {
@@ -282,6 +388,34 @@ describe("M3 API-backed routes", () => {
     expect(screen.getAllByText("No run yet")).toHaveLength(9);
     expect(screen.getByRole("button", { name: "Run all evals" })).toBeEnabled();
     expect(screen.getAllByRole("button", { name: /^Rerun / })).toHaveLength(9);
+  });
+
+  it("keeps Eval controls visible but disabled for a non-admin", async () => {
+    vi.mocked(requireDemoSession).mockResolvedValueOnce({
+      accessToken: "approver-token",
+      principal: {
+        subject: "demo-approver",
+        display_name: "Demo Approver",
+        role: "approver",
+      },
+    });
+    mockApi({
+      "/eval-cases": evalCases,
+      "/eval-results": [],
+      "/eval-regression/summary": evalRegressionSummary,
+    });
+
+    render(await EvalLabPage());
+
+    expect(screen.getByRole("button", { name: "Run all evals" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run all evals" })).toHaveAttribute(
+      "title",
+      "Requires the admin role",
+    );
+    expect(screen.getAllByRole("button", { name: /^Rerun / })).toHaveLength(9);
+    for (const button of screen.getAllByRole("button", { name: /^Rerun / })) {
+      expect(button).toBeDisabled();
+    }
   });
 
   it("renders M4 eval result details and compact trace references", async () => {

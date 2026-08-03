@@ -7,6 +7,82 @@ afterEach(() => {
 });
 
 describe("meterdesk-view", () => {
+  it("forwards the verified session token to every protected Workbench read", async () => {
+    const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      const rawUrl = input instanceof Request ? input.url : input.toString();
+      const payload = payloads[new URL(rawUrl).pathname];
+      if (payload === undefined) {
+        return new Response("Not found", { status: 404 });
+      }
+      return new Response(JSON.stringify(payload), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    await getDefaultWorkbenchScenario("verified-session-token");
+
+    expect(fetchSpy).toHaveBeenCalled();
+    for (const [, init] of fetchSpy.mock.calls) {
+      expect(init).toMatchObject({
+        headers: { Authorization: "Bearer verified-session-token" },
+      });
+    }
+  });
+
+  it("maps a trusted terminal approval actor and request id for audit display", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const rawUrl = input instanceof Request ? input.url : input.toString();
+        const url = new URL(rawUrl);
+        const payload =
+          url.pathname === "/approvals"
+            ? [
+                {
+                  ...(payloads["/approvals"] as Array<Record<string, unknown>>)[0],
+                  status: "approved",
+                  decision: "approved",
+                  decision_actor: {
+                    subject: "demo-approver",
+                    display_name: "Demo Approver",
+                    role: "approver",
+                    source: "demo_session",
+                  },
+                  decision_request_id: "req_audit_123",
+                },
+              ]
+            : payloads[url.pathname];
+        if (payload === undefined) {
+          return new Response("Not found", { status: 404 });
+        }
+        return new Response(JSON.stringify(payload), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      }),
+    );
+
+    const scenario = await getDefaultWorkbenchScenario();
+
+    expect(scenario.approval).toMatchObject({
+      decisionActorSummary: "Demo Approver (Approver)",
+      decisionActorSubject: "demo-approver",
+      decisionRequestId: "req_audit_123",
+    });
+    expect(
+      scenario.decisionGraph.nodes.find((node) => node.id === "approval")?.inspectorDetails,
+    ).toEqual(
+      expect.arrayContaining([
+        { label: "Decision actor", value: "Demo Approver (Approver)" },
+        { label: "Actor subject", value: "demo-approver" },
+        { label: "Request ID", value: "req_audit_123" },
+      ]),
+    );
+  });
+
   it("maps M6 governance reason codes into compact trace text", async () => {
     vi.stubGlobal(
       "fetch",
@@ -345,7 +421,8 @@ const payloads: Record<string, unknown> = {
       action_fingerprint: fingerprint,
       decided_at: null,
       decision: null,
-      decided_by: null,
+      decision_actor: null,
+      decision_request_id: null,
       decision_note: null,
     },
   ],
@@ -726,7 +803,8 @@ const creditRefundPayloads: Record<string, unknown> = {
       action_fingerprint: creditRefundFingerprint,
       decided_at: null,
       decision: null,
-      decided_by: null,
+      decision_actor: null,
+      decision_request_id: null,
       decision_note: null,
     },
   ],

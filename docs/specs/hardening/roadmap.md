@@ -3,8 +3,8 @@
 ## Status
 
 - Program status: approved next phase.
-- Active workstream: P0-01 CI and Runtime Baseline; runtime implementation is present locally and
-  verification/merge is in progress.
+- Active workstream: P0-02 Authentication and Approval RBAC; candidate implementation is present
+  and final database/container verification remains open.
 - Product scope change: none.
 - Interview and demo collateral refresh: deferred until the hardening program is complete; this
   collateral is not authoritative for current workstream sequencing.
@@ -44,14 +44,15 @@ The current repository already demonstrates a ticket-first workbench, backend-ow
 decisions, bounded LLM planning, approval-gated mock financial actions, action fingerprints,
 governance traces, compliance checks, and eval regression history.
 
-P0-01 now supplies API/Web runtime images, a seeded five-service Compose path, an isolated no-key
-smoke harness, and a four-job GitHub Actions workflow contract. Local image and smoke evidence is
-verified, as are final candidate-branch lint, test, and database evidence. Corrected
-implementation-head CI run `30679673344` completed all four required jobs; evidence-finalized-head
-reverification and merge remain open.
-The baseline still lacks trusted approval identity, application-lifetime database resources,
-explicit workflow state semantics, background execution, provider resilience, operational
-telemetry, typed networked tool execution, structured context snapshots, and broad
+P0-01 supplies API/Web runtime images, a seeded five-service Compose path, an isolated no-key smoke
+harness, and a four-job GitHub Actions workflow contract; it is merged as commit `53f3ff9`.
+
+The P0-02 candidate adds fixed demo principals, eight-hour FastAPI JWTs, Next.js `HttpOnly` cookie
+forwarding, authenticated business APIs, role enforcement, request IDs, and trusted approval actor
+persistence. Local unit/static verification is present; real Postgres and updated container smoke
+must be rerun before the workstream is complete. The baseline still lacks application-lifetime
+database resources, explicit workflow state semantics, background execution, provider resilience,
+operational telemetry, typed networked tool execution, structured context snapshots, and broad
 security/failure/concurrency regression coverage.
 
 ## Workstream Sequence
@@ -111,10 +112,14 @@ Detailed requirements: [P0-01 CI and Runtime Baseline](p0-01-ci-runtime-baseline
 
 ### P0-02 — Authentication and Approval RBAC
 
-Replace client-supplied approval identity with a server-verified local/demo principal. Define
-`support_operator`, `approver`, and `admin` roles; enforce 401/403 behavior; and persist auditable
-actor subject, role, and request correlation. Do not add enterprise identity administration, SCIM,
-social login, or multi-tenancy.
+Implemented on the candidate branch: client-supplied approval identity is removed and replaced by a
+server-verified local/demo principal. `support_operator`, `approver`, and `admin` roles enforce the
+read, Agent, approval, and Eval permission matrix; approval audit rows persist actor subject, display
+name, role, source, and request correlation. Next.js retains only an eight-hour `HttpOnly` cookie,
+and production configuration fails closed. Enterprise identity administration, SCIM, social login,
+passwords, refresh/revocation, and multi-tenancy remain excluded.
+
+Detailed requirements: [P0-02 Authentication and Approval RBAC](p0-02-authentication-approval-rbac.md).
 
 ### P1-04 — Persistence Foundation
 

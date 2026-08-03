@@ -11,6 +11,11 @@ const reachableStatus = {
   database: { label: "Postgres", state: "ok" as const, detail: "Database reachable" },
   checkedAt,
 };
+const adminPrincipal = {
+  subject: "demo-admin",
+  display_name: "Demo Admin",
+  role: "admin" as const,
+};
 
 const emptyDecisionGraph: DecisionGraph = {
   defaultNodeId: "evidence" as const,
@@ -337,7 +342,13 @@ const decisionGraphFixture: DecisionGraph = {
 
 describe("MeterDeskShell", () => {
   it("renders M3 API-backed workbench data and empty run state", () => {
-    render(<MeterDeskShell scenario={scenario} status={reachableStatus} />);
+    render(
+      <MeterDeskShell
+        currentPrincipal={adminPrincipal}
+        scenario={scenario}
+        status={reachableStatus}
+      />,
+    );
 
     expect(screen.getByRole("link", { name: "Ticket Workbench" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Approval Queue" })).toHaveAttribute(
@@ -388,6 +399,7 @@ describe("MeterDeskShell", () => {
   it("renders the Decision Overview with blocked mutation selected and trace diagnostics collapsed", () => {
     render(
       <MeterDeskShell
+        currentPrincipal={adminPrincipal}
         scenario={
           {
             ...scenario,
@@ -449,6 +461,7 @@ describe("MeterDeskShell", () => {
   it("renders draft-only output and active approval controls after a run", () => {
     render(
       <MeterDeskShell
+        currentPrincipal={adminPrincipal}
         scenario={{
           ...scenario,
           run: {
@@ -536,6 +549,11 @@ describe("MeterDeskShell", () => {
             policyCitation: "REFUND-DUP-001 v2026.02",
             actionFingerprint:
               "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
+            decisionActorSource: null,
+            decisionActorSubject: null,
+            decisionActorSummary: null,
+            decisionNote: null,
+            decisionRequestId: null,
           },
           drafts: {
             internalResolution: "Confirmed duplicate payment on INV-2026-0418.",
@@ -585,6 +603,7 @@ describe("MeterDeskShell", () => {
   it("keeps the tool governance matrix behind a Workbench drawer", () => {
     render(
       <MeterDeskShell
+        currentPrincipal={adminPrincipal}
         scenario={{
           ...scenario,
           compliance: {
@@ -651,6 +670,11 @@ describe("MeterDeskShell", () => {
         policyCitation: "REFUND-DUP-001 v2026.02",
         actionFingerprint:
           "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
+        decisionActorSource: "demo_session" as const,
+        decisionActorSubject: "demo-approver",
+        decisionActorSummary: "Demo Approver (Approver)",
+        decisionNote: "Verified duplicate charge.",
+        decisionRequestId: "req_approval_demo",
       },
       mutations: [
         {
@@ -666,25 +690,121 @@ describe("MeterDeskShell", () => {
     };
 
     const { rerender } = render(
-      <MeterDeskShell scenario={failedScenario} status={reachableStatus} />,
+      <MeterDeskShell
+        currentPrincipal={adminPrincipal}
+        scenario={failedScenario}
+        status={reachableStatus}
+      />,
     );
 
     expect(screen.getByText("Provider failed after retry: invalid structured output")).toBeInTheDocument();
     expect(screen.getByText("No approval request")).toBeInTheDocument();
 
-    rerender(<MeterDeskShell scenario={approvedScenario} status={reachableStatus} />);
+    rerender(
+      <MeterDeskShell
+        currentPrincipal={adminPrincipal}
+        scenario={approvedScenario}
+        status={reachableStatus}
+      />,
+    );
 
     expect(screen.getByText("MM-2042")).toBeInTheDocument();
     expect(screen.getByText("Approved; mock mutation executed")).toBeInTheDocument();
+    expect(screen.getByText("Decided by Demo Approver (Approver)")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Approval decision audit"));
+    expect(screen.getByText("demo-approver")).toBeInTheDocument();
+    expect(screen.getByText("req_approval_demo")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reject" })).toBeDisabled();
   });
 
   it("shows an explicit backend error instead of falling back to static data", () => {
-    render(<MeterDeskShell dataError="FastAPI domain data unavailable" status={reachableStatus} />);
+    render(
+      <MeterDeskShell
+        currentPrincipal={adminPrincipal}
+        dataError="FastAPI domain data unavailable"
+        status={reachableStatus}
+      />,
+    );
 
     expect(screen.getByRole("heading", { name: "MeterDesk data unavailable" })).toBeInTheDocument();
     expect(screen.getByText("FastAPI domain data unavailable")).toBeInTheDocument();
     expect(screen.queryByText("Duplicate charge investigation")).not.toBeInTheDocument();
+  });
+
+  it("shows the current identity and keeps unauthorized controls visible but disabled", () => {
+    const pendingScenario: WorkbenchScenario = {
+      ...scenario,
+      approval: {
+        id: "APR-2042",
+        title: "Original refund pending approval",
+        ticketId: "TCK-1042",
+        amount: "$1,248.00",
+        status: "Pending",
+        reason: "Refund the duplicate captured charge.",
+        blocker: "Mutation blocked until human approval",
+        policyCitation: "REFUND-DUP-001 v2026.02",
+        actionFingerprint:
+          "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|amount:124800|currency:USD",
+        decisionActorSource: null,
+        decisionActorSubject: null,
+        decisionActorSummary: null,
+        decisionNote: null,
+        decisionRequestId: null,
+      },
+    };
+    const { rerender } = render(
+      <MeterDeskShell
+        currentPrincipal={{
+          subject: "demo-support-operator",
+          display_name: "Demo Support Operator",
+          role: "support_operator",
+        }}
+        scenario={pendingScenario}
+        status={reachableStatus}
+      />,
+    );
+
+    expect(screen.getByText("Demo Support Operator")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getByRole("button", { name: "Reject" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveAttribute(
+      "title",
+      "Requires the approver or admin role",
+    );
+
+    rerender(
+      <MeterDeskShell
+        currentPrincipal={{
+          subject: "demo-approver",
+          display_name: "Demo Approver",
+          role: "approver",
+        }}
+        scenario={pendingScenario}
+        status={reachableStatus}
+      />,
+    );
+
+    expect(screen.getByText("Demo Approver")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run investigation" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run investigation" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getByRole("button", { name: "Run investigation" })).toHaveAttribute(
+      "title",
+      "Requires the support operator or admin role",
+    );
+    expect(screen.getByRole("button", { name: "Approve" })).toBeEnabled();
+    expect(screen.getByRole("link", { name: "Switch identity" })).toHaveAttribute(
+      "href",
+      "/login?mode=switch&returnTo=%2F",
+    );
+    expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument();
   });
 });

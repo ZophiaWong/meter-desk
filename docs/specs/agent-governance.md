@@ -103,9 +103,10 @@ Mock refund and credit mutations must:
 
 Mock mutations are product evidence for governance behavior. They are not a path toward real payment processing in v1.
 
-## Post-M10 Hardening Direction (Planned)
+## Post-M10 Hardening Direction (Partially Implemented)
 
-Later workstreams may strengthen governance only through focused specs and automated evidence:
+P0-02 implements the first two identity controls below on its candidate branch. Later workstreams
+may strengthen the remaining governance areas only through focused specs and automated evidence:
 
 - approval actors must come from a server-verified principal, not a client-selected request field.
 - approval roles and audit identity must be enforced and persisted at the backend boundary.

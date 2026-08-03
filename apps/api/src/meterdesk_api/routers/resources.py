@@ -1,6 +1,6 @@
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from meterdesk_api.agent.approvals import ApprovalDecisionError, ApprovalDecisionService
 from meterdesk_api.agent.compliance import RunComplianceChecker
@@ -12,6 +12,13 @@ from meterdesk_api.agent.runtime import (
     get_optional_agent_provider,
     get_optional_eval_judge,
 )
+from meterdesk_api.auth import (
+    DemoPrincipal,
+    get_authenticated_principal,
+    require_agent_run,
+    require_approval_decision,
+    require_eval_run,
+)
 from meterdesk_api.decision_summary import build_agent_decision_summary
 from meterdesk_api.eval.judge import EvalDraftJudge
 from meterdesk_api.eval.regression import EvalRegressionService
@@ -20,6 +27,7 @@ from meterdesk_api.repositories import get_repository
 from meterdesk_api.schemas import (
     AgentDecisionSummary,
     AgentRunSummary,
+    ApprovalDecisionActor,
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
     ApprovalSummary,
@@ -36,11 +44,24 @@ from meterdesk_api.schemas import (
     ToolTraceSummary,
 )
 
-router = APIRouter(tags=["m3 resources"])
+router = APIRouter(
+    tags=["m3 resources"],
+    dependencies=[Depends(get_authenticated_principal)],
+)
 REPOSITORY_DEPENDENCY = Depends(get_repository)
 PROVIDER_DEPENDENCY = Depends(get_agent_provider)
 OPTIONAL_PROVIDER_DEPENDENCY = Depends(get_optional_agent_provider)
 OPTIONAL_JUDGE_DEPENDENCY = Depends(get_optional_eval_judge)
+APPROVAL_PRINCIPAL = Annotated[DemoPrincipal, Depends(require_approval_decision)]
+
+
+def _demo_session_actor(principal: DemoPrincipal) -> ApprovalDecisionActor:
+    return ApprovalDecisionActor(
+        subject=principal.subject,
+        display_name=principal.display_name,
+        role=principal.role,
+        source="demo_session",
+    )
 
 
 @router.get("/tickets", response_model=list[TicketSummary])
@@ -98,6 +119,7 @@ async def list_agent_runs(
     "/tickets/{ticket_id}/agent-runs",
     response_model=AgentRunSummary,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_agent_run)],
 )
 async def start_agent_run(
     ticket_id: str,
@@ -146,34 +168,46 @@ async def list_approvals(
     return await repository.list_approvals(status=status_filter, ticket_id=ticket_id)
 
 
-@router.post("/approvals/{approval_id}/approve", response_model=ApprovalDecisionResponse)
+@router.post(
+    "/approvals/{approval_id}/approve",
+    response_model=ApprovalDecisionResponse,
+)
 async def approve_request(
     approval_id: str,
     decision: ApprovalDecisionRequest,
+    request: Request,
+    principal: APPROVAL_PRINCIPAL,
     repository=REPOSITORY_DEPENDENCY,
 ) -> ApprovalDecisionResponse:
     service = ApprovalDecisionService(repository)
     try:
         return await service.approve(
             approval_id,
-            decided_by=decision.decided_by,
+            decision_actor=_demo_session_actor(principal),
+            decision_request_id=request.state.request_id,
             decision_note=decision.decision_note,
         )
     except ApprovalDecisionError as error:
         raise error
 
 
-@router.post("/approvals/{approval_id}/reject", response_model=ApprovalDecisionResponse)
+@router.post(
+    "/approvals/{approval_id}/reject",
+    response_model=ApprovalDecisionResponse,
+)
 async def reject_request(
     approval_id: str,
     decision: ApprovalDecisionRequest,
+    request: Request,
+    principal: APPROVAL_PRINCIPAL,
     repository=REPOSITORY_DEPENDENCY,
 ) -> ApprovalDecisionResponse:
     service = ApprovalDecisionService(repository)
     try:
         return await service.reject(
             approval_id,
-            decided_by=decision.decided_by,
+            decision_actor=_demo_session_actor(principal),
+            decision_request_id=request.state.request_id,
             decision_note=decision.decision_note,
         )
     except ApprovalDecisionError as error:
@@ -246,6 +280,7 @@ async def list_eval_case_history(
     "/eval-cases/{case_id}/run",
     response_model=EvalResultSummary,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_eval_run)],
 )
 async def run_eval_case(
     case_id: str,
@@ -264,6 +299,7 @@ async def run_eval_case(
     "/eval-runs",
     response_model=list[EvalResultSummary],
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_eval_run)],
 )
 async def run_all_eval_cases(
     repository=REPOSITORY_DEPENDENCY,

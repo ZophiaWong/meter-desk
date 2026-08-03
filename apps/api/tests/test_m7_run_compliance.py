@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from api_client import authenticate_demo_client
 from meterdesk_api.agent.compliance import RunComplianceChecker
 from meterdesk_api.main import app
 from meterdesk_api.repositories import get_repository
@@ -206,6 +207,7 @@ async def test_run_compliance_api_returns_result_shape_and_404_for_unknown_run()
             transport=ASGITransport(app=app),
             base_url="http://testserver",
         ) as client:
+            await authenticate_demo_client(client)
             response = await client.get("/agent-runs/RUN-2042/compliance")
             missing = await client.get("/agent-runs/RUN-unknown/compliance")
     finally:
