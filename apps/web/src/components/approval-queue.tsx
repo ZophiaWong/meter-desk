@@ -83,7 +83,7 @@ export async function ApprovalQueue({
                   <form action={approveRequestAction}>
                     <input name="approvalId" type="hidden" value={approval.id} />
                     <button
-                      className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:text-slate-400"
+                      className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:cursor-not-allowed disabled:text-slate-400"
                       disabled={!isPending || !canDecide}
                       title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
                       type="submit"
@@ -94,7 +94,7 @@ export async function ApprovalQueue({
                   <form action={rejectRequestAction}>
                     <input name="approvalId" type="hidden" value={approval.id} />
                     <button
-                      className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:text-slate-400"
+                      className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:cursor-not-allowed disabled:text-slate-400"
                       disabled={!isPending || !canDecide}
                       title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
                       type="submit"

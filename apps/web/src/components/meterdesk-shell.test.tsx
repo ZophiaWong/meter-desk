@@ -768,6 +768,12 @@ describe("MeterDeskShell", () => {
     expect(screen.getByText("Demo Support Operator")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run investigation" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getByRole("button", { name: "Reject" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
     expect(screen.getByRole("button", { name: "Approve" })).toHaveAttribute(
       "title",
       "Requires the approver or admin role",
@@ -787,6 +793,9 @@ describe("MeterDeskShell", () => {
 
     expect(screen.getByText("Demo Approver")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run investigation" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run investigation" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
     expect(screen.getByRole("button", { name: "Run investigation" })).toHaveAttribute(
       "title",
       "Requires the support operator or admin role",

@@ -130,7 +130,7 @@ function SafetySummaryCard({ currentPrincipal, scenario }: SafetyRailProps) {
           <input name="approvalId" type="hidden" value={scenario.approval.id} />
           <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
-            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:text-slate-400"
+            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-blue disabled:cursor-not-allowed disabled:text-slate-400"
             disabled={!isPending || !canDecide}
             title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
             type="submit"
@@ -142,7 +142,7 @@ function SafetySummaryCard({ currentPrincipal, scenario }: SafetyRailProps) {
           <input name="approvalId" type="hidden" value={scenario.approval.id} />
           <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
-            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:text-slate-400"
+            className="h-10 w-full rounded-md border border-meter-line bg-white text-sm font-semibold text-meter-amber disabled:cursor-not-allowed disabled:text-slate-400"
             disabled={!isPending || !canDecide}
             title={!canDecide ? APPROVAL_PERMISSION_EXPLANATION : undefined}
             type="submit"
@@ -188,7 +188,7 @@ function RunStateCard({ currentPrincipal, scenario }: SafetyRailProps) {
         <form action={startAgentRunAction} className="mt-4">
           <input name="ticketId" type="hidden" value={scenario.ticket.id} />
           <button
-            className="h-10 rounded-md bg-meter-blue px-4 text-sm font-semibold text-white"
+            className="h-10 rounded-md bg-meter-blue px-4 text-sm font-semibold text-white disabled:cursor-not-allowed"
             disabled={!canStartAgentRun(currentPrincipal)}
             title={
               !canStartAgentRun(currentPrincipal) ? AGENT_RUN_PERMISSION_EXPLANATION : undefined

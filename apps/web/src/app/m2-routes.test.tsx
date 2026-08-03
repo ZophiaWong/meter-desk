@@ -304,6 +304,12 @@ describe("M3 API-backed routes", () => {
     expect(screen.getAllByRole("button", { name: "Reject" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "Approve" })[0]).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Reject" })[1]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Approve" })[0]).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getAllByRole("button", { name: "Reject" })[1]).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
     expect(screen.getAllByText("Decided by Demo Approver (Approver)")).toHaveLength(2);
   });
 
@@ -324,6 +330,12 @@ describe("M3 API-backed routes", () => {
     render(await ApprovalsPage({}));
 
     expect(screen.getByRole("button", { name: "Approve" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
+    expect(screen.getByRole("button", { name: "Reject" })).toHaveClass(
+      "disabled:cursor-not-allowed",
+    );
     expect(screen.getByRole("button", { name: "Approve" })).toHaveAttribute(
       "title",
       "Requires the approver or admin role",
