@@ -3,8 +3,8 @@
 ## Status
 
 - Program status: approved next phase.
-- Active workstream: P0-02 Authentication and Approval RBAC; candidate implementation is present
-  and final database/container verification remains open.
+- Active workstream: P1-04 Persistence Foundation; candidate implementation and all required local
+  verification are complete.
 - Product scope change: none.
 - Interview and demo collateral refresh: deferred until the hardening program is complete; this
   collateral is not authoritative for current workstream sequencing.
@@ -49,11 +49,11 @@ harness, and a four-job GitHub Actions workflow contract; it is merged as commit
 
 The P0-02 candidate adds fixed demo principals, eight-hour FastAPI JWTs, Next.js `HttpOnly` cookie
 forwarding, authenticated business APIs, role enforcement, request IDs, and trusted approval actor
-persistence. Local unit/static verification is present; real Postgres and updated container smoke
-must be rerun before the workstream is complete. The baseline still lacks application-lifetime
-database resources, explicit workflow state semantics, background execution, provider resilience,
-operational telemetry, typed networked tool execution, structured context snapshots, and broad
-security/failure/concurrency regression coverage.
+persistence. P1-04 now adds application-lifetime async database resources, database-backed async
+readiness, bounded pool configuration, row-locked approval terminal writes, and one marked pytest
+entrypoint for real-Postgres API and concurrency checks. The baseline still lacks explicit workflow
+state semantics, background execution, provider resilience, operational telemetry, typed networked
+tool execution, structured context snapshots, and broad security/failure regression coverage.
 
 ## Workstream Sequence
 
@@ -123,10 +123,14 @@ Detailed requirements: [P0-02 Authentication and Approval RBAC](p0-02-authentica
 
 ### P1-04 — Persistence Foundation
 
-Move `AsyncEngine` and `async_sessionmaker` into FastAPI lifespan, replace synchronous readiness
-probes with an async database query, define pool configuration, and establish reusable real-Postgres
-concurrency tests for approve/approve and approve/reject behavior. Do not redesign every repository
-or introduce distributed transactions.
+Implemented on the candidate branch: `DatabaseRuntime` owns one `AsyncEngine` and
+`async_sessionmaker` per FastAPI lifespan; `/health/db` executes async `SELECT 1` through that shared
+engine; pool/connect limits are configurable and validated; and approval terminal writes lock and
+refresh their row before deciding. The real-Postgres pytest harness proves approve/approve and both
+approve/reject winner orientations after observing an actual backend lock wait. No migration,
+repository-wide redesign, outbox, or distributed transaction was introduced.
+
+Detailed requirements: [P1-04 Persistence Foundation](p1-04-persistence-foundation.md).
 
 ### P0-03 — Workflow State Consistency
 
@@ -207,6 +211,9 @@ persisted audit identity is traceable before approval events enter later runtime
 
 P1-04 must provide application-lifetime async persistence, async readiness, and stable Postgres
 transaction/concurrency tests before background workers write workflow tables.
+
+Status: lifespan/readiness tests, the marked real-Postgres suite, branch-wide quality checks, and
+the isolated container smoke are verified locally on the candidate branch.
 
 ### Gate D — Explicit Workflow Semantics
 

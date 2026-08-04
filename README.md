@@ -146,8 +146,20 @@ make db-down
 `make demo-reset-live` clears only `TCK-1042` runtime state by default so a configured OpenAI-compatible provider can run the live Duplicate Charge agent path from the Workbench. Use `make demo-reset-live TICKET_ID=TCK-1137` to reset the Credit/Refund Dispute path.
 
 `make test-db` starts local Postgres, waits for its healthcheck, runs migrations, seeds demo data,
-and checks the M3 seed and run-preflight APIs against the real database. The default `make test`
-stays fast and does not require Docker/Postgres.
+and runs the pytest cases marked `postgres`. These cover the seeded API contract and deterministic
+approval races against the real database. The default `make test` skips those cases and stays fast
+without Docker/Postgres.
+
+FastAPI creates one async database engine and session factory per application process, then creates
+an independent session for each request. Four optional environment variables bound that pool:
+
+- `DATABASE_POOL_SIZE=5`
+- `DATABASE_MAX_OVERFLOW=5`
+- `DATABASE_POOL_TIMEOUT_SECONDS=5`
+- `DATABASE_CONNECT_TIMEOUT_SECONDS=3`
+
+The engine always enables connection pre-ping. Alembic continues to use its migration-only
+`NullPool`; seed and live-reset commands create and dispose their own short-lived runtime.
 
 To run the M3 agent loop locally, configure `OPENAI_API_KEY` and `OPENAI_MODEL` in `.env`. `OPENAI_BASE_URL` defaults to `https://api.openai.com/v1` and can point at another OpenAI-compatible endpoint.
 
@@ -158,7 +170,9 @@ curl --fail http://localhost:8000/health
 curl --fail http://localhost:8000/health/db
 ```
 
-`/health` verifies FastAPI liveness. `/health/db` verifies the backend can execute a simple Postgres query.
+`/health` verifies FastAPI liveness. `/health/db` uses the application-lifetime async engine to run
+`SELECT 1` against Postgres. Compose uses `/health/db` for API readiness, so the Web service waits
+for both the API and database to be ready.
 Those health routes, API documentation, and the demo identity/login routes are public. All other
 API routes require a valid demo Bearer token.
 

@@ -166,24 +166,26 @@ async def test_repository_same_direction_retry_cannot_replace_the_first_audit() 
         source="demo_session",
     )
 
-    first, first_mutation = await repository.approve_request(
+    first_result = await repository.approve_request(
         approval_id="APR-2042",
         decision_actor=first_actor,
         decision_request_id="req_first_repository_decision",
         decision_note="First audit owns the terminal record.",
     )
-    retry, retry_mutation = await repository.approve_request(
+    retry_result = await repository.approve_request(
         approval_id="APR-2042",
         decision_actor=retry_actor,
         decision_request_id="req_retry_must_not_replace",
         decision_note="This must not replace the first audit.",
     )
 
-    assert retry == first
-    assert retry_mutation == first_mutation
-    assert retry.decision_actor == first_actor
-    assert retry.decision_request_id == "req_first_repository_decision"
-    assert retry.decision_note == "First audit owns the terminal record."
+    assert first_result.executed_now is True
+    assert retry_result.executed_now is False
+    assert retry_result.approval == first_result.approval
+    assert retry_result.mutation == first_result.mutation
+    assert retry_result.approval.decision_actor == first_actor
+    assert retry_result.approval.decision_request_id == "req_first_repository_decision"
+    assert retry_result.approval.decision_note == "First audit owns the terminal record."
 
     with pytest.raises(MeterDeskAPIError) as conflict:
         await repository.reject_request(

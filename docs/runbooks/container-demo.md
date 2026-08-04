@@ -114,7 +114,10 @@ curl --fail http://localhost:8000/health
 curl --fail http://localhost:8000/health/db
 ```
 
-`/health` confirms that FastAPI is alive. `/health/db` confirms that the API can query Postgres.
+`/health` confirms that FastAPI is alive. `/health/db` runs async `SELECT 1` through the shared
+application-lifetime engine. Compose uses that database-backed route for API readiness with an
+eight-second HTTP probe timeout and ten-second healthcheck timeout, so Web startup also depends on
+database reachability.
 
 Use these diagnostics without rendering Compose configuration or environment values:
 
@@ -145,6 +148,17 @@ For a normal container run, the API ignores the host `DATABASE_URL`. It derives 
 the coupled `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` settings and connects internally
 to `postgres:5432`. Those simple `POSTGRES_*` overrides are shared by the Postgres service and API;
 `POSTGRES_PORT` changes only the host-facing database port.
+
+Each API process owns one async engine and uses these bounded pool defaults:
+
+- `DATABASE_POOL_SIZE=5`
+- `DATABASE_MAX_OVERFLOW=5`
+- `DATABASE_POOL_TIMEOUT_SECONDS=5`
+- `DATABASE_CONNECT_TIMEOUT_SECONDS=3`
+
+Override them only through the untracked local environment when a constrained demo host requires a
+different per-process connection budget. Pool pre-ping remains enabled. Migrations use Alembic's
+separate `NullPool`, while seed and live-reset commands dispose their own short-lived runtime.
 
 For custom credentials that include URL-special characters, set the same raw `POSTGRES_*` values for
 the Postgres service and use `CONTAINER_DATABASE_URL` as the explicit URL-encoded API override.

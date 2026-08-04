@@ -4,24 +4,17 @@ import asyncio
 import os
 import sys
 
-from sqlalchemy.ext.asyncio import async_sessionmaker
-
-from meterdesk_api.db import create_engine
+from meterdesk_api.db import database_runtime_context
 from meterdesk_api.repositories import SqlAlchemyMeterDeskRepository
 
 DEFAULT_LIVE_DEMO_TICKET_ID = "TCK-1042"
 
 
 async def reset_live_demo_state(ticket_id: str = DEFAULT_LIVE_DEMO_TICKET_ID) -> None:
-    engine = create_engine()
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    try:
-        async with session_factory() as session:
+    async with database_runtime_context() as runtime:
+        async with runtime.session_factory() as session:
             repository = SqlAlchemyMeterDeskRepository(session)
             await repository.reset_demo_live_state(ticket_id)
-    finally:
-        await engine.dispose()
 
 
 def main() -> None:

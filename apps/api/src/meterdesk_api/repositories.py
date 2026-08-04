@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
@@ -30,6 +31,13 @@ from meterdesk_api.schemas import (
 )
 
 SESSION_DEPENDENCY = Depends(get_session)
+
+
+@dataclass(frozen=True)
+class ApprovalExecutionResult:
+    approval: ApprovalSummary
+    mutation: MockMutationSummary
+    executed_now: bool
 
 
 class MeterDeskRepository(Protocol):
@@ -191,7 +199,7 @@ class MeterDeskRepository(Protocol):
         decision_actor: ApprovalDecisionActor,
         decision_request_id: str,
         decision_note: str | None,
-    ) -> tuple[ApprovalSummary, MockMutationSummary]: ...
+    ) -> ApprovalExecutionResult: ...
 
     async def reject_request(
         self,
@@ -609,7 +617,7 @@ class InMemoryMeterDeskRepository:
         decision_actor: ApprovalDecisionActor,
         decision_request_id: str,
         decision_note: str | None,
-    ) -> tuple[ApprovalSummary, MockMutationSummary]:
+    ) -> ApprovalExecutionResult:
         current = await self.get_approval(approval_id)
         if current is None:
             raise MeterDeskAPIError(
@@ -631,7 +639,11 @@ class InMemoryMeterDeskRepository:
                     code="approval.audit_incomplete",
                     message="Approved request is missing its mock mutation.",
                 )
-            return current, existing
+            return ApprovalExecutionResult(
+                approval=current,
+                mutation=existing,
+                executed_now=False,
+            )
         if existing is not None:
             raise MeterDeskAPIError(
                 status_code=409,
@@ -677,7 +689,11 @@ class InMemoryMeterDeskRepository:
             executed_at_display=_format_display_time(decided_at),
         )
         self._mock_mutations.append(mutation)
-        return approval, mutation
+        return ApprovalExecutionResult(
+            approval=approval,
+            mutation=mutation,
+            executed_now=True,
+        )
 
     async def reject_request(
         self,
@@ -1322,6 +1338,18 @@ class SqlAlchemyMeterDeskRepository:
         approval = await self._session.get(ApprovalRequest, approval_id)
         return _approval_to_summary(approval) if approval is not None else None
 
+    async def _get_approval_for_update(self, approval_id: str):
+        from meterdesk_api.models import ApprovalRequest
+
+        return (
+            await self._session.execute(
+                select(ApprovalRequest)
+                .where(ApprovalRequest.id == approval_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+
     async def get_mock_mutation_by_approval(
         self,
         approval_id: str,
@@ -1342,10 +1370,10 @@ class SqlAlchemyMeterDeskRepository:
         decision_actor: ApprovalDecisionActor,
         decision_request_id: str,
         decision_note: str | None,
-    ) -> tuple[ApprovalSummary, MockMutationSummary]:
-        from meterdesk_api.models import ApprovalRequest, MockMutation
+    ) -> ApprovalExecutionResult:
+        from meterdesk_api.models import MockMutation
 
-        approval = await self._session.get(ApprovalRequest, approval_id)
+        approval = await self._get_approval_for_update(approval_id)
         if approval is None:
             raise MeterDeskAPIError(
                 status_code=404,
@@ -1370,7 +1398,11 @@ class SqlAlchemyMeterDeskRepository:
                     code="approval.audit_incomplete",
                     message="Approved request is missing its mock mutation.",
                 )
-            return _approval_to_summary(approval), _mutation_to_summary(mutation)
+            return ApprovalExecutionResult(
+                approval=_approval_to_summary(approval),
+                mutation=_mutation_to_summary(mutation),
+                executed_now=False,
+            )
         if mutation is not None:
             raise MeterDeskAPIError(
                 status_code=409,
@@ -1432,7 +1464,11 @@ class SqlAlchemyMeterDeskRepository:
                 message="This financial action has already been executed.",
                 details={"action_fingerprint": approval.action_fingerprint},
             ) from error
-        return _approval_to_summary(approval), _mutation_to_summary(mutation)
+        return ApprovalExecutionResult(
+            approval=_approval_to_summary(approval),
+            mutation=_mutation_to_summary(mutation),
+            executed_now=True,
+        )
 
     async def reject_request(
         self,
@@ -1442,9 +1478,7 @@ class SqlAlchemyMeterDeskRepository:
         decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalSummary:
-        from meterdesk_api.models import ApprovalRequest
-
-        approval = await self._session.get(ApprovalRequest, approval_id)
+        approval = await self._get_approval_for_update(approval_id)
         if approval is None:
             raise MeterDeskAPIError(
                 status_code=404,

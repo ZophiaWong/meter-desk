@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     api_port: int = 8000
     frontend_origin: str = "http://localhost:3000"
     database_url: str = "postgresql+psycopg://meterdesk:meterdesk@localhost:5432/meterdesk"
+    database_pool_size: int = Field(default=5, ge=1)
+    database_max_overflow: int = Field(default=5, ge=0)
+    database_pool_timeout_seconds: float = Field(default=5, gt=0)
+    database_connect_timeout_seconds: int = Field(default=3, gt=0)
     openai_api_key: str | None = None
     openai_model: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"

@@ -438,10 +438,9 @@ class GovernanceKernel:
             mutation = await self._repository.get_mock_mutation_by_approval(approval_id)
             return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
 
-        existing_mutation = await self._repository.get_mock_mutation_by_approval(approval_id)
         mutation_policy_id = _mutation_policy_id(approval.action_type)
         try:
-            approval, mutation = await self._repository.approve_request(
+            result = await self._repository.approve_request(
                 approval_id=approval_id,
                 decision_actor=decision_actor,
                 decision_request_id=decision_request_id,
@@ -461,7 +460,9 @@ class GovernanceKernel:
                     error=error,
                 )
             raise
-        if existing_mutation is None and approval.agent_run_id is not None:
+        approval = result.approval
+        mutation = result.mutation
+        if result.executed_now and approval.agent_run_id is not None:
             await self.record_action(
                 agent_run_id=approval.agent_run_id,
                 policy_id=mutation_policy_id,

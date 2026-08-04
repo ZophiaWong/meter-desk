@@ -27,7 +27,7 @@ help:
 	@printf "  make dev       Start Postgres, FastAPI, and Next.js\n"
 	@printf "  make health    Check API and database health endpoints\n"
 	@printf "  make test      Run API and Web tests\n"
-	@printf "  make test-db   Run Postgres-backed M3 migration/seed/API checks\n"
+	@printf "  make test-db   Run the marked real-Postgres pytest suite\n"
 	@printf "  make lint      Run API and Web lint/type checks\n"
 	@printf "  make build-web Build the optimized Next.js application\n"
 	@printf "  make seed      Reset and load M5 portfolio baseline data\n"
@@ -79,7 +79,7 @@ test-web:
 	cd $(WEB_DIR) && npm test
 
 test-db: db-up seed
-	cd $(API_DIR) && PYTHONPATH=src uv --cache-dir $(UV_CACHE_DIR) run --frozen python -m meterdesk_api.db_integration_check
+	cd $(API_DIR) && METERDESK_RUN_DB_TESTS=1 uv --cache-dir $(UV_CACHE_DIR) run --frozen pytest -m postgres
 
 lint: lint-api lint-web
 

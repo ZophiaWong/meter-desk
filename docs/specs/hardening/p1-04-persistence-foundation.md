@@ -4,14 +4,16 @@
 
 - Priority: P1.
 - Design status: approved for implementation.
-- Implementation status: not started.
+- Implementation status: implemented on the candidate branch.
+- Verification status: complete locally; all acceptance commands pass, including the real-Postgres
+  suite and isolated container smoke.
 - Depends on: P0-01 CI and Runtime Baseline and P0-02 Authentication and Approval RBAC.
 - Blocks: P0-03 Workflow State Consistency and later background execution work.
 - Product scope change: none.
 
 ## Problem
 
-MeterDesk currently creates and disposes a SQLAlchemy `AsyncEngine` for every request. Its database
+Before P1-04, MeterDesk created and disposed a SQLAlchemy `AsyncEngine` for every request. Its database
 readiness function is declared async but performs a blocking socket probe and synchronous psycopg
 query. Approval constraints prevent duplicate mock mutations, but two independent database sessions
 can still race while deciding the same pending approval because neither decision path locks and
