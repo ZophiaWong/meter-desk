@@ -67,6 +67,27 @@ subject, display name, role, source, and decision request ID. Seed-owned termina
 `seed_fixture`; unknown migrated external history is marked `legacy_unverified`. The demo
 authentication configuration fails closed when the application environment is production.
 
+## P1-04 Persistence Foundation (Implemented on Candidate Branch)
+
+Each FastAPI process now constructs one `DatabaseRuntime` during application lifespan. The runtime
+owns one SQLAlchemy `AsyncEngine` and one `async_sessionmaker`; requests create independent sessions
+from that factory, while shutdown disposes the engine once. Missing lifespan state is an error rather
+than a fallback to a request-scoped engine. Alembic retains `NullPool`, and seed/reset commands use
+explicit short-lived runtimes.
+
+The runtime has bounded per-process pool settings (size `5`, overflow `5`, checkout timeout `5s`,
+connect timeout `3s`) and always enables pre-ping. `/health` remains a liveness check. `/health/db`
+runs async `SELECT 1` through the shared engine, and Compose uses it as API readiness before starting
+Web.
+
+Approval approve/reject writes acquire `SELECT ... FOR UPDATE` and refresh cached ORM state before
+choosing a terminal transition. The first lock holder that commits wins; a same-direction approve is
+idempotent, an opposite terminal decision returns `409`, and the original actor/request audit remains
+unchanged. Only the transaction that creates a mock mutation writes the executed governance trace.
+Postgres remains at `READ COMMITTED`, existing indexes and constraints remain in place, and no
+migration or external API contract changes in P1-04. The existing mutation-to-trace cross-transaction
+failure window remains assigned to P0-03.
+
 ## Boundary Rules
 
 - Next.js owns presentation, client-side interaction, the `HttpOnly` demo cookie, and server-side
@@ -138,12 +159,11 @@ Mock systems must not call real Stripe, payment, support, messaging, or accounti
 
 ## Post-M10 Hardening Direction
 
-P0-01 implemented the runtime packaging described above, and P0-02 implements the local demo
-authentication boundary on its candidate branch. The remaining active hardening roadmap proposes
-these later architecture changes; they are target directions, not claims about the current
-implementation:
+P0-01 implemented the runtime packaging described above, P0-02 implements the local demo
+authentication boundary on its candidate branch, and P1-04 implements the persistence foundation
+described above. The remaining active hardening roadmap proposes these later architecture changes;
+they are target directions, not claims about the current implementation:
 
-- manage the async database engine and session factory through FastAPI lifespan.
 - separate case workflow state from HTTP request lifetime with explicit transitions, retries,
   cancellation, checkpoints, and idempotency.
 - replace blocking provider I/O with an async resilience contract and structured usage metadata.

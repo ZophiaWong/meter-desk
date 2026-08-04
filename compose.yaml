@@ -6,6 +6,10 @@ x-api-image: &api-image
 
 x-api-environment: &api-environment
   DATABASE_URL: ${CONTAINER_DATABASE_URL:-postgresql+psycopg://${POSTGRES_USER:-meterdesk}:${POSTGRES_PASSWORD:-meterdesk}@postgres:5432/${POSTGRES_DB:-meterdesk}}
+  DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+  DATABASE_MAX_OVERFLOW: ${DATABASE_MAX_OVERFLOW:-5}
+  DATABASE_POOL_TIMEOUT_SECONDS: ${DATABASE_POOL_TIMEOUT_SECONDS:-5}
+  DATABASE_CONNECT_TIMEOUT_SECONDS: ${DATABASE_CONNECT_TIMEOUT_SECONDS:-3}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   OPENAI_MODEL: ${OPENAI_MODEL:-}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL-https://api.openai.com/v1}
@@ -64,10 +68,10 @@ services:
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/db', timeout=8)",
         ]
       interval: 5s
-      timeout: 5s
+      timeout: 10s
       retries: 20
 
   web:

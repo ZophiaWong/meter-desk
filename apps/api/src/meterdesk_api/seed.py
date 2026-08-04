@@ -1,9 +1,8 @@
 import asyncio
 
 from sqlalchemy import delete, select
-from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from meterdesk_api.db import create_engine
+from meterdesk_api.db import database_runtime_context
 from meterdesk_api.models import (
     AgentRun,
     ApprovalRequest,
@@ -65,11 +64,8 @@ DELETE_ORDER = [
 
 
 async def seed_demo_data() -> None:
-    engine = create_engine()
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
-
-    try:
-        async with session_factory() as session:
+    async with database_runtime_context() as runtime:
+        async with runtime.session_factory() as session:
             async with session.begin():
                 all_ticket_details = {**TICKET_DETAILS, **EVAL_TICKET_DETAILS}
                 all_billing_evidence = {**BILLING_EVIDENCE, **EVAL_BILLING_EVIDENCE}
@@ -504,9 +500,6 @@ async def seed_demo_data() -> None:
                     )
                     for snapshot in EVAL_RESULT_SNAPSHOTS
                 )
-    finally:
-        await engine.dispose()
-
     print("MeterDesk M3 demo seed complete: demo-owned rows reset and rebuilt.")
 
 

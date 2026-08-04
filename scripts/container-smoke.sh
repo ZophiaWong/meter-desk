@@ -146,11 +146,15 @@ assert environment["OPENAI_API_KEY"] == "meterdesk-smoke-contract-key"
 assert environment["OPENAI_MODEL"] == "meterdesk-smoke-contract-model"
 assert environment["OPENAI_BASE_URL"] == "https://api.openai.com/v1"
 assert environment["ENVIRONMENT"] == "development"
+assert environment["DATABASE_POOL_SIZE"] == "5"
+assert environment["DATABASE_MAX_OVERFLOW"] == "5"
+assert environment["DATABASE_POOL_TIMEOUT_SECONDS"] == "5"
+assert environment["DATABASE_CONNECT_TIMEOUT_SECONDS"] == "3"
 assert len(environment["DEMO_AUTH_SIGNING_KEY"]) >= 32
 assert environment["DEMO_AUTH_TOKEN_TTL_SECONDS"] == "28800"
 '
 )
-printf 'Runtime config contract: provider defaults and demo auth settings are present.\n'
+printf 'Runtime config contract: database, provider, and demo auth defaults are present.\n'
 
 wait_timeout=${CONTAINER_WAIT_TIMEOUT:-180}
 curl_attempts=${SMOKE_CURL_ATTEMPTS:-30}

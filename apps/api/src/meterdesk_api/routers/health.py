@@ -1,7 +1,9 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from meterdesk_api.db import check_database
+from meterdesk_api.db import DatabaseRuntime, check_database, get_database_runtime
 from meterdesk_api.settings import get_settings
 
 router = APIRouter(tags=["health"])
@@ -18,9 +20,11 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/health/db", response_model=None)
-async def database_health():
+async def database_health(
+    runtime: Annotated[DatabaseRuntime, Depends(get_database_runtime)],
+):
     try:
-        await check_database()
+        await check_database(runtime)
     except Exception as exc:
         return JSONResponse(
             status_code=503,

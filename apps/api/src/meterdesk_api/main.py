@@ -1,10 +1,13 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from meterdesk_api.db import create_database_runtime
 from meterdesk_api.errors import MeterDeskAPIError
 from meterdesk_api.routers.auth import router as auth_router
 from meterdesk_api.routers.health import router as health_router
@@ -12,6 +15,17 @@ from meterdesk_api.routers.resources import router as resources_router
 from meterdesk_api.settings import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    runtime = create_database_runtime()
+    app.state.database_runtime = runtime
+    try:
+        yield
+    finally:
+        await runtime.dispose()
+        del app.state.database_runtime
 
 
 async def meterdesk_api_error_handler(
@@ -32,6 +46,7 @@ def create_app() -> FastAPI:
         title="MeterDesk API",
         summary="Internal API scaffold for MeterDesk.",
         version="0.1.0",
+        lifespan=lifespan,
     )
     app.add_middleware(
         CORSMiddleware,

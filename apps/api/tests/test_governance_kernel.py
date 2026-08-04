@@ -157,6 +157,56 @@ async def test_governance_kernel_blocks_high_risk_action_with_pending_approval()
 
 
 @pytest.mark.asyncio
+async def test_governance_kernel_does_not_trace_a_stale_same_direction_retry(
+    monkeypatch,
+) -> None:
+    repository = build_seed_repository()
+    pending_approval = await repository.get_approval("APR-2042")
+    assert pending_approval is not None
+    first_result = await repository.approve_request(
+        approval_id="APR-2042",
+        decision_actor=ApprovalDecisionActor(
+            subject="demo-approver",
+            display_name="Demo Approver",
+            role="approver",
+            source="demo_session",
+        ),
+        decision_request_id="req_first_execution",
+        decision_note="First decision owns the execution trace.",
+    )
+    original_get_approval = repository.get_approval
+    approval_reads = 0
+
+    async def stale_get_approval(approval_id: str):
+        nonlocal approval_reads
+        approval_reads += 1
+        if approval_reads == 1:
+            return pending_approval
+        return await original_get_approval(approval_id)
+
+    monkeypatch.setattr(repository, "get_approval", stale_get_approval)
+    traces_before = await repository.list_traces("RUN-2042")
+
+    response = await GovernanceKernel(repository).execute_approved_mock_refund(
+        approval_id="APR-2042",
+        decision_actor=ApprovalDecisionActor(
+            subject="demo-admin",
+            display_name="Demo Admin",
+            role="admin",
+            source="demo_session",
+        ),
+        decision_request_id="req_stale_retry",
+        decision_note="A retry must not create another execution trace.",
+    )
+    traces_after = await repository.list_traces("RUN-2042")
+
+    assert response.approval == first_result.approval
+    assert response.mock_mutation == first_result.mutation
+    assert traces_before is not None
+    assert traces_after == traces_before
+
+
+@pytest.mark.asyncio
 async def test_governance_kernel_records_negative_evidence_refs() -> None:
     repository = build_seed_repository()
     await repository.reset_demo_live_state("TCK-1042")
