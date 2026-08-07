@@ -169,6 +169,7 @@ async def test_seed_restores_m5_portfolio_baseline_for_demo_tickets(
     async with database_runtime_context() as runtime:
         async with runtime.session_factory() as session:
             repository = SqlAlchemyMeterDeskRepository(session)
+            await repository.reset_demo_live_state("TCK-1042")
             run = await repository.create_agent_run(
                 ticket_id="TCK-1042",
                 source="db-test",
@@ -186,20 +187,27 @@ async def test_seed_restores_m5_portfolio_baseline_for_demo_tickets(
                 policy_refs=[],
                 approval_refs=[],
             )
-            approval = await repository.create_approval_request(
-                ticket_id="TCK-1042",
+            await repository.finalize_run(
                 agent_run_id=run.id,
-                title="Database reset proof pending approval",
-                action_type="db_test_refund",
-                amount_cents=29000,
-                amount_display="$290.00",
-                currency="USD",
-                reason="Duplicate captured charge for INV-2026-0418.",
-                blocker="Mutation blocked until human approval",
-                policy_citation="DUP-CHARGE-001 v2026.04",
-                evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
-                action_metadata={"target_charge_id": "ch_2026_0418_B"},
+                final_outcome="confirmed_duplicate_charge",
+                internal_resolution="Duplicate captured charge for INV-2026-0418.",
+                customer_reply="Draft only.",
+                target_status="awaiting_approval",
+                reason_code="test.db_seed_reset_approval_required",
+                approval={
+                    "title": "Database reset proof pending approval",
+                    "action_type": "db_test_refund",
+                    "amount_cents": 29000,
+                    "amount_display": "$290.00",
+                    "currency": "USD",
+                    "reason": "Duplicate captured charge for INV-2026-0418.",
+                    "blocker": "Mutation blocked until human approval",
+                    "policy_citation": "DUP-CHARGE-001 v2026.04",
+                    "evidence_refs": ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+                    "action_metadata": {"target_charge_id": "ch_2026_0418_B"},
+                },
             )
+            approval = (await repository.list_approvals(ticket_id="TCK-1042"))[-1]
             await repository.approve_request(
                 approval_id=approval.id,
                 decision_actor=ApprovalDecisionActor(

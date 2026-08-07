@@ -24,6 +24,7 @@ export function TicketWorkbench({ currentPrincipal, scenario }: TicketWorkbenchP
           graph={scenario.decisionGraph}
           summary={scenario.decisionSummary}
         />
+        <WorkflowTimeline scenario={scenario} />
       </section>
 
       <SafetyRail currentPrincipal={currentPrincipal} scenario={scenario} />
@@ -34,6 +35,51 @@ export function TicketWorkbench({ currentPrincipal, scenario }: TicketWorkbenchP
         <ProofAudit scenario={scenario} />
       </section>
     </div>
+  );
+}
+
+function WorkflowTimeline({ scenario }: Pick<TicketWorkbenchProps, "scenario">) {
+  if (!scenario.workflow) {
+    return null;
+  }
+  return (
+    <section
+      aria-label="Workflow state timeline"
+      className="rounded-md border border-meter-line bg-white p-5"
+      role="region"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase text-slate-500">Case workflow</p>
+          <h2 className="mt-2 text-lg font-semibold">
+            Cycle {scenario.workflow.cycleNumber} - {scenario.workflow.status}
+          </h2>
+        </div>
+        <span className="rounded-full bg-[#eef5fb] px-2.5 py-1 text-xs font-semibold text-meter-blue">
+          v{scenario.workflow.version}
+        </span>
+      </div>
+      <p className="mt-2 text-sm text-slate-600">
+        {scenario.workflow.reason ?? scenario.workflow.reasonCode}
+      </p>
+      <ol className="mt-4 space-y-3 border-l border-meter-line pl-4">
+        {(scenario.workflowTransitions ?? []).map((transition) => (
+          <li className="relative text-sm" key={transition.id}>
+            <span className="absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full bg-meter-blue" />
+            <p className="font-semibold text-slate-800">
+              {transition.fromStatus ? `${transition.fromStatus} -> ` : ""}
+              {transition.toStatus}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              {transition.reasonDetail ?? transition.reasonCode}
+            </p>
+            <p className="mt-1 text-[11px] text-slate-400">
+              {transition.createdAt} - {transition.actor ?? "System"} - {transition.requestId}
+            </p>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }
 

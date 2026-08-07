@@ -22,7 +22,7 @@ from meterdesk_api.eval.regression import EvalRegressionService, build_prompt_fi
 from meterdesk_api.eval.runner import EvalRunner
 from meterdesk_api.main import app
 from meterdesk_api.repositories import get_repository
-from meterdesk_api.schemas import EvalResultSummary
+from meterdesk_api.schemas import ApprovalDecisionActor, EvalResultSummary
 from meterdesk_api.seed_data import build_seed_repository
 
 
@@ -302,12 +302,25 @@ async def test_credit_refund_eval_cases_run_real_governed_workflows() -> None:
 async def test_eval_results_are_latest_only_and_do_not_reset_workbench_ticket_state() -> None:
     repository = build_seed_repository()
     runner = EvalRunner(repository=repository, provider=EchoProvider())
-    workbench_run = await repository.create_agent_run(
+    await repository.reject_approval(
+        approval_id="APR-2042",
+        decision_actor=ApprovalDecisionActor(
+            subject="demo-admin",
+            display_name="Demo Admin",
+            role="admin",
+            source="demo_session",
+        ),
+        decision_request_id="eval-workbench-reject",
+        decision_note="Close seeded approval before starting a new cycle.",
+    )
+    workbench_start = await repository.start_or_replay_run(
         ticket_id="TCK-1042",
+        idempotency_key="eval-workbench-run",
         source="manual-test",
         model="manual-model",
         prompt_version="manual-v1",
     )
+    workbench_run = workbench_start.run
 
     first = await runner.run_case("eval-duplicate-charge-003")
     second = await runner.run_case("eval-duplicate-charge-003")

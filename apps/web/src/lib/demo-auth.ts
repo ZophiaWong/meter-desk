@@ -10,6 +10,8 @@ export const AGENT_RUN_PERMISSION_EXPLANATION =
   "Requires the support operator or admin role";
 export const APPROVAL_PERMISSION_EXPLANATION = "Requires the approver or admin role";
 export const EVAL_PERMISSION_EXPLANATION = "Requires the admin role";
+export const WORKFLOW_CANCEL_PERMISSION_EXPLANATION =
+  "Requires the support operator or admin role";
 
 export function canStartAgentRun(principal: DemoPrincipal): boolean {
   return principal.role === "support_operator" || principal.role === "admin";
@@ -21,6 +23,10 @@ export function canDecideApproval(principal: DemoPrincipal): boolean {
 
 export function canRunEval(principal: DemoPrincipal): boolean {
   return principal.role === "admin";
+}
+
+export function canCancelWorkflow(principal: DemoPrincipal): boolean {
+  return principal.role === "support_operator" || principal.role === "admin";
 }
 
 export function formatDemoRole(role: DemoRole): string {

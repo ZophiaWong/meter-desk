@@ -41,8 +41,12 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
         evidence_response = await client.get("/tickets/TCK-1042/billing-evidence")
         summary_response = await client.get("/tickets/TCK-1042/decision-summary")
         runs_response = await client.get("/tickets/TCK-1042/agent-runs")
+        workflows_response = await client.get("/tickets/TCK-1042/workflows")
         approvals_response = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         mutations_response = await client.get("/mock-mutations?ticket_id=TCK-1042")
+        workflow_id = workflows_response.json()[0]["id"]
+        workflow_response = await client.get(f"/workflows/{workflow_id}")
+        transitions_response = await client.get(f"/workflows/{workflow_id}/transitions")
 
     assert list_response.status_code == 200
     ticket_ids = [ticket["id"] for ticket in list_response.json()]
@@ -65,7 +69,16 @@ async def test_ticket_resources_return_seeded_duplicate_charge_contract() -> Non
     assert summary_response.status_code == 200
     summary = summary_response.json()
     assert summary["ticket_id"] == "TCK-1042"
-    assert summary["state"] == "pending_approval"
+    assert summary["state"] == "awaiting_approval"
+    assert workflows_response.status_code == 200
+    assert workflows_response.json()[0]["status"] == "awaiting_approval"
+    assert workflow_response.status_code == 200
+    assert workflow_response.json()["id"] == workflow_id
+    assert transitions_response.status_code == 200
+    assert [item["to_status"] for item in transitions_response.json()] == [
+        "investigating",
+        "awaiting_approval",
+    ]
     assert summary["decision_label"] == "Duplicate captured charge confirmed"
     assert "INV-2026-0418" in summary["rationale"]
     assert "blocked until human approval" in summary["rationale"]

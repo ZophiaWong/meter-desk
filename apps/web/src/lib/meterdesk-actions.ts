@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import {
   approveRequest,
+  cancelWorkflow,
   MeterDeskApiError,
   rejectRequest,
   runAllEvalCases,
@@ -21,8 +22,9 @@ export async function startAgentRunAction(formData: FormData) {
     throw new Error("ticketId is required");
   }
   const returnTo = ticketReturnTo(ticketId);
+  const idempotencyKey = String(formData.get("idempotencyKey") ?? crypto.randomUUID());
   await runAuthenticatedMutation(returnTo, (accessToken) =>
-    startAgentRun(ticketId, undefined, accessToken),
+    startAgentRun(ticketId, undefined, accessToken, idempotencyKey),
   );
   revalidatePath("/");
   revalidatePath(`/?ticket=${ticketId}`);
@@ -33,6 +35,22 @@ export async function startDefaultAgentRunAction() {
   const formData = new FormData();
   formData.set("ticketId", DEFAULT_TICKET_ID);
   await startAgentRunAction(formData);
+}
+
+export async function cancelWorkflowAction(formData: FormData) {
+  const workflowId = String(formData.get("workflowId") ?? "");
+  const ticketId = String(formData.get("ticketId") ?? DEFAULT_TICKET_ID);
+  const reason = String(formData.get("reason") ?? "Workflow cancelled by support operator.");
+  if (!workflowId) {
+    throw new Error("workflowId is required");
+  }
+  const returnTo = ticketReturnTo(ticketId);
+  await runAuthenticatedMutation(returnTo, (accessToken) =>
+    cancelWorkflow(workflowId, reason, undefined, accessToken),
+  );
+  revalidatePath("/");
+  revalidatePath(returnTo);
+  revalidatePath("/approvals");
 }
 
 export async function approveRequestAction(formData: FormData) {

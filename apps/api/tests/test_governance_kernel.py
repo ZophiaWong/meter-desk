@@ -85,6 +85,7 @@ async def test_governance_kernel_records_allowed_trace_metadata() -> None:
 @pytest.mark.asyncio
 async def test_governance_kernel_records_blocked_trace_for_missing_policy_refs() -> None:
     repository = build_seed_repository()
+    await repository.reset_demo_live_state("TCK-1042")
     run = await repository.create_agent_run(
         ticket_id="TCK-1042",
         source="test",
@@ -243,28 +244,31 @@ async def test_governance_kernel_blocks_approval_creation_for_executed_fingerpri
         prompt_version="test-v1",
     )
     kernel = GovernanceKernel(repository)
-    approval = await kernel.create_approval_request(
-        ticket_id="TCK-1042",
+    await repository.finalize_run(
         agent_run_id=run.id,
-        title="Original refund pending approval",
-        action_type="original_refund",
-        amount_cents=124800,
-        amount_display="$1,248.00",
-        currency="USD",
-        reason="Refund duplicate captured charge.",
-        blocker="Mutation blocked until human approval",
-        policy_citation="REFUND-DUP-001 v2026.02",
-        evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
-        policy_refs=["REFUND-DUP-001 v2026.02"],
-        action_metadata={
+        final_outcome="confirmed_duplicate_charge",
+        internal_resolution="Refund duplicate captured charge.",
+        customer_reply="Draft only.",
+        target_status="awaiting_approval",
+        reason_code="decision.approval_required",
+        approval={
+            "title": "Original refund pending approval",
             "action_type": "original_refund",
-            "invoice_id": "INV-2026-0418",
-            "target_charge_id": "ch_2026_0418_B",
+            "amount_cents": 124800,
+            "amount_display": "$1,248.00",
+            "currency": "USD",
+            "reason": "Refund duplicate captured charge.",
+            "blocker": "Mutation blocked until human approval",
+            "policy_citation": "REFUND-DUP-001 v2026.02",
+            "evidence_refs": ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+            "action_metadata": {
+                "action_type": "original_refund",
+                "invoice_id": "INV-2026-0418",
+                "target_charge_id": "ch_2026_0418_B",
+            },
         },
-        label="Created approval request for financial action",
-        input_summary="Created human approval gate for proposed original refund.",
-        output_summary="Approval request is pending.",
     )
+    approval = (await repository.list_approvals(ticket_id="TCK-1042"))[0]
     await kernel.execute_approved_mock_refund(
         approval.id,
         decision_actor=ApprovalDecisionActor(

@@ -6,6 +6,8 @@ from meterdesk_api.db import database_runtime_context
 from meterdesk_api.models import (
     AgentRun,
     ApprovalRequest,
+    CaseWorkflow,
+    CaseWorkflowTransition,
     Charge,
     CreditLedgerEntry,
     CustomerAccount,
@@ -39,6 +41,8 @@ from meterdesk_api.seed_data import (
     TICKET_DETAILS,
     TICKETS,
     TRACES,
+    WORKFLOW_TRANSITIONS,
+    WORKFLOWS,
     utc,
 )
 
@@ -46,10 +50,12 @@ DELETE_ORDER = [
     EvalResultSnapshot,
     EvalSuiteRun,
     EvalResult,
+    CaseWorkflowTransition,
     MockMutation,
     ToolTrace,
     ApprovalRequest,
     AgentRun,
+    CaseWorkflow,
     Charge,
     CreditLedgerEntry,
     SubscriptionEvidenceRecord,
@@ -90,6 +96,15 @@ async def seed_demo_data() -> None:
                     delete(EvalResult).where(EvalResult.agent_run_id.in_(demo_agent_run_ids))
                 )
                 await session.execute(
+                    delete(CaseWorkflowTransition).where(
+                        CaseWorkflowTransition.workflow_id.in_(
+                            select(CaseWorkflow.id).where(
+                                CaseWorkflow.ticket_id.in_(reset_ticket_ids)
+                            )
+                        )
+                    )
+                )
+                await session.execute(
                     delete(MockMutation).where(MockMutation.ticket_id.in_(reset_ticket_ids))
                 )
                 await session.execute(
@@ -100,6 +115,9 @@ async def seed_demo_data() -> None:
                 )
                 await session.execute(
                     delete(AgentRun).where(AgentRun.ticket_id.in_(reset_ticket_ids))
+                )
+                await session.execute(
+                    delete(CaseWorkflow).where(CaseWorkflow.ticket_id.in_(reset_ticket_ids))
                 )
 
                 for model in DELETE_ORDER:
@@ -160,6 +178,28 @@ async def seed_demo_data() -> None:
                     for position, (ticket_id, detail) in enumerate(
                         EVAL_TICKET_DETAILS.items(), start=1
                     )
+                )
+                await session.flush()
+
+                session.add_all(
+                    CaseWorkflow(
+                        id=workflow.id,
+                        ticket_id=workflow.ticket_id,
+                        cycle_number=workflow.cycle_number,
+                        status=workflow.status,
+                        status_reason_code=workflow.status_reason_code,
+                        status_reason=workflow.status_reason,
+                        origin=workflow.origin,
+                        previous_workflow_id=workflow.previous_workflow_id,
+                        version=workflow.version,
+                        transition_sequence=workflow.transition_sequence,
+                        created_at=workflow.created_at,
+                        updated_at=workflow.updated_at,
+                        started_at=workflow.started_at,
+                        terminal_at=workflow.terminal_at,
+                        seed_marker=DEMO_SEED_MARKER,
+                    )
+                    for workflow in WORKFLOWS
                 )
                 await session.flush()
 
@@ -324,12 +364,15 @@ async def seed_demo_data() -> None:
                     AgentRun(
                         id=run.id,
                         ticket_id=run.ticket_id,
+                        workflow_id=run.workflow_id,
+                        idempotency_key=run.idempotency_key or f"legacy:{run.id}",
                         status=run.status,
                         source=run.source,
                         final_outcome=run.final_outcome,
                         internal_resolution=run.internal_resolution,
                         customer_reply=run.customer_reply,
                         error_state=run.error_state,
+                        error_code=run.error_code,
                         model=run.model,
                         prompt_version=run.prompt_version,
                         started_at=utc(2026, 6, 5, 12, 5),
@@ -366,6 +409,7 @@ async def seed_demo_data() -> None:
                     ApprovalRequest(
                         id=approval.id,
                         ticket_id=approval.ticket_id,
+                        workflow_id=approval.workflow_id,
                         agent_run_id=approval.agent_run_id,
                         title=approval.title,
                         status=approval.status,
@@ -408,6 +452,7 @@ async def seed_demo_data() -> None:
                     MockMutation(
                         id=mutation.id,
                         ticket_id=mutation.ticket_id,
+                        workflow_id=mutation.workflow_id,
                         approval_request_id=mutation.approval_request_id,
                         agent_run_id=mutation.agent_run_id,
                         mutation_type=mutation.mutation_type,
@@ -423,6 +468,30 @@ async def seed_demo_data() -> None:
                         seed_marker=DEMO_SEED_MARKER,
                     )
                     for mutation in MOCK_MUTATIONS
+                )
+                await session.flush()
+
+                session.add_all(
+                    CaseWorkflowTransition(
+                        id=transition.id,
+                        workflow_id=transition.workflow_id,
+                        sequence=transition.sequence,
+                        from_status=transition.from_status,
+                        to_status=transition.to_status,
+                        reason_code=transition.reason_code,
+                        reason_detail=transition.reason_detail,
+                        actor_subject=transition.actor_subject,
+                        actor_display_name=transition.actor_display_name,
+                        actor_role=transition.actor_role,
+                        actor_source=transition.actor_source,
+                        request_id=transition.request_id,
+                        agent_run_id=transition.agent_run_id,
+                        approval_request_id=transition.approval_request_id,
+                        mock_mutation_id=transition.mock_mutation_id,
+                        created_at=transition.created_at,
+                        seed_marker=DEMO_SEED_MARKER,
+                    )
+                    for transition in WORKFLOW_TRANSITIONS
                 )
                 await session.flush()
 

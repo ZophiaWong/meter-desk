@@ -19,6 +19,8 @@ from meterdesk_api.schemas import (
     ApprovalDecisionActor,
     ApprovalSummary,
     BillingEvidence,
+    CaseWorkflowSummary,
+    CaseWorkflowTransitionSummary,
     EvalCaseSummary,
     EvalResultSnapshotSummary,
     EvalResultSummary,
@@ -29,6 +31,11 @@ from meterdesk_api.schemas import (
     TicketSummary,
     ToolTraceSummary,
 )
+from meterdesk_api.workflows import (
+    TERMINAL_WORKFLOW_STATUSES,
+    CaseWorkflowService,
+    can_transition,
+)
 
 SESSION_DEPENDENCY = Depends(get_session)
 
@@ -38,6 +45,26 @@ class ApprovalExecutionResult:
     approval: ApprovalSummary
     mutation: MockMutationSummary
     executed_now: bool
+
+
+@dataclass(frozen=True)
+class RunStartResult:
+    run: AgentRunSummary
+    replayed: bool
+
+
+@dataclass(frozen=True)
+class WorkflowTransitionInput:
+    reason_code: str
+    reason_detail: str | None = None
+    actor_subject: str | None = None
+    actor_display_name: str | None = None
+    actor_role: str | None = None
+    actor_source: str = "system"
+    request_id: str = "system"
+    agent_run_id: str | None = None
+    approval_request_id: str | None = None
+    mock_mutation_id: str | None = None
 
 
 class MeterDeskRepository(Protocol):
@@ -52,6 +79,14 @@ class MeterDeskRepository(Protocol):
     async def get_agent_run(self, agent_run_id: str) -> AgentRunSummary | None: ...
 
     async def list_traces(self, agent_run_id: str) -> list[ToolTraceSummary] | None: ...
+
+    async def list_workflows(self, ticket_id: str) -> list[CaseWorkflowSummary] | None: ...
+
+    async def get_workflow(self, workflow_id: str) -> CaseWorkflowSummary | None: ...
+
+    async def list_workflow_transitions(
+        self, workflow_id: str
+    ) -> list[CaseWorkflowTransitionSummary] | None: ...
 
     async def list_approvals(
         self,
@@ -140,6 +175,51 @@ class MeterDeskRepository(Protocol):
         prompt_version: str,
     ) -> AgentRunSummary: ...
 
+    async def start_or_replay_run(
+        self,
+        *,
+        ticket_id: str,
+        idempotency_key: str,
+        source: str,
+        model: str,
+        prompt_version: str,
+    ) -> RunStartResult: ...
+
+    async def finalize_run(
+        self,
+        *,
+        agent_run_id: str,
+        final_outcome: str,
+        internal_resolution: str,
+        customer_reply: str,
+        target_status: str,
+        reason_code: str,
+        reason_detail: str | None = None,
+        request_id: str = "system",
+        final_trace: dict[str, object] | None = None,
+        approval: dict[str, object] | None = None,
+        approval_trace: dict[str, object] | None = None,
+    ) -> AgentRunSummary: ...
+
+    async def fail_run(
+        self,
+        *,
+        agent_run_id: str,
+        error_code: str,
+        error_state: str,
+        recoverable: bool = True,
+        request_id: str = "system",
+    ) -> AgentRunSummary: ...
+
+    async def cancel_workflow(
+        self,
+        *,
+        workflow_id: str,
+        actor: ApprovalDecisionActor,
+        request_id: str,
+        reason: str,
+    ) -> CaseWorkflowSummary: ...
+
     async def complete_agent_run(
         self,
         *,
@@ -201,7 +281,26 @@ class MeterDeskRepository(Protocol):
         decision_note: str | None,
     ) -> ApprovalExecutionResult: ...
 
+    async def approve_and_execute(
+        self,
+        *,
+        approval_id: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
+        decision_note: str | None,
+        mutation_trace: dict[str, object] | None = None,
+    ) -> ApprovalExecutionResult: ...
+
     async def reject_request(
+        self,
+        *,
+        approval_id: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
+        decision_note: str | None,
+    ) -> ApprovalSummary: ...
+
+    async def reject_approval(
         self,
         *,
         approval_id: str,
@@ -226,6 +325,8 @@ class InMemoryMeterDeskRepository:
         eval_results: Sequence[EvalResultSummary],
         eval_runs: Sequence[EvalRunSummary] = (),
         eval_result_snapshots: Sequence[EvalResultSnapshotSummary] = (),
+        workflows: Sequence[CaseWorkflowSummary] = (),
+        workflow_transitions: Sequence[CaseWorkflowTransitionSummary] = (),
     ) -> None:
         self._tickets = list(tickets)
         self._ticket_details = ticket_details
@@ -238,6 +339,8 @@ class InMemoryMeterDeskRepository:
         self._eval_results = list(eval_results)
         self._eval_runs = list(eval_runs)
         self._eval_result_snapshots = list(eval_result_snapshots)
+        self._workflows = list(workflows)
+        self._workflow_transitions = list(workflow_transitions)
 
     async def list_tickets(self) -> list[TicketSummary]:
         return self._tickets
@@ -264,6 +367,31 @@ class InMemoryMeterDeskRepository:
         if agent_run_id not in self._traces:
             return None
         return self._traces[agent_run_id]
+
+    async def list_workflows(self, ticket_id: str) -> list[CaseWorkflowSummary] | None:
+        if ticket_id not in self._ticket_details:
+            return None
+        return sorted(
+            [workflow for workflow in self._workflows if workflow.ticket_id == ticket_id],
+            key=lambda workflow: workflow.cycle_number,
+        )
+
+    async def get_workflow(self, workflow_id: str) -> CaseWorkflowSummary | None:
+        return next((workflow for workflow in self._workflows if workflow.id == workflow_id), None)
+
+    async def list_workflow_transitions(
+        self, workflow_id: str
+    ) -> list[CaseWorkflowTransitionSummary] | None:
+        if await self.get_workflow(workflow_id) is None:
+            return None
+        return sorted(
+            [
+                transition
+                for transition in self._workflow_transitions
+                if transition.workflow_id == workflow_id
+            ],
+            key=lambda transition: transition.sequence,
+        )
 
     async def list_approvals(
         self,
@@ -378,6 +506,9 @@ class InMemoryMeterDeskRepository:
     async def reset_eval_fixture_state(self, fixture_ticket_id: str) -> None:
         runs = self._agent_runs.pop(fixture_ticket_id, [])
         run_ids = {run.id for run in runs}
+        workflow_ids = {
+            workflow.id for workflow in self._workflows if workflow.ticket_id == fixture_ticket_id
+        }
         self._eval_results = [
             result for result in self._eval_results if result.agent_run_id not in run_ids
         ]
@@ -404,10 +535,21 @@ class InMemoryMeterDeskRepository:
                 )
             )
         ]
+        self._workflow_transitions = [
+            transition
+            for transition in self._workflow_transitions
+            if transition.workflow_id not in workflow_ids
+        ]
+        self._workflows = [
+            workflow for workflow in self._workflows if workflow.id not in workflow_ids
+        ]
 
     async def reset_demo_live_state(self, ticket_id: str) -> None:
         runs = self._agent_runs.pop(ticket_id, [])
         run_ids = {run.id for run in runs}
+        workflow_ids = {
+            workflow.id for workflow in self._workflows if workflow.ticket_id == ticket_id
+        }
         for run_id in run_ids:
             self._traces.pop(run_id, None)
         self._approvals = [
@@ -415,6 +557,14 @@ class InMemoryMeterDeskRepository:
         ]
         self._mock_mutations = [
             mutation for mutation in self._mock_mutations if mutation.ticket_id != ticket_id
+        ]
+        self._workflow_transitions = [
+            transition
+            for transition in self._workflow_transitions
+            if transition.workflow_id not in workflow_ids
+        ]
+        self._workflows = [
+            workflow for workflow in self._workflows if workflow.id not in workflow_ids
         ]
 
     async def get_pending_financial_approval(
@@ -467,17 +617,565 @@ class InMemoryMeterDeskRepository:
         model: str,
         prompt_version: str,
     ) -> AgentRunSummary:
+        result = await self.start_or_replay_run(
+            ticket_id=ticket_id,
+            idempotency_key=_new_id("idempotency"),
+            source=source,
+            model=model,
+            prompt_version=prompt_version,
+        )
+        return result.run
+
+    async def start_or_replay_run(
+        self,
+        *,
+        ticket_id: str,
+        idempotency_key: str,
+        source: str,
+        model: str,
+        prompt_version: str,
+    ) -> RunStartResult:
+        if ticket_id not in self._ticket_details:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="ticket.not_found",
+                message="Ticket not found.",
+            )
+        existing = next(
+            (
+                run
+                for run in self._agent_runs.get(ticket_id, [])
+                if getattr(run, "idempotency_key", None) == idempotency_key
+            ),
+            None,
+        )
+        if existing is not None:
+            return RunStartResult(run=existing, replayed=True)
+
+        workflows = sorted(
+            [workflow for workflow in self._workflows if workflow.ticket_id == ticket_id],
+            key=lambda workflow: workflow.cycle_number,
+        )
+        active = next(
+            (
+                workflow
+                for workflow in reversed(workflows)
+                if workflow.status not in {status.value for status in TERMINAL_WORKFLOW_STATUSES}
+            ),
+            None,
+        )
+        if active is not None and active.status in {"investigating", "awaiting_approval"}:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.active_conflict",
+                message="This workflow already has an active investigation or approval.",
+                details={"workflow_id": active.id, "status": active.status},
+            )
+        if active is not None and active.status not in {"needs_retry"}:
+            active = None
+
+        now = _now()
+        if active is None:
+            previous = workflows[-1] if workflows else None
+            workflow = CaseWorkflowSummary(
+                id=_new_id("WF"),
+                ticket_id=ticket_id,
+                cycle_number=(previous.cycle_number + 1) if previous else 1,
+                status="investigating",
+                status_reason_code="workflow.started",
+                status_reason="Investigation started.",
+                origin="runtime",
+                previous_workflow_id=previous.id if previous else None,
+                version=1,
+                transition_sequence=1,
+                created_at=now,
+                updated_at=now,
+                started_at=now,
+            )
+            transition = CaseWorkflowTransitionSummary(
+                id=f"{workflow.id}-T1",
+                workflow_id=workflow.id,
+                sequence=1,
+                to_status="investigating",
+                reason_code="workflow.started",
+                reason_detail="Investigation started.",
+                actor_source="system",
+                request_id="system",
+                created_at=now,
+            )
+            self._workflows.append(workflow)
+            self._workflow_transitions.append(transition)
+        else:
+            workflow = active
+            if workflow.status == "needs_retry":
+                updated = workflow.model_copy(
+                    update={
+                        "status": "investigating",
+                        "status_reason_code": "workflow.retry_started",
+                        "status_reason": "Retry investigation started.",
+                        "version": workflow.version + 1,
+                        "transition_sequence": workflow.transition_sequence + 1,
+                        "updated_at": now,
+                        "terminal_at": None,
+                    }
+                )
+                self._replace_workflow(updated)
+                self._workflow_transitions.append(
+                    CaseWorkflowTransitionSummary(
+                        id=f"{workflow.id}-T{updated.transition_sequence}",
+                        workflow_id=workflow.id,
+                        sequence=updated.transition_sequence,
+                        from_status="needs_retry",
+                        to_status="investigating",
+                        reason_code="workflow.retry_started",
+                        reason_detail="Retry investigation started.",
+                        actor_source="system",
+                        request_id="system",
+                        created_at=now,
+                    )
+                )
+                workflow = updated
+
         run = AgentRunSummary(
             id=_new_id("RUN"),
             ticket_id=ticket_id,
+            workflow_id=workflow.id,
             status="running",
             source=source,
+            idempotency_key=idempotency_key,
             model=model,
             prompt_version=prompt_version,
         )
         self._agent_runs.setdefault(ticket_id, []).append(run)
         self._traces[run.id] = []
-        return run
+        return RunStartResult(run=run, replayed=False)
+
+    async def finalize_run(
+        self,
+        *,
+        agent_run_id: str,
+        final_outcome: str,
+        internal_resolution: str,
+        customer_reply: str,
+        target_status: str,
+        reason_code: str,
+        reason_detail: str | None = None,
+        request_id: str = "system",
+        final_trace: dict[str, object] | None = None,
+        approval: dict[str, object] | None = None,
+        approval_trace: dict[str, object] | None = None,
+    ) -> AgentRunSummary:
+        run = self._find_run(agent_run_id)
+        workflow = await self.get_workflow(run.workflow_id or "")
+        if workflow is None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.missing",
+                message="Agent run is not attached to a workflow.",
+            )
+        if run.status != "running":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.finalize_conflict",
+                message="This agent run is no longer running.",
+            )
+        if not can_transition(workflow.status, target_status):
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.finalize_conflict",
+                message="The workflow was finalized by another command.",
+                details={"workflow_id": workflow.id, "status": workflow.status},
+            )
+        if target_status == "awaiting_approval" and approval is None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.missing",
+                message="An approval payload is required for awaiting_approval.",
+            )
+        if target_status != "awaiting_approval" and approval is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.unexpected",
+                message="Approval payload is only valid for awaiting_approval.",
+            )
+        if approval is None and approval_trace is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.unexpected",
+                message="Approval trace requires an approval payload.",
+            )
+
+        now = _now()
+        new_approval: ApprovalSummary | None = None
+        if approval is not None:
+            action_metadata = dict(approval.get("action_metadata", {}))
+            fingerprint = str(
+                approval.get("action_fingerprint")
+                or build_action_fingerprint(
+                    ticket_id=run.ticket_id,
+                    action_type=str(approval["action_type"]),
+                    amount_cents=int(approval["amount_cents"]),
+                    currency=str(approval["currency"]),
+                    action_metadata=action_metadata,
+                )
+            )
+            if await self.get_pending_approval_by_fingerprint(fingerprint) is not None:
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="approval.pending_duplicate",
+                    message="A pending financial approval already exists for this action.",
+                    details={"action_fingerprint": fingerprint},
+                )
+            if await self.get_executed_mock_mutation_by_fingerprint(fingerprint) is not None:
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="mutation.duplicate_action",
+                    message="This financial action has already been executed.",
+                    details={"action_fingerprint": fingerprint},
+                )
+            new_approval = ApprovalSummary(
+                id=str(approval.get("id") or _new_id("APR")),
+                ticket_id=run.ticket_id,
+                workflow_id=workflow.id,
+                agent_run_id=run.id,
+                title=str(approval["title"]),
+                status="pending",
+                action_type=str(approval["action_type"]),
+                amount=MoneyAmount(
+                    amount_cents=int(approval["amount_cents"]),
+                    currency=str(approval["currency"]),
+                    display=str(approval["amount_display"]),
+                ),
+                reason=str(approval["reason"]),
+                policy_citation=str(approval["policy_citation"]),
+                blocker=str(approval["blocker"]),
+                evidence_refs=list(approval.get("evidence_refs", [])),
+                action_metadata=action_metadata,
+                action_fingerprint=fingerprint,
+            )
+            if approval_trace is None:
+                approval_trace = _default_approval_trace_payload(new_approval)
+
+        new_trace = None
+        if final_trace is not None:
+            new_trace = self._build_trace_from_payload(run.id, final_trace)
+        new_approval_trace = None
+        if approval_trace is not None:
+            trace_payload = dict(approval_trace)
+            if new_approval is not None:
+                refs = [
+                    new_approval.id if ref == "pending" else ref
+                    for ref in list(trace_payload.get("approval_refs", []))
+                ]
+                trace_payload["approval_refs"] = refs
+                metadata = dict(trace_payload.get("governance_metadata", {}))
+                if metadata.get("satisfied_ref_categories"):
+                    metadata["satisfied_ref_categories"] = [
+                        new_approval.id if ref == "pending" else ref
+                        for ref in metadata["satisfied_ref_categories"]
+                    ]
+                trace_payload["governance_metadata"] = metadata
+            new_approval_trace = self._build_trace_from_payload(
+                run.id,
+                trace_payload,
+                sequence_offset=1 if new_trace is not None else 0,
+            )
+        updated_run = run.model_copy(
+            update={
+                "status": "completed",
+                "final_outcome": final_outcome,
+                "internal_resolution": internal_resolution,
+                "customer_reply": customer_reply,
+                "error_state": None,
+                "error_code": None,
+            }
+        )
+        updated_workflow = self._transition_workflow(
+            workflow,
+            target_status=target_status,
+            reason_code=reason_code,
+            reason_detail=reason_detail,
+            request_id=request_id,
+            agent_run_id=run.id,
+            approval_request_id=new_approval.id if new_approval else None,
+            now=now,
+        )
+        # All validation and object construction happen before any collection is
+        # mutated, giving the in-memory repository the same all-or-nothing
+        # semantics as the SQL implementation.
+        self._replace_run(updated_run)
+        self._replace_workflow(updated_workflow)
+        if new_trace is not None:
+            self._traces.setdefault(run.id, []).append(new_trace)
+        if new_approval is not None:
+            self._approvals.append(new_approval)
+        if new_approval_trace is not None:
+            self._traces.setdefault(run.id, []).append(new_approval_trace)
+        self._workflow_transitions.append(
+            self._transition_to_summary(
+                updated_workflow,
+                now,
+                reason_code=reason_code,
+                reason_detail=reason_detail,
+                request_id=request_id,
+                agent_run_id=run.id,
+                approval_request_id=new_approval.id if new_approval else None,
+            )
+        )
+        return updated_run
+
+    def _build_trace_from_payload(
+        self,
+        agent_run_id: str,
+        payload: dict[str, object],
+        *,
+        sequence_offset: int = 0,
+    ) -> ToolTraceSummary:
+        traces = self._traces.get(agent_run_id, [])
+        return ToolTraceSummary(
+            id=str(payload.get("id") or _new_id("trace")),
+            agent_run_id=agent_run_id,
+            sequence=len(traces) + sequence_offset + 1,
+            category=str(payload["category"]),
+            risk=str(payload["risk"]),
+            label=str(payload["label"]),
+            input_summary=str(payload.get("input_summary", "")),
+            output_summary=str(payload.get("output_summary", "")),
+            evidence_refs=list(payload.get("evidence_refs", [])),
+            policy_refs=list(payload.get("policy_refs", [])),
+            approval_refs=list(payload.get("approval_refs", [])),
+            error_state=payload.get("error_state"),
+            governance_metadata=dict(payload.get("governance_metadata", {})),
+        )
+
+    def _transition_workflow(
+        self,
+        workflow: CaseWorkflowSummary,
+        *,
+        target_status: str,
+        reason_code: str,
+        reason_detail: str | None,
+        request_id: str,
+        agent_run_id: str | None = None,
+        approval_request_id: str | None = None,
+        mock_mutation_id: str | None = None,
+        now: datetime | None = None,
+        actor: ApprovalDecisionActor | None = None,
+    ) -> CaseWorkflowSummary:
+        CaseWorkflowService.validate_transition(workflow.status, target_status)
+        timestamp = now or _now()
+        terminal_at = (
+            timestamp
+            if target_status in {status.value for status in TERMINAL_WORKFLOW_STATUSES}
+            else None
+        )
+        return workflow.model_copy(
+            update={
+                "status": target_status,
+                "status_reason_code": reason_code,
+                "status_reason": reason_detail,
+                "version": workflow.version + 1,
+                "transition_sequence": workflow.transition_sequence + 1,
+                "updated_at": timestamp,
+                "terminal_at": terminal_at,
+            }
+        )
+
+    def _transition_to_summary(
+        self,
+        workflow: CaseWorkflowSummary,
+        now: datetime,
+        *,
+        from_status: str | None = None,
+        reason_code: str | None = None,
+        reason_detail: str | None = None,
+        request_id: str = "system",
+        actor: ApprovalDecisionActor | None = None,
+        agent_run_id: str | None = None,
+        approval_request_id: str | None = None,
+        mock_mutation_id: str | None = None,
+    ) -> CaseWorkflowTransitionSummary:
+        previous = from_status
+        if previous is None:
+            transitions = [
+                item for item in self._workflow_transitions if item.workflow_id == workflow.id
+            ]
+            previous = transitions[-1].to_status if transitions else None
+        return CaseWorkflowTransitionSummary(
+            id=f"{workflow.id}-T{workflow.transition_sequence}",
+            workflow_id=workflow.id,
+            sequence=workflow.transition_sequence,
+            from_status=previous,
+            to_status=workflow.status,
+            reason_code=reason_code or workflow.status_reason_code,
+            reason_detail=reason_detail or workflow.status_reason,
+            actor_subject=actor.subject if actor else None,
+            actor_display_name=actor.display_name if actor else None,
+            actor_role=actor.role if actor else None,
+            actor_source=actor.source if actor else "system",
+            request_id=request_id,
+            agent_run_id=agent_run_id,
+            approval_request_id=approval_request_id,
+            mock_mutation_id=mock_mutation_id,
+            created_at=now,
+        )
+
+    async def fail_run(
+        self,
+        *,
+        agent_run_id: str,
+        error_code: str,
+        error_state: str,
+        recoverable: bool = True,
+        request_id: str = "system",
+    ) -> AgentRunSummary:
+        run = self._find_run(agent_run_id)
+        workflow = await self.get_workflow(run.workflow_id or "")
+        if workflow is None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.missing",
+                message="Agent run is not attached to a workflow.",
+            )
+        if run.status != "running":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.finalize_conflict",
+                message="This agent run is no longer running.",
+            )
+        target_status = "needs_retry" if recoverable else "failed"
+        if not can_transition(workflow.status, target_status):
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.finalize_conflict",
+                message="The workflow was finalized by another command.",
+                details={"workflow_id": workflow.id, "status": workflow.status},
+            )
+        now = _now()
+        updated_run = run.model_copy(
+            update={
+                "status": "failed",
+                "error_state": error_state,
+                "error_code": error_code,
+            }
+        )
+        updated_workflow = self._transition_workflow(
+            workflow,
+            target_status=target_status,
+            reason_code=error_code,
+            reason_detail=error_state,
+            request_id=request_id,
+            agent_run_id=run.id,
+            now=now,
+        )
+        self._replace_run(updated_run)
+        self._replace_workflow(updated_workflow)
+        self._workflow_transitions.append(
+            self._transition_to_summary(
+                updated_workflow,
+                now,
+                reason_code=error_code,
+                reason_detail=error_state,
+                request_id=request_id,
+                agent_run_id=run.id,
+            )
+        )
+        return updated_run
+
+    async def cancel_workflow(
+        self,
+        *,
+        workflow_id: str,
+        actor: ApprovalDecisionActor,
+        request_id: str,
+        reason: str,
+    ) -> CaseWorkflowSummary:
+        workflow = await self.get_workflow(workflow_id)
+        if workflow is None:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="workflow.not_found",
+                message="Workflow not found.",
+            )
+        if workflow.status in {status.value for status in TERMINAL_WORKFLOW_STATUSES}:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.terminal_conflict",
+                message="Terminal workflows cannot be cancelled.",
+                details={"workflow_id": workflow.id, "status": workflow.status},
+            )
+        now = _now()
+        current_run = next(
+            (
+                run
+                for run in self._agent_runs.get(workflow.ticket_id, [])
+                if run.workflow_id == workflow.id and run.status == "running"
+            ),
+            None,
+        )
+        pending_approval = next(
+            (
+                approval
+                for approval in self._approvals
+                if approval.workflow_id == workflow.id and approval.status == "pending"
+            ),
+            None,
+        )
+        updated_workflow = self._transition_workflow(
+            workflow,
+            target_status="cancelled",
+            reason_code="workflow.cancelled",
+            reason_detail=reason,
+            request_id=request_id,
+            agent_run_id=current_run.id if current_run else None,
+            approval_request_id=pending_approval.id if pending_approval else None,
+            now=now,
+            actor=actor,
+        )
+        updated_run = (
+            current_run.model_copy(
+                update={
+                    "status": "cancelled",
+                    "error_code": "workflow.cancelled",
+                    "error_state": reason,
+                }
+            )
+            if current_run
+            else None
+        )
+        updated_approval = (
+            pending_approval.model_copy(
+                update={
+                    "status": "withdrawn",
+                    "decision": "withdrawn",
+                    "decided_at": now,
+                    "decision_actor": actor,
+                    "decision_request_id": request_id,
+                    "decision_note": reason,
+                    "blocker": "Withdrawn with workflow cancellation; no mock mutation executed",
+                }
+            )
+            if pending_approval
+            else None
+        )
+        self._replace_workflow(updated_workflow)
+        if updated_run:
+            self._replace_run(updated_run)
+        if updated_approval:
+            self._replace_approval(updated_approval)
+        self._workflow_transitions.append(
+            self._transition_to_summary(
+                updated_workflow,
+                now,
+                reason_code="workflow.cancelled",
+                reason_detail=reason,
+                request_id=request_id,
+                actor=actor,
+                agent_run_id=current_run.id if current_run else None,
+                approval_request_id=pending_approval.id if pending_approval else None,
+            )
+        )
+        return updated_workflow
 
     async def complete_agent_run(
         self,
@@ -487,24 +1185,23 @@ class InMemoryMeterDeskRepository:
         internal_resolution: str,
         customer_reply: str,
     ) -> AgentRunSummary:
-        run = self._find_run(agent_run_id)
-        completed = run.model_copy(
-            update={
-                "status": "completed",
-                "final_outcome": final_outcome,
-                "internal_resolution": internal_resolution,
-                "customer_reply": customer_reply,
-                "error_state": None,
-            }
+        return await self.finalize_run(
+            agent_run_id=agent_run_id,
+            final_outcome=final_outcome,
+            internal_resolution=internal_resolution,
+            customer_reply=customer_reply,
+            target_status="completed_no_action",
+            reason_code="decision.completed_no_action",
+            reason_detail="Investigation completed without a financial mutation.",
         )
-        self._replace_run(completed)
-        return completed
 
     async def fail_agent_run(self, agent_run_id: str, error_state: str) -> AgentRunSummary:
-        run = self._find_run(agent_run_id)
-        failed = run.model_copy(update={"status": "failed", "error_state": error_state})
-        self._replace_run(failed)
-        return failed
+        return await self.fail_run(
+            agent_run_id=agent_run_id,
+            error_code="runtime.failure",
+            error_state=error_state,
+            recoverable=True,
+        )
 
     async def add_tool_trace(
         self,
@@ -572,9 +1269,28 @@ class InMemoryMeterDeskRepository:
                 message="A pending financial approval already exists for this action.",
                 details={"action_fingerprint": fingerprint},
             )
+        run = await self.get_agent_run(agent_run_id)
+        workflow_id = run.workflow_id if run is not None else None
+        workflow = await self.get_workflow(workflow_id or "") if workflow_id else None
+        if workflow is None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.missing",
+                message="Approval request requires a workflow-linked agent run.",
+            )
+        if workflow.status != "awaiting_approval" or run.status != "completed":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.approval_conflict",
+                message=(
+                    "Approval requests must be created by finalizing a run into awaiting_approval."
+                ),
+                details={"workflow_id": workflow.id, "status": workflow.status},
+            )
         approval = ApprovalSummary(
             id=_new_id("APR"),
             ticket_id=ticket_id,
+            workflow_id=workflow_id,
             agent_run_id=agent_run_id,
             title=title,
             status="pending",
@@ -618,6 +1334,22 @@ class InMemoryMeterDeskRepository:
         decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalExecutionResult:
+        return await self.approve_and_execute(
+            approval_id=approval_id,
+            decision_actor=decision_actor,
+            decision_request_id=decision_request_id,
+            decision_note=decision_note,
+        )
+
+    async def approve_and_execute(
+        self,
+        *,
+        approval_id: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
+        decision_note: str | None,
+        mutation_trace: dict[str, object] | None = None,
+    ) -> ApprovalExecutionResult:
         current = await self.get_approval(approval_id)
         if current is None:
             raise MeterDeskAPIError(
@@ -626,7 +1358,7 @@ class InMemoryMeterDeskRepository:
                 message="Approval request not found.",
             )
         existing = await self.get_mock_mutation_by_approval(approval_id)
-        if current.status == "rejected":
+        if current.status in {"rejected", "withdrawn"}:
             raise MeterDeskAPIError(
                 status_code=409,
                 code="approval.terminal_conflict",
@@ -661,6 +1393,15 @@ class InMemoryMeterDeskRepository:
                 details={"action_fingerprint": current.action_fingerprint},
             )
 
+        if mutation_trace is None:
+            mutation_trace = _default_mutation_trace_payload(current)
+        workflow = await self.get_workflow(current.workflow_id or "")
+        if workflow is None or workflow.status != "awaiting_approval":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.approval_conflict",
+                message="The workflow is no longer awaiting approval.",
+            )
         decided_at = _now()
         approval = current.model_copy(
             update={
@@ -677,6 +1418,7 @@ class InMemoryMeterDeskRepository:
         mutation = MockMutationSummary(
             id=_new_id("MM"),
             ticket_id=approval.ticket_id,
+            workflow_id=approval.workflow_id,
             approval_request_id=approval.id,
             agent_run_id=approval.agent_run_id,
             mutation_type=approval.action_type,
@@ -688,7 +1430,39 @@ class InMemoryMeterDeskRepository:
             executed_at=decided_at,
             executed_at_display=_format_display_time(decided_at),
         )
+        updated_workflow = self._transition_workflow(
+            workflow,
+            target_status="mock_executed",
+            reason_code="approval.approved_and_executed",
+            reason_detail="Approval accepted and mock mutation executed atomically.",
+            request_id=decision_request_id,
+            approval_request_id=approval.id,
+            mock_mutation_id=mutation.id,
+            now=decided_at,
+            actor=decision_actor,
+        )
+        trace = None
+        if mutation_trace is not None:
+            trace = self._build_trace_from_payload(
+                approval.agent_run_id or "mutation",
+                mutation_trace,
+            )
         self._mock_mutations.append(mutation)
+        self._replace_workflow(updated_workflow)
+        if trace is not None and approval.agent_run_id is not None:
+            self._traces.setdefault(approval.agent_run_id, []).append(trace)
+        self._workflow_transitions.append(
+            self._transition_to_summary(
+                updated_workflow,
+                decided_at,
+                reason_code="approval.approved_and_executed",
+                reason_detail="Approval accepted and mock mutation executed atomically.",
+                request_id=decision_request_id,
+                actor=decision_actor,
+                approval_request_id=approval.id,
+                mock_mutation_id=mutation.id,
+            )
+        )
         return ApprovalExecutionResult(
             approval=approval,
             mutation=mutation,
@@ -703,6 +1477,21 @@ class InMemoryMeterDeskRepository:
         decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalSummary:
+        return await self.reject_approval(
+            approval_id=approval_id,
+            decision_actor=decision_actor,
+            decision_request_id=decision_request_id,
+            decision_note=decision_note,
+        )
+
+    async def reject_approval(
+        self,
+        *,
+        approval_id: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
+        decision_note: str | None,
+    ) -> ApprovalSummary:
         current = await self.get_approval(approval_id)
         if current is None:
             raise MeterDeskAPIError(
@@ -710,7 +1499,7 @@ class InMemoryMeterDeskRepository:
                 code="approval.not_found",
                 message="Approval request not found.",
             )
-        if current.status == "approved":
+        if current.status in {"approved", "withdrawn"}:
             raise MeterDeskAPIError(
                 status_code=409,
                 code="approval.terminal_conflict",
@@ -718,18 +1507,48 @@ class InMemoryMeterDeskRepository:
             )
         if current.status == "rejected":
             return current
+        workflow = await self.get_workflow(current.workflow_id or "")
+        if workflow is None or workflow.status != "awaiting_approval":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.approval_conflict",
+                message="The workflow is no longer awaiting approval.",
+            )
+        decided_at = _now()
         approval = current.model_copy(
             update={
                 "status": "rejected",
                 "decision": "rejected",
-                "decided_at": _now(),
+                "decided_at": decided_at,
                 "decision_actor": decision_actor,
                 "decision_request_id": decision_request_id,
                 "decision_note": decision_note,
                 "blocker": "Rejected by human reviewer; no mock mutation executed",
             }
         )
+        updated_workflow = self._transition_workflow(
+            workflow,
+            target_status="rejected",
+            reason_code="approval.rejected",
+            reason_detail=decision_note or "Approval rejected by human reviewer.",
+            request_id=decision_request_id,
+            approval_request_id=approval.id,
+            now=decided_at,
+            actor=decision_actor,
+        )
         self._replace_approval(approval)
+        self._replace_workflow(updated_workflow)
+        self._workflow_transitions.append(
+            self._transition_to_summary(
+                updated_workflow,
+                decided_at,
+                reason_code="approval.rejected",
+                reason_detail=decision_note or "Approval rejected by human reviewer.",
+                request_id=decision_request_id,
+                actor=decision_actor,
+                approval_request_id=approval.id,
+            )
+        )
         return approval
 
     def _find_run(self, agent_run_id: str) -> AgentRunSummary:
@@ -737,13 +1556,24 @@ class InMemoryMeterDeskRepository:
             for run in runs:
                 if run.id == agent_run_id:
                     return run
-        raise KeyError(agent_run_id)
+        raise MeterDeskAPIError(
+            status_code=404,
+            code="agent_run.not_found",
+            message="Agent run not found.",
+        )
 
     def _replace_run(self, replacement: AgentRunSummary) -> None:
         runs = self._agent_runs[replacement.ticket_id]
         for index, run in enumerate(runs):
             if run.id == replacement.id:
                 runs[index] = replacement
+                return
+        raise KeyError(replacement.id)
+
+    def _replace_workflow(self, replacement: CaseWorkflowSummary) -> None:
+        for index, workflow in enumerate(self._workflows):
+            if workflow.id == replacement.id:
+                self._workflows[index] = replacement
                 return
         raise KeyError(replacement.id)
 
@@ -1022,12 +1852,15 @@ class SqlAlchemyMeterDeskRepository:
             AgentRunSummary(
                 id=run.id,
                 ticket_id=run.ticket_id,
+                workflow_id=run.workflow_id,
+                idempotency_key=run.idempotency_key,
                 status=run.status,
                 source=run.source,
                 final_outcome=run.final_outcome,
                 internal_resolution=run.internal_resolution,
                 customer_reply=run.customer_reply,
                 error_state=run.error_state,
+                error_code=run.error_code,
                 model=run.model,
                 prompt_version=run.prompt_version,
             )
@@ -1071,6 +1904,42 @@ class SqlAlchemyMeterDeskRepository:
             )
             for trace in traces
         ]
+
+    async def list_workflows(self, ticket_id: str) -> list[CaseWorkflowSummary] | None:
+        from meterdesk_api.models import CaseWorkflow, Ticket
+
+        if await self._session.get(Ticket, ticket_id) is None:
+            return None
+        workflows = (
+            await self._session.execute(
+                select(CaseWorkflow)
+                .where(CaseWorkflow.ticket_id == ticket_id)
+                .order_by(CaseWorkflow.cycle_number)
+            )
+        ).scalars()
+        return [_workflow_to_summary(workflow) for workflow in workflows]
+
+    async def get_workflow(self, workflow_id: str) -> CaseWorkflowSummary | None:
+        from meterdesk_api.models import CaseWorkflow
+
+        workflow = await self._session.get(CaseWorkflow, workflow_id)
+        return _workflow_to_summary(workflow) if workflow is not None else None
+
+    async def list_workflow_transitions(
+        self, workflow_id: str
+    ) -> list[CaseWorkflowTransitionSummary] | None:
+        from meterdesk_api.models import CaseWorkflow, CaseWorkflowTransition
+
+        if await self._session.get(CaseWorkflow, workflow_id) is None:
+            return None
+        transitions = (
+            await self._session.execute(
+                select(CaseWorkflowTransition)
+                .where(CaseWorkflowTransition.workflow_id == workflow_id)
+                .order_by(CaseWorkflowTransition.sequence)
+            )
+        ).scalars()
+        return [_workflow_transition_to_summary(transition) for transition in transitions]
 
     async def list_approvals(
         self,
@@ -1170,27 +2039,636 @@ class SqlAlchemyMeterDeskRepository:
         model: str,
         prompt_version: str,
     ) -> AgentRunSummary:
-        from meterdesk_api.models import AgentRun
-
-        now = _now()
-        run = AgentRun(
-            id=_new_id("RUN"),
+        result = await self.start_or_replay_run(
             ticket_id=ticket_id,
-            status="running",
+            idempotency_key=_new_id("idempotency"),
             source=source,
-            final_outcome=None,
-            internal_resolution=None,
-            customer_reply=None,
-            error_state=None,
             model=model,
             prompt_version=prompt_version,
-            started_at=now,
-            completed_at=None,
-            seed_marker=None,
         )
-        self._session.add(run)
-        await self._session.commit()
+        return result.run
+
+    async def start_or_replay_run(
+        self,
+        *,
+        ticket_id: str,
+        idempotency_key: str,
+        source: str,
+        model: str,
+        prompt_version: str,
+    ) -> RunStartResult:
+        from meterdesk_api.models import AgentRun, CaseWorkflow, CaseWorkflowTransition, Ticket
+
+        if await self._session.get(Ticket, ticket_id) is None:
+            raise MeterDeskAPIError(
+                status_code=404,
+                code="ticket.not_found",
+                message="Ticket not found.",
+            )
+        existing = (
+            await self._session.execute(
+                select(AgentRun)
+                .where(AgentRun.ticket_id == ticket_id)
+                .where(AgentRun.idempotency_key == idempotency_key)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return RunStartResult(run=_run_to_summary(existing), replayed=True)
+
+        await self._session.rollback()
+        try:
+            async with self._session.begin():
+                active = (
+                    await self._session.execute(
+                        select(CaseWorkflow)
+                        .where(CaseWorkflow.ticket_id == ticket_id)
+                        .where(
+                            CaseWorkflow.status.in_(
+                                ["investigating", "needs_retry", "awaiting_approval"]
+                            )
+                        )
+                        .order_by(CaseWorkflow.cycle_number.desc())
+                        .with_for_update()
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if active is not None and active.status in {"investigating", "awaiting_approval"}:
+                    replay = (
+                        await self._session.execute(
+                            select(AgentRun)
+                            .where(AgentRun.ticket_id == ticket_id)
+                            .where(AgentRun.idempotency_key == idempotency_key)
+                            .with_for_update()
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if replay is not None:
+                        return RunStartResult(run=_run_to_summary(replay), replayed=True)
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="workflow.active_conflict",
+                        message="This workflow already has an active investigation or approval.",
+                        details={"workflow_id": active.id, "status": active.status},
+                    )
+                now = _now()
+                if active is not None and active.status == "needs_retry":
+                    workflow = active
+                    workflow.status = "investigating"
+                    workflow.status_reason_code = "workflow.retry_started"
+                    workflow.status_reason = "Retry investigation started."
+                    workflow.version += 1
+                    workflow.transition_sequence += 1
+                    workflow.updated_at = now
+                    workflow.terminal_at = None
+                    self._session.add(
+                        CaseWorkflowTransition(
+                            id=f"{workflow.id}-T{workflow.transition_sequence}",
+                            workflow_id=workflow.id,
+                            sequence=workflow.transition_sequence,
+                            from_status="needs_retry",
+                            to_status="investigating",
+                            reason_code="workflow.retry_started",
+                            reason_detail="Retry investigation started.",
+                            actor_source="system",
+                            request_id="system",
+                            created_at=now,
+                            seed_marker=None,
+                        )
+                    )
+                else:
+                    previous = (
+                        await self._session.execute(
+                            select(CaseWorkflow)
+                            .where(CaseWorkflow.ticket_id == ticket_id)
+                            .order_by(CaseWorkflow.cycle_number.desc())
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    cycle_number = previous.cycle_number + 1 if previous is not None else 1
+                    workflow = CaseWorkflow(
+                        id=_new_id("WF"),
+                        ticket_id=ticket_id,
+                        cycle_number=cycle_number,
+                        status="investigating",
+                        status_reason_code="workflow.started",
+                        status_reason="Investigation started.",
+                        origin="runtime",
+                        previous_workflow_id=previous.id if previous is not None else None,
+                        version=1,
+                        transition_sequence=1,
+                        created_at=now,
+                        updated_at=now,
+                        started_at=now,
+                        terminal_at=None,
+                        seed_marker=None,
+                    )
+                    self._session.add(workflow)
+                    await self._session.flush()
+                    self._session.add(
+                        CaseWorkflowTransition(
+                            id=f"{workflow.id}-T1",
+                            workflow_id=workflow.id,
+                            sequence=1,
+                            from_status=None,
+                            to_status="investigating",
+                            reason_code="workflow.started",
+                            reason_detail="Investigation started.",
+                            actor_source="system",
+                            request_id="system",
+                            created_at=now,
+                            seed_marker=None,
+                        )
+                    )
+                run = AgentRun(
+                    id=_new_id("RUN"),
+                    ticket_id=ticket_id,
+                    workflow_id=workflow.id,
+                    idempotency_key=idempotency_key,
+                    status="running",
+                    source=source,
+                    final_outcome=None,
+                    internal_resolution=None,
+                    customer_reply=None,
+                    error_state=None,
+                    error_code=None,
+                    model=model,
+                    prompt_version=prompt_version,
+                    started_at=now,
+                    completed_at=None,
+                    seed_marker=None,
+                )
+                self._session.add(run)
+            return RunStartResult(run=_run_to_summary(run), replayed=False)
+        except IntegrityError as error:
+            await self._session.rollback()
+            replay = (
+                await self._session.execute(
+                    select(AgentRun)
+                    .where(AgentRun.ticket_id == ticket_id)
+                    .where(AgentRun.idempotency_key == idempotency_key)
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if replay is not None:
+                return RunStartResult(run=_run_to_summary(replay), replayed=True)
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.start_conflict",
+                message="Another run already won this workflow start.",
+            ) from error
+
+    async def finalize_run(
+        self,
+        *,
+        agent_run_id: str,
+        final_outcome: str,
+        internal_resolution: str,
+        customer_reply: str,
+        target_status: str,
+        reason_code: str,
+        reason_detail: str | None = None,
+        request_id: str = "system",
+        final_trace: dict[str, object] | None = None,
+        approval: dict[str, object] | None = None,
+        approval_trace: dict[str, object] | None = None,
+    ) -> AgentRunSummary:
+        from meterdesk_api.models import (
+            AgentRun,
+            ApprovalRequest,
+            CaseWorkflow,
+            CaseWorkflowTransition,
+            MockMutation,
+            ToolTrace,
+        )
+
+        await self._session.rollback()
+        try:
+            async with self._session.begin():
+                # Lock order is Workflow -> Approval.  The run is locked after
+                # its owning workflow so a late provider response cannot win.
+                run_ref = await self._session.get(AgentRun, agent_run_id)
+                if run_ref is None:
+                    raise MeterDeskAPIError(
+                        status_code=404,
+                        code="agent_run.not_found",
+                        message="Agent run not found.",
+                    )
+                workflow = (
+                    await self._session.execute(
+                        select(CaseWorkflow)
+                        .where(CaseWorkflow.id == run_ref.workflow_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                run = (
+                    await self._session.execute(
+                        select(AgentRun)
+                        .where(AgentRun.id == agent_run_id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if workflow is None or run is None:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="workflow.missing",
+                        message="Agent run is not attached to a workflow.",
+                    )
+                if run.status != "running" or not can_transition(workflow.status, target_status):
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="workflow.finalize_conflict",
+                        message="The workflow was finalized by another command.",
+                        details={"workflow_id": workflow.id, "status": workflow.status},
+                    )
+                if target_status == "awaiting_approval" and approval is None:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="approval.missing",
+                        message="An approval payload is required for awaiting_approval.",
+                    )
+                if target_status != "awaiting_approval" and approval is not None:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="approval.unexpected",
+                        message="Approval payload is only valid for awaiting_approval.",
+                    )
+                if approval is None and approval_trace is not None:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="approval.unexpected",
+                        message="Approval trace requires an approval payload.",
+                    )
+                now = _now()
+                approval_model = None
+                trace_sequence = None
+                if approval is not None:
+                    action_metadata = dict(approval.get("action_metadata", {}))
+                    fingerprint = str(
+                        approval.get("action_fingerprint")
+                        or build_action_fingerprint(
+                            ticket_id=run.ticket_id,
+                            action_type=str(approval["action_type"]),
+                            amount_cents=int(approval["amount_cents"]),
+                            currency=str(approval["currency"]),
+                            action_metadata=action_metadata,
+                        )
+                    )
+                    pending = (
+                        await self._session.execute(
+                            select(ApprovalRequest)
+                            .where(ApprovalRequest.action_fingerprint == fingerprint)
+                            .where(ApprovalRequest.status == "pending")
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    executed = (
+                        await self._session.execute(
+                            select(MockMutation)
+                            .where(MockMutation.action_fingerprint == fingerprint)
+                            .where(MockMutation.status == "mock_executed")
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if pending is not None:
+                        raise MeterDeskAPIError(
+                            status_code=409,
+                            code="approval.pending_duplicate",
+                            message="A pending financial approval already exists for this action.",
+                            details={"action_fingerprint": fingerprint},
+                        )
+                    if executed is not None:
+                        raise MeterDeskAPIError(
+                            status_code=409,
+                            code="mutation.duplicate_action",
+                            message="This financial action has already been executed.",
+                            details={"action_fingerprint": fingerprint},
+                        )
+                    approval_model = ApprovalRequest(
+                        id=str(approval.get("id") or _new_id("APR")),
+                        ticket_id=run.ticket_id,
+                        workflow_id=workflow.id,
+                        agent_run_id=run.id,
+                        title=str(approval["title"]),
+                        status="pending",
+                        action_type=str(approval["action_type"]),
+                        amount_cents=int(approval["amount_cents"]),
+                        amount_display=str(approval["amount_display"]),
+                        currency=str(approval["currency"]),
+                        reason=str(approval["reason"]),
+                        blocker=str(approval["blocker"]),
+                        policy_citation=str(approval["policy_citation"]),
+                        evidence_refs=list(approval.get("evidence_refs", [])),
+                        action_metadata=action_metadata,
+                        action_fingerprint=fingerprint,
+                        created_at=now,
+                        decided_at=None,
+                        decision=None,
+                        decision_actor_subject=None,
+                        decision_actor_display_name=None,
+                        decision_actor_role=None,
+                        decision_actor_source=None,
+                        decision_request_id=None,
+                        decision_note=None,
+                        seed_marker=None,
+                    )
+                    self._session.add(approval_model)
+                    if approval_trace is None:
+                        approval_trace = _default_approval_trace_payload(
+                            _approval_to_summary(approval_model)
+                        )
+                if final_trace is not None:
+                    trace_sequence = (
+                        await self._session.execute(
+                            select(func.coalesce(func.max(ToolTrace.sequence), 0)).where(
+                                ToolTrace.agent_run_id == run.id
+                            )
+                        )
+                    ).scalar_one()
+                    self._session.add(
+                        ToolTrace(
+                            id=str(final_trace.get("id") or _new_id("trace")),
+                            agent_run_id=run.id,
+                            sequence=trace_sequence + 1,
+                            category=str(final_trace["category"]),
+                            risk=str(final_trace["risk"]),
+                            label=str(final_trace["label"]),
+                            input_summary=str(final_trace.get("input_summary", "")),
+                            output_summary=str(final_trace.get("output_summary", "")),
+                            evidence_refs=list(final_trace.get("evidence_refs", [])),
+                            policy_refs=list(final_trace.get("policy_refs", [])),
+                            approval_refs=list(final_trace.get("approval_refs", [])),
+                            error_state=final_trace.get("error_state"),
+                            governance_metadata=dict(final_trace.get("governance_metadata", {})),
+                            seed_marker=None,
+                        )
+                    )
+                if approval_trace is not None and approval_model is not None:
+                    trace_payload = dict(approval_trace)
+                    trace_payload["approval_refs"] = [
+                        approval_model.id if ref == "pending" else ref
+                        for ref in list(trace_payload.get("approval_refs", []))
+                    ]
+                    metadata = dict(trace_payload.get("governance_metadata", {}))
+                    if metadata.get("satisfied_ref_categories"):
+                        metadata["satisfied_ref_categories"] = [
+                            approval_model.id if ref == "pending" else ref
+                            for ref in metadata["satisfied_ref_categories"]
+                        ]
+                    trace_payload["governance_metadata"] = metadata
+                    if trace_sequence is None:
+                        trace_sequence = (
+                            await self._session.execute(
+                                select(func.coalesce(func.max(ToolTrace.sequence), 0)).where(
+                                    ToolTrace.agent_run_id == run.id
+                                )
+                            )
+                        ).scalar_one()
+                    self._session.add(
+                        ToolTrace(
+                            id=str(trace_payload.get("id") or _new_id("trace")),
+                            agent_run_id=run.id,
+                            sequence=trace_sequence + 2
+                            if final_trace is not None
+                            else trace_sequence + 1,
+                            category=str(trace_payload["category"]),
+                            risk=str(trace_payload["risk"]),
+                            label=str(trace_payload["label"]),
+                            input_summary=str(trace_payload.get("input_summary", "")),
+                            output_summary=str(trace_payload.get("output_summary", "")),
+                            evidence_refs=list(trace_payload.get("evidence_refs", [])),
+                            policy_refs=list(trace_payload.get("policy_refs", [])),
+                            approval_refs=list(trace_payload.get("approval_refs", [])),
+                            error_state=trace_payload.get("error_state"),
+                            governance_metadata=dict(trace_payload.get("governance_metadata", {})),
+                            seed_marker=None,
+                        )
+                    )
+                previous_status = workflow.status
+                run.status = "completed"
+                run.final_outcome = final_outcome
+                run.internal_resolution = internal_resolution
+                run.customer_reply = customer_reply
+                run.error_state = None
+                run.error_code = None
+                run.completed_at = now
+                CaseWorkflowService.validate_transition(workflow.status, target_status)
+                workflow.status = target_status
+                workflow.status_reason_code = reason_code
+                workflow.status_reason = reason_detail
+                workflow.version += 1
+                workflow.transition_sequence += 1
+                workflow.updated_at = now
+                workflow.terminal_at = (
+                    now
+                    if target_status in {status.value for status in TERMINAL_WORKFLOW_STATUSES}
+                    else None
+                )
+                self._session.add(
+                    CaseWorkflowTransition(
+                        id=f"{workflow.id}-T{workflow.transition_sequence}",
+                        workflow_id=workflow.id,
+                        sequence=workflow.transition_sequence,
+                        from_status=previous_status,
+                        to_status=target_status,
+                        reason_code=reason_code,
+                        reason_detail=reason_detail,
+                        actor_source="system",
+                        request_id=request_id,
+                        agent_run_id=run.id,
+                        approval_request_id=approval_model.id if approval_model else None,
+                        created_at=now,
+                        seed_marker=None,
+                    )
+                )
+            return _run_to_summary(run)
+        except IntegrityError as error:
+            await self._session.rollback()
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.finalize_conflict",
+                message="The workflow finalization conflicted with another command.",
+            ) from error
+
+    async def fail_run(
+        self,
+        *,
+        agent_run_id: str,
+        error_code: str,
+        error_state: str,
+        recoverable: bool = True,
+        request_id: str = "system",
+    ) -> AgentRunSummary:
+        from meterdesk_api.models import AgentRun, CaseWorkflow, CaseWorkflowTransition
+
+        await self._session.rollback()
+        async with self._session.begin():
+            run_ref = await self._session.get(AgentRun, agent_run_id)
+            if run_ref is None:
+                raise MeterDeskAPIError(
+                    status_code=404,
+                    code="agent_run.not_found",
+                    message="Agent run not found.",
+                )
+            workflow = (
+                await self._session.execute(
+                    select(CaseWorkflow)
+                    .where(CaseWorkflow.id == run_ref.workflow_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            run = (
+                await self._session.execute(
+                    select(AgentRun)
+                    .where(AgentRun.id == agent_run_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).scalar_one_or_none()
+            if workflow is None or run is None or run.status != "running":
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="workflow.finalize_conflict",
+                    message="This agent run is no longer running.",
+                )
+            target_status = "needs_retry" if recoverable else "failed"
+            if not can_transition(workflow.status, target_status):
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="workflow.finalize_conflict",
+                    message="The workflow was finalized by another command.",
+                    details={"workflow_id": workflow.id, "status": workflow.status},
+                )
+            now = _now()
+            run.status = "failed"
+            run.error_code = error_code
+            run.error_state = error_state
+            run.completed_at = now
+            previous_status = workflow.status
+            workflow.status = target_status
+            workflow.status_reason_code = error_code
+            workflow.status_reason = error_state
+            workflow.version += 1
+            workflow.transition_sequence += 1
+            workflow.updated_at = now
+            workflow.terminal_at = now if target_status == "failed" else None
+            self._session.add(
+                CaseWorkflowTransition(
+                    id=f"{workflow.id}-T{workflow.transition_sequence}",
+                    workflow_id=workflow.id,
+                    sequence=workflow.transition_sequence,
+                    from_status=previous_status,
+                    to_status=target_status,
+                    reason_code=error_code,
+                    reason_detail=error_state,
+                    actor_source="system",
+                    request_id=request_id,
+                    agent_run_id=run.id,
+                    created_at=now,
+                    seed_marker=None,
+                )
+            )
         return _run_to_summary(run)
+
+    async def cancel_workflow(
+        self,
+        *,
+        workflow_id: str,
+        actor: ApprovalDecisionActor,
+        request_id: str,
+        reason: str,
+    ) -> CaseWorkflowSummary:
+        from meterdesk_api.models import (
+            AgentRun,
+            ApprovalRequest,
+            CaseWorkflow,
+            CaseWorkflowTransition,
+        )
+
+        await self._session.rollback()
+        async with self._session.begin():
+            workflow = (
+                await self._session.execute(
+                    select(CaseWorkflow).where(CaseWorkflow.id == workflow_id).with_for_update()
+                )
+            ).scalar_one_or_none()
+            if workflow is None:
+                raise MeterDeskAPIError(
+                    status_code=404,
+                    code="workflow.not_found",
+                    message="Workflow not found.",
+                )
+            if workflow.status in {status.value for status in TERMINAL_WORKFLOW_STATUSES}:
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="workflow.terminal_conflict",
+                    message="Terminal workflows cannot be cancelled.",
+                )
+            approval = (
+                await self._session.execute(
+                    select(ApprovalRequest)
+                    .where(ApprovalRequest.workflow_id == workflow.id)
+                    .where(ApprovalRequest.status == "pending")
+                    .with_for_update()
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            run = (
+                await self._session.execute(
+                    select(AgentRun)
+                    .where(AgentRun.workflow_id == workflow.id)
+                    .where(AgentRun.status == "running")
+                    .with_for_update()
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            now = _now()
+            previous_status = workflow.status
+            workflow.status = "cancelled"
+            workflow.status_reason_code = "workflow.cancelled"
+            workflow.status_reason = reason
+            workflow.version += 1
+            workflow.transition_sequence += 1
+            workflow.updated_at = now
+            workflow.terminal_at = now
+            if approval is not None:
+                approval.status = "withdrawn"
+                approval.decision = "withdrawn"
+                approval.decided_at = now
+                approval.decision_actor_subject = actor.subject
+                approval.decision_actor_display_name = actor.display_name
+                approval.decision_actor_role = actor.role
+                approval.decision_actor_source = actor.source
+                approval.decision_request_id = request_id
+                approval.decision_note = reason
+                approval.blocker = "Withdrawn with workflow cancellation; no mock mutation executed"
+            if run is not None:
+                run.status = "cancelled"
+                run.error_code = "workflow.cancelled"
+                run.error_state = reason
+                run.completed_at = now
+            self._session.add(
+                CaseWorkflowTransition(
+                    id=f"{workflow.id}-T{workflow.transition_sequence}",
+                    workflow_id=workflow.id,
+                    sequence=workflow.transition_sequence,
+                    from_status=previous_status,
+                    to_status="cancelled",
+                    reason_code="workflow.cancelled",
+                    reason_detail=reason,
+                    actor_subject=actor.subject,
+                    actor_display_name=actor.display_name,
+                    actor_role=actor.role,
+                    actor_source=actor.source,
+                    request_id=request_id,
+                    agent_run_id=run.id if run else None,
+                    approval_request_id=approval.id if approval else None,
+                    created_at=now,
+                    seed_marker=None,
+                )
+            )
+        return _workflow_to_summary(workflow)
 
     async def complete_agent_run(
         self,
@@ -1200,27 +2678,23 @@ class SqlAlchemyMeterDeskRepository:
         internal_resolution: str,
         customer_reply: str,
     ) -> AgentRunSummary:
-        from meterdesk_api.models import AgentRun
-
-        run = await self._session.get(AgentRun, agent_run_id)
-        run.status = "completed"
-        run.final_outcome = final_outcome
-        run.internal_resolution = internal_resolution
-        run.customer_reply = customer_reply
-        run.error_state = None
-        run.completed_at = _now()
-        await self._session.commit()
-        return _run_to_summary(run)
+        return await self.finalize_run(
+            agent_run_id=agent_run_id,
+            final_outcome=final_outcome,
+            internal_resolution=internal_resolution,
+            customer_reply=customer_reply,
+            target_status="completed_no_action",
+            reason_code="decision.completed_no_action",
+            reason_detail="Investigation completed without a financial mutation.",
+        )
 
     async def fail_agent_run(self, agent_run_id: str, error_state: str) -> AgentRunSummary:
-        from meterdesk_api.models import AgentRun
-
-        run = await self._session.get(AgentRun, agent_run_id)
-        run.status = "failed"
-        run.error_state = error_state
-        run.completed_at = _now()
-        await self._session.commit()
-        return _run_to_summary(run)
+        return await self.fail_run(
+            agent_run_id=agent_run_id,
+            error_code="runtime.failure",
+            error_state=error_state,
+            recoverable=True,
+        )
 
     async def add_tool_trace(
         self,
@@ -1283,7 +2757,7 @@ class SqlAlchemyMeterDeskRepository:
         action_metadata: dict[str, object],
         action_fingerprint: str | None = None,
     ) -> ApprovalSummary:
-        from meterdesk_api.models import ApprovalRequest
+        from meterdesk_api.models import AgentRun, ApprovalRequest, CaseWorkflow, MockMutation
 
         fingerprint = action_fingerprint or build_action_fingerprint(
             ticket_id=ticket_id,
@@ -1292,9 +2766,63 @@ class SqlAlchemyMeterDeskRepository:
             currency=currency,
             action_metadata=action_metadata,
         )
+        run = await self._session.get(AgentRun, agent_run_id)
+        if run is None or run.workflow_id is None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.missing",
+                message="Approval request requires a workflow-linked agent run.",
+            )
+        workflow = await self._session.get(CaseWorkflow, run.workflow_id)
+        if workflow is None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.missing",
+                message="Approval request requires a workflow-linked agent run.",
+            )
+        if workflow.status != "awaiting_approval" or run.status != "completed":
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="workflow.approval_conflict",
+                message=(
+                    "Approval requests must be created by finalizing a run into awaiting_approval."
+                ),
+                details={"workflow_id": workflow.id, "status": workflow.status},
+            )
+        pending = (
+            await self._session.execute(
+                select(ApprovalRequest)
+                .where(ApprovalRequest.action_fingerprint == fingerprint)
+                .where(ApprovalRequest.status == "pending")
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if pending is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="approval.pending_duplicate",
+                message="A pending financial approval already exists for this action.",
+                details={"action_fingerprint": fingerprint},
+            )
+        executed = (
+            await self._session.execute(
+                select(MockMutation)
+                .where(MockMutation.action_fingerprint == fingerprint)
+                .where(MockMutation.status == "mock_executed")
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if executed is not None:
+            raise MeterDeskAPIError(
+                status_code=409,
+                code="mutation.duplicate_action",
+                message="This financial action has already been executed.",
+                details={"action_fingerprint": fingerprint},
+            )
         approval = ApprovalRequest(
             id=_new_id("APR"),
             ticket_id=ticket_id,
+            workflow_id=run.workflow_id,
             agent_run_id=agent_run_id,
             title=title,
             status="pending",
@@ -1371,104 +2899,212 @@ class SqlAlchemyMeterDeskRepository:
         decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalExecutionResult:
-        from meterdesk_api.models import MockMutation
+        return await self.approve_and_execute(
+            approval_id=approval_id,
+            decision_actor=decision_actor,
+            decision_request_id=decision_request_id,
+            decision_note=decision_note,
+        )
 
-        approval = await self._get_approval_for_update(approval_id)
-        if approval is None:
-            raise MeterDeskAPIError(
-                status_code=404,
-                code="approval.not_found",
-                message="Approval request not found.",
-            )
-        mutation = (
-            await self._session.execute(
-                select(MockMutation).where(MockMutation.approval_request_id == approval.id).limit(1)
-            )
-        ).scalar_one_or_none()
-        if approval.status == "rejected":
-            raise MeterDeskAPIError(
-                status_code=409,
-                code="approval.terminal_conflict",
-                message="Rejected approval requests cannot be approved.",
-            )
-        if approval.status == "approved":
-            if mutation is None:
-                raise MeterDeskAPIError(
-                    status_code=409,
-                    code="approval.audit_incomplete",
-                    message="Approved request is missing its mock mutation.",
+    async def approve_and_execute(
+        self,
+        *,
+        approval_id: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
+        decision_note: str | None,
+        mutation_trace: dict[str, object] | None = None,
+    ) -> ApprovalExecutionResult:
+        from meterdesk_api.models import (
+            ApprovalRequest,
+            CaseWorkflow,
+            CaseWorkflowTransition,
+            MockMutation,
+            ToolTrace,
+        )
+
+        await self._session.rollback()
+        try:
+            async with self._session.begin():
+                approval_ref = await self._session.get(ApprovalRequest, approval_id)
+                if approval_ref is None:
+                    raise MeterDeskAPIError(
+                        status_code=404,
+                        code="approval.not_found",
+                        message="Approval request not found.",
+                    )
+                workflow = (
+                    await self._session.execute(
+                        select(CaseWorkflow)
+                        .where(CaseWorkflow.id == approval_ref.workflow_id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                approval = (
+                    await self._session.execute(
+                        select(ApprovalRequest)
+                        .where(ApprovalRequest.id == approval_id)
+                        .with_for_update()
+                        .execution_options(populate_existing=True)
+                    )
+                ).scalar_one_or_none()
+                if workflow is None or approval is None:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="workflow.missing",
+                        message="Approval request is not attached to a workflow.",
+                    )
+                mutation = (
+                    await self._session.execute(
+                        select(MockMutation)
+                        .where(MockMutation.approval_request_id == approval.id)
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if approval.status == "approved":
+                    if mutation is None:
+                        raise MeterDeskAPIError(
+                            status_code=409,
+                            code="approval.audit_incomplete",
+                            message="Approved request is missing its mock mutation.",
+                        )
+                    result = ApprovalExecutionResult(
+                        approval=_approval_to_summary(approval),
+                        mutation=_mutation_to_summary(mutation),
+                        executed_now=False,
+                    )
+                    return result
+                if approval.status in {"rejected", "withdrawn"}:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="approval.terminal_conflict",
+                        message="This approval request is already terminal.",
+                    )
+                if mutation_trace is None:
+                    mutation_trace = _default_mutation_trace_payload(_approval_to_summary(approval))
+                if workflow.status != "awaiting_approval":
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="workflow.approval_conflict",
+                        message="The workflow is no longer awaiting approval.",
+                    )
+                if mutation is not None:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="approval.audit_incomplete",
+                        message="Pending request already has a mock mutation.",
+                    )
+                duplicate_action = (
+                    await self._session.execute(
+                        select(MockMutation)
+                        .where(MockMutation.action_fingerprint == approval.action_fingerprint)
+                        .where(MockMutation.status == "mock_executed")
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if duplicate_action is not None:
+                    raise MeterDeskAPIError(
+                        status_code=409,
+                        code="mutation.duplicate_action",
+                        message="This financial action has already been executed.",
+                        details={"action_fingerprint": approval.action_fingerprint},
+                    )
+                now = _now()
+                previous_status = workflow.status
+                approval.status = "approved"
+                approval.decision = "approved"
+                approval.decided_at = now
+                approval.decision_actor_subject = decision_actor.subject
+                approval.decision_actor_display_name = decision_actor.display_name
+                approval.decision_actor_role = decision_actor.role
+                approval.decision_actor_source = decision_actor.source
+                approval.decision_request_id = decision_request_id
+                approval.decision_note = decision_note
+                approval.blocker = "Approved; mock mutation executed"
+                mutation = MockMutation(
+                    id=_new_id("MM"),
+                    ticket_id=approval.ticket_id,
+                    workflow_id=approval.workflow_id,
+                    approval_request_id=approval.id,
+                    agent_run_id=approval.agent_run_id,
+                    mutation_type=approval.action_type,
+                    status="mock_executed",
+                    amount_cents=approval.amount_cents,
+                    amount_display=approval.amount_display,
+                    currency=approval.currency,
+                    reason=approval.reason,
+                    action_metadata=approval.action_metadata,
+                    action_fingerprint=approval.action_fingerprint,
+                    executed_at=now,
+                    executed_at_display=_format_display_time(now),
+                    seed_marker=None,
+                )
+                self._session.add(mutation)
+                if mutation_trace is not None and approval.agent_run_id is not None:
+                    sequence = (
+                        await self._session.execute(
+                            select(func.coalesce(func.max(ToolTrace.sequence), 0)).where(
+                                ToolTrace.agent_run_id == approval.agent_run_id
+                            )
+                        )
+                    ).scalar_one()
+                    self._session.add(
+                        ToolTrace(
+                            id=str(mutation_trace.get("id") or _new_id("trace")),
+                            agent_run_id=approval.agent_run_id,
+                            sequence=sequence + 1,
+                            category=str(mutation_trace["category"]),
+                            risk=str(mutation_trace["risk"]),
+                            label=str(mutation_trace["label"]),
+                            input_summary=str(mutation_trace.get("input_summary", "")),
+                            output_summary=str(mutation_trace.get("output_summary", "")),
+                            evidence_refs=list(mutation_trace.get("evidence_refs", [])),
+                            policy_refs=list(mutation_trace.get("policy_refs", [])),
+                            approval_refs=list(mutation_trace.get("approval_refs", [approval.id])),
+                            error_state=mutation_trace.get("error_state"),
+                            governance_metadata=dict(mutation_trace.get("governance_metadata", {})),
+                            seed_marker=None,
+                        )
+                    )
+                workflow.status = "mock_executed"
+                workflow.status_reason_code = "approval.approved_and_executed"
+                workflow.status_reason = "Approval accepted and mock mutation executed atomically."
+                workflow.version += 1
+                workflow.transition_sequence += 1
+                workflow.updated_at = now
+                workflow.terminal_at = now
+                self._session.add(
+                    CaseWorkflowTransition(
+                        id=f"{workflow.id}-T{workflow.transition_sequence}",
+                        workflow_id=workflow.id,
+                        sequence=workflow.transition_sequence,
+                        from_status=previous_status,
+                        to_status="mock_executed",
+                        reason_code="approval.approved_and_executed",
+                        reason_detail="Approval accepted and mock mutation executed atomically.",
+                        actor_subject=decision_actor.subject,
+                        actor_display_name=decision_actor.display_name,
+                        actor_role=decision_actor.role,
+                        actor_source=decision_actor.source,
+                        request_id=decision_request_id,
+                        approval_request_id=approval.id,
+                        mock_mutation_id=mutation.id,
+                        created_at=now,
+                        seed_marker=None,
+                    )
                 )
             return ApprovalExecutionResult(
                 approval=_approval_to_summary(approval),
                 mutation=_mutation_to_summary(mutation),
-                executed_now=False,
+                executed_now=True,
             )
-        if mutation is not None:
-            raise MeterDeskAPIError(
-                status_code=409,
-                code="approval.audit_incomplete",
-                message="Pending request already has a mock mutation.",
-            )
-        duplicate_action = (
-            await self._session.execute(
-                select(MockMutation)
-                .where(MockMutation.action_fingerprint == approval.action_fingerprint)
-                .where(MockMutation.status == "mock_executed")
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if duplicate_action is not None:
-            raise MeterDeskAPIError(
-                status_code=409,
-                code="mutation.duplicate_action",
-                message="This financial action has already been executed.",
-                details={"action_fingerprint": approval.action_fingerprint},
-            )
-        now = _now()
-        approval.status = "approved"
-        approval.decision = "approved"
-        approval.decided_at = now
-        approval.decision_actor_subject = decision_actor.subject
-        approval.decision_actor_display_name = decision_actor.display_name
-        approval.decision_actor_role = decision_actor.role
-        approval.decision_actor_source = decision_actor.source
-        approval.decision_request_id = decision_request_id
-        approval.decision_note = decision_note
-        approval.blocker = "Approved; mock mutation executed"
-        mutation = MockMutation(
-            id=_new_id("MM"),
-            ticket_id=approval.ticket_id,
-            approval_request_id=approval.id,
-            agent_run_id=approval.agent_run_id,
-            mutation_type=approval.action_type,
-            status="mock_executed",
-            amount_cents=approval.amount_cents,
-            amount_display=approval.amount_display,
-            currency=approval.currency,
-            reason=approval.reason,
-            action_metadata=approval.action_metadata,
-            action_fingerprint=approval.action_fingerprint,
-            executed_at=now,
-            executed_at_display=_format_display_time(now),
-            seed_marker=None,
-        )
-        self._session.add(mutation)
-
-        try:
-            await self._session.commit()
         except IntegrityError as error:
             await self._session.rollback()
             raise MeterDeskAPIError(
                 status_code=409,
                 code="mutation.duplicate_action",
                 message="This financial action has already been executed.",
-                details={"action_fingerprint": approval.action_fingerprint},
             ) from error
-        return ApprovalExecutionResult(
-            approval=_approval_to_summary(approval),
-            mutation=_mutation_to_summary(mutation),
-            executed_now=True,
-        )
 
     async def reject_request(
         self,
@@ -1478,32 +3114,102 @@ class SqlAlchemyMeterDeskRepository:
         decision_request_id: str,
         decision_note: str | None,
     ) -> ApprovalSummary:
-        approval = await self._get_approval_for_update(approval_id)
-        if approval is None:
-            raise MeterDeskAPIError(
-                status_code=404,
-                code="approval.not_found",
-                message="Approval request not found.",
+        return await self.reject_approval(
+            approval_id=approval_id,
+            decision_actor=decision_actor,
+            decision_request_id=decision_request_id,
+            decision_note=decision_note,
+        )
+
+    async def reject_approval(
+        self,
+        *,
+        approval_id: str,
+        decision_actor: ApprovalDecisionActor,
+        decision_request_id: str,
+        decision_note: str | None,
+    ) -> ApprovalSummary:
+        from meterdesk_api.models import ApprovalRequest, CaseWorkflow, CaseWorkflowTransition
+
+        await self._session.rollback()
+        async with self._session.begin():
+            approval_ref = await self._session.get(ApprovalRequest, approval_id)
+            if approval_ref is None:
+                raise MeterDeskAPIError(
+                    status_code=404,
+                    code="approval.not_found",
+                    message="Approval request not found.",
+                )
+            workflow = (
+                await self._session.execute(
+                    select(CaseWorkflow)
+                    .where(CaseWorkflow.id == approval_ref.workflow_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            approval = (
+                await self._session.execute(
+                    select(ApprovalRequest)
+                    .where(ApprovalRequest.id == approval_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).scalar_one_or_none()
+            if workflow is None or approval is None:
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="workflow.missing",
+                    message="Approval request is not attached to a workflow.",
+                )
+            if approval.status == "rejected":
+                return _approval_to_summary(approval)
+            if (
+                approval.status in {"approved", "withdrawn"}
+                or workflow.status != "awaiting_approval"
+            ):
+                raise MeterDeskAPIError(
+                    status_code=409,
+                    code="approval.terminal_conflict",
+                    message="This approval request is already terminal.",
+                )
+            now = _now()
+            previous_status = workflow.status
+            approval.status = "rejected"
+            approval.decision = "rejected"
+            approval.decided_at = now
+            approval.decision_actor_subject = decision_actor.subject
+            approval.decision_actor_display_name = decision_actor.display_name
+            approval.decision_actor_role = decision_actor.role
+            approval.decision_actor_source = decision_actor.source
+            approval.decision_request_id = decision_request_id
+            approval.decision_note = decision_note
+            approval.blocker = "Rejected by human reviewer; no mock mutation executed"
+            workflow.status = "rejected"
+            workflow.status_reason_code = "approval.rejected"
+            workflow.status_reason = decision_note or "Approval rejected by human reviewer."
+            workflow.version += 1
+            workflow.transition_sequence += 1
+            workflow.updated_at = now
+            workflow.terminal_at = now
+            self._session.add(
+                CaseWorkflowTransition(
+                    id=f"{workflow.id}-T{workflow.transition_sequence}",
+                    workflow_id=workflow.id,
+                    sequence=workflow.transition_sequence,
+                    from_status=previous_status,
+                    to_status="rejected",
+                    reason_code="approval.rejected",
+                    reason_detail=workflow.status_reason,
+                    actor_subject=decision_actor.subject,
+                    actor_display_name=decision_actor.display_name,
+                    actor_role=decision_actor.role,
+                    actor_source=decision_actor.source,
+                    request_id=decision_request_id,
+                    approval_request_id=approval.id,
+                    created_at=now,
+                    seed_marker=None,
+                )
             )
-        if approval.status == "approved":
-            raise MeterDeskAPIError(
-                status_code=409,
-                code="approval.terminal_conflict",
-                message="Approved approval requests cannot be rejected.",
-            )
-        if approval.status == "rejected":
-            return _approval_to_summary(approval)
-        approval.status = "rejected"
-        approval.decision = "rejected"
-        approval.decided_at = _now()
-        approval.decision_actor_subject = decision_actor.subject
-        approval.decision_actor_display_name = decision_actor.display_name
-        approval.decision_actor_role = decision_actor.role
-        approval.decision_actor_source = decision_actor.source
-        approval.decision_request_id = decision_request_id
-        approval.decision_note = decision_note
-        approval.blocker = "Rejected by human reviewer; no mock mutation executed"
-        await self._session.commit()
         return _approval_to_summary(approval)
 
     async def list_eval_cases(self) -> list[EvalCaseSummary]:
@@ -1709,26 +3415,26 @@ class SqlAlchemyMeterDeskRepository:
         from meterdesk_api.models import (
             AgentRun,
             ApprovalRequest,
+            CaseWorkflow,
+            CaseWorkflowTransition,
             EvalResult,
             MockMutation,
             ToolTrace,
         )
 
         agent_run_ids = select(AgentRun.id).where(AgentRun.ticket_id == fixture_ticket_id)
-        approval_ids = select(ApprovalRequest.id).where(
-            ApprovalRequest.ticket_id == fixture_ticket_id,
-            ApprovalRequest.agent_run_id.in_(agent_run_ids),
-        )
+        workflow_ids = select(CaseWorkflow.id).where(CaseWorkflow.ticket_id == fixture_ticket_id)
         await self._session.execute(
             delete(EvalResult).where(EvalResult.agent_run_id.in_(agent_run_ids))
         )
         await self._session.execute(
+            delete(CaseWorkflowTransition).where(
+                CaseWorkflowTransition.workflow_id.in_(workflow_ids)
+            )
+        )
+        await self._session.execute(
             delete(MockMutation).where(
                 MockMutation.ticket_id == fixture_ticket_id,
-                (
-                    MockMutation.agent_run_id.in_(agent_run_ids)
-                    | MockMutation.approval_request_id.in_(approval_ids)
-                ),
             )
         )
         await self._session.execute(
@@ -1737,16 +3443,31 @@ class SqlAlchemyMeterDeskRepository:
         await self._session.execute(
             delete(ApprovalRequest).where(
                 ApprovalRequest.ticket_id == fixture_ticket_id,
-                ApprovalRequest.agent_run_id.in_(agent_run_ids),
             )
         )
         await self._session.execute(delete(AgentRun).where(AgentRun.ticket_id == fixture_ticket_id))
+        await self._session.execute(
+            delete(CaseWorkflow).where(CaseWorkflow.ticket_id == fixture_ticket_id)
+        )
         await self._session.commit()
 
     async def reset_demo_live_state(self, ticket_id: str) -> None:
-        from meterdesk_api.models import AgentRun, ApprovalRequest, MockMutation, ToolTrace
+        from meterdesk_api.models import (
+            AgentRun,
+            ApprovalRequest,
+            CaseWorkflow,
+            CaseWorkflowTransition,
+            MockMutation,
+            ToolTrace,
+        )
 
         agent_run_ids = select(AgentRun.id).where(AgentRun.ticket_id == ticket_id)
+        workflow_ids = select(CaseWorkflow.id).where(CaseWorkflow.ticket_id == ticket_id)
+        await self._session.execute(
+            delete(CaseWorkflowTransition).where(
+                CaseWorkflowTransition.workflow_id.in_(workflow_ids)
+            )
+        )
         await self._session.execute(delete(MockMutation).where(MockMutation.ticket_id == ticket_id))
         await self._session.execute(
             delete(ToolTrace).where(ToolTrace.agent_run_id.in_(agent_run_ids))
@@ -1755,6 +3476,7 @@ class SqlAlchemyMeterDeskRepository:
             delete(ApprovalRequest).where(ApprovalRequest.ticket_id == ticket_id)
         )
         await self._session.execute(delete(AgentRun).where(AgentRun.ticket_id == ticket_id))
+        await self._session.execute(delete(CaseWorkflow).where(CaseWorkflow.ticket_id == ticket_id))
         await self._session.commit()
 
 
@@ -1774,6 +3496,57 @@ def _now() -> datetime:
 
 def _format_display_time(value: datetime) -> str:
     return value.strftime("%b %-d, %Y %H:%M UTC")
+
+
+def _default_mutation_trace_payload(approval: ApprovalSummary) -> dict[str, object]:
+    """Build a trace for the legacy approve alias without weakening the invariant."""
+
+    policy_id = (
+        "mutation.mock_refund"
+        if approval.action_type == "original_refund"
+        else "mutation.mock_credit_or_refund"
+    )
+    from meterdesk_api.agent.governance import build_governance_metadata_for_trace
+
+    return {
+        "category": policy_id,
+        "risk": "High",
+        "label": "Executed approved mock financial mutation",
+        "input_summary": f"Executed approved request {approval.id}.",
+        "output_summary": "Created the approved mock mutation atomically with its audit trace.",
+        "evidence_refs": approval.evidence_refs,
+        "policy_refs": [approval.policy_citation],
+        "approval_refs": [approval.id],
+        "governance_metadata": build_governance_metadata_for_trace(
+            policy_id=policy_id,
+            evidence_refs=approval.evidence_refs,
+            policy_refs=[approval.policy_citation],
+            approval_refs=[approval.id],
+        ),
+    }
+
+
+def _default_approval_trace_payload(approval: ApprovalSummary) -> dict[str, object]:
+    """Keep compatibility callers inside the atomic approval-audit boundary."""
+
+    from meterdesk_api.agent.governance import build_governance_metadata_for_trace
+
+    return {
+        "category": "approval.create_request",
+        "risk": "Medium",
+        "label": "Created approval request for financial action",
+        "input_summary": f"Created human approval gate for {approval.action_type}.",
+        "output_summary": f"Approval request {approval.id} is pending.",
+        "evidence_refs": approval.evidence_refs,
+        "policy_refs": [approval.policy_citation],
+        "approval_refs": [approval.id],
+        "governance_metadata": build_governance_metadata_for_trace(
+            policy_id="approval.create_request",
+            evidence_refs=approval.evidence_refs,
+            policy_refs=[approval.policy_citation],
+            approval_refs=[approval.id],
+        ),
+    }
 
 
 def _optional_money(
@@ -1804,14 +3577,57 @@ def _run_to_summary(run) -> AgentRunSummary:
     return AgentRunSummary(
         id=run.id,
         ticket_id=run.ticket_id,
+        workflow_id=getattr(run, "workflow_id", None),
+        idempotency_key=getattr(run, "idempotency_key", None),
         status=run.status,
         source=run.source,
         final_outcome=run.final_outcome,
         internal_resolution=run.internal_resolution,
         customer_reply=run.customer_reply,
         error_state=run.error_state,
+        error_code=getattr(run, "error_code", None),
         model=run.model,
         prompt_version=run.prompt_version,
+    )
+
+
+def _workflow_to_summary(workflow) -> CaseWorkflowSummary:
+    return CaseWorkflowSummary(
+        id=workflow.id,
+        ticket_id=workflow.ticket_id,
+        cycle_number=workflow.cycle_number,
+        status=workflow.status,
+        status_reason_code=workflow.status_reason_code,
+        status_reason=workflow.status_reason,
+        origin=workflow.origin,
+        previous_workflow_id=workflow.previous_workflow_id,
+        version=workflow.version,
+        transition_sequence=workflow.transition_sequence,
+        created_at=workflow.created_at,
+        updated_at=workflow.updated_at,
+        started_at=workflow.started_at,
+        terminal_at=workflow.terminal_at,
+    )
+
+
+def _workflow_transition_to_summary(transition) -> CaseWorkflowTransitionSummary:
+    return CaseWorkflowTransitionSummary(
+        id=transition.id,
+        workflow_id=transition.workflow_id,
+        sequence=transition.sequence,
+        from_status=transition.from_status,
+        to_status=transition.to_status,
+        reason_code=transition.reason_code,
+        reason_detail=transition.reason_detail,
+        actor_subject=transition.actor_subject,
+        actor_display_name=transition.actor_display_name,
+        actor_role=transition.actor_role,
+        actor_source=transition.actor_source,
+        request_id=transition.request_id,
+        agent_run_id=transition.agent_run_id,
+        approval_request_id=transition.approval_request_id,
+        mock_mutation_id=transition.mock_mutation_id,
+        created_at=transition.created_at,
     )
 
 
@@ -1877,6 +3693,7 @@ def _approval_to_summary(approval) -> ApprovalSummary:
     return ApprovalSummary(
         id=approval.id,
         ticket_id=approval.ticket_id,
+        workflow_id=getattr(approval, "workflow_id", None),
         agent_run_id=approval.agent_run_id,
         title=approval.title,
         status=approval.status,
@@ -1904,6 +3721,7 @@ def _mutation_to_summary(mutation) -> MockMutationSummary:
     return MockMutationSummary(
         id=mutation.id,
         ticket_id=mutation.ticket_id,
+        workflow_id=getattr(mutation, "workflow_id", None),
         approval_request_id=mutation.approval_request_id,
         agent_run_id=mutation.agent_run_id,
         mutation_type=mutation.mutation_type,

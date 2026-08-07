@@ -3,8 +3,9 @@
 ## Status
 
 - Program status: approved next phase.
-- Active workstream: P1-04 Persistence Foundation; candidate implementation and all required local
-  verification are complete.
+- Active workstream: P0-03 Workflow State Consistency; implementation is complete on the candidate
+  branch, with real-Postgres/failure-injection verification still to be rerun before evidence is
+  promoted to Verified.
 - Product scope change: none.
 - Interview and demo collateral refresh: deferred until the hardening program is complete; this
   collateral is not authoritative for current workstream sequencing.
@@ -49,11 +50,13 @@ harness, and a four-job GitHub Actions workflow contract; it is merged as commit
 
 The P0-02 candidate adds fixed demo principals, eight-hour FastAPI JWTs, Next.js `HttpOnly` cookie
 forwarding, authenticated business APIs, role enforcement, request IDs, and trusted approval actor
-persistence. P1-04 now adds application-lifetime async database resources, database-backed async
+persistence. P1-04 adds application-lifetime async database resources, database-backed async
 readiness, bounded pool configuration, row-locked approval terminal writes, and one marked pytest
-entrypoint for real-Postgres API and concurrency checks. The baseline still lacks explicit workflow
-state semantics, background execution, provider resilience, operational telemetry, typed networked
-tool execution, structured context snapshots, and broad security/failure regression coverage.
+entrypoint for real-Postgres API and concurrency checks. P0-03 now adds explicit Workflow state,
+retry/replay/cancel semantics, fail-closed migration backfill, and atomic finalization/approval
+commands. The baseline still lacks background execution, provider resilience, operational telemetry,
+typed networked tool execution, structured context snapshots, and broad security/failure regression
+coverage.
 
 ## Workstream Sequence
 
@@ -134,11 +137,13 @@ Detailed requirements: [P1-04 Persistence Foundation](p1-04-persistence-foundati
 
 ### P0-03 — Workflow State Consistency
 
-Define whether `AgentRun` remains an investigation attempt with a separate case workflow aggregate,
-or becomes the complete workflow state machine. Specify states, terminal semantics, approval linkage,
-partial-failure behavior, transaction/outbox choice, migration, API/UI mapping, and transition tests
-before implementation. The architecture glossary currently favors a separate workflow aggregate,
-but the focused spec must make the final decision.
+Implemented in [P0-03 Workflow State Consistency](p0-03-workflow-state-consistency.md). `CaseWorkflow`
+owns one ticket cycle and `AgentRun` is an attempt. The implementation defines the eight-state
+transition matrix, `needs_retry` versus `failed` semantics, idempotent start/replay, append-only
+transitions, Support/Admin cancellation with withdrawn approvals, and Workflow -> Approval lock
+ordering. Finalization and approve-and-execute close their previous partial-commit windows in one
+Postgres transaction. Migration `20260806_0009` backfills legacy data fail-closed. P0-04 remains the
+owner of queues, workers, leases, checkpoints, and crash recovery.
 
 ### P0-04 — Async Agent Runtime
 
@@ -217,8 +222,10 @@ the isolated container smoke are verified locally on the candidate branch.
 
 ### Gate D — Explicit Workflow Semantics
 
-P0-03 must define ownership of workflow state, valid transitions, terminal states, approval-write
-failure semantics, migrations, and retry/replay idempotency before the orchestrator moves to a worker.
+P0-03 defines ownership of workflow state, valid transitions, terminal states, approval-write failure
+semantics, migrations, and retry/replay idempotency before the orchestrator moves to a worker. The
+focused spec and implementation are present; real-Postgres lock waits, failure injection, and
+migration fixtures remain required evidence before this gate is marked Verified.
 
 ### Gate E — Recoverable Runtime
 
@@ -252,7 +259,8 @@ After each listed workstream, re-read current code and refresh downstream assump
 - **P0-01:** Make targets, Compose services, CI commands, Docker runtime paths.
 - **P0-02:** approval request schema, route dependencies, frontend request boundary, actor fields.
 - **P1-04:** engine/session lifecycle, transactions, test fixtures, concurrency helpers.
-- **P0-03:** run/workflow models, response status, approval linkage, migrations, transitions.
+- **P0-03:** run/workflow models, response status, approval linkage, migrations, transitions,
+  idempotent commands, and atomic trace/mutation writes.
 - **P0-04:** worker framework, event/checkpoint model, retries, cancellation, deployment topology.
 - **P1-01/P0-05:** provider interface, telemetry field names, usage and correlation metadata.
 - **P0-06:** tool contracts, adapter output, structured evidence, network failure mapping.

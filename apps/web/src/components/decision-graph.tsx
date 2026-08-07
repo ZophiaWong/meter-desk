@@ -44,9 +44,14 @@ export function DecisionOverview({ graph, summary }: DecisionOverviewProps) {
             {summary.rationale}
           </p>
         </div>
-        {summary.runId || summary.policyCitation || summary.complianceStatus ? (
+        {summary.runId || summary.workflowId || summary.policyCitation || summary.complianceStatus ? (
           <div className="flex shrink-0 flex-wrap gap-2 text-xs font-medium lg:max-w-[260px] lg:justify-end">
             {summary.runId ? <SummaryBadge label={`Run ${summary.runId}`} /> : null}
+            {summary.workflowId ? (
+              <SummaryBadge
+                label={`Workflow ${summary.workflowId} · ${summary.state.replaceAll("_", " ")}`}
+              />
+            ) : null}
             {summary.policyCitation ? <SummaryBadge label={summary.policyCitation} /> : null}
             {summary.complianceStatus ? (
               <SummaryBadge label={`Compliance ${summary.complianceStatus}`} />

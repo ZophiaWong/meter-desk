@@ -41,12 +41,17 @@ Current governed action ids include Duplicate Charge and Credit/Refund Dispute p
 High-risk actions must follow this lifecycle:
 
 1. The agent proposes a financial action with amount, reason, evidence, and policy citation.
-2. FastAPI creates an approval request.
+2. One finalization transaction stores the run output, final governance traces, approval request,
+   and Workflow `awaiting_approval` transition.
 3. The action remains blocked while approval is pending.
-4. A human approves or rejects the request.
-5. Approved requests may execute one mock mutation.
-6. Rejected requests must not execute a mutation.
-7. The approval decision and resulting mock mutation are recorded in the audit trail.
+4. A human approves or rejects the request. Approval and Admin decisions are server-derived; a
+   Support cancellation withdraws the pending request and is not an approver rejection.
+5. Approve-and-execute atomically stores the trusted approval audit, one mock mutation, its
+   governance trace, and Workflow `mock_executed`. There is no intermediate Workflow `approved`
+   state.
+6. Rejected or withdrawn requests must not execute a mutation.
+7. The Workflow transition and artifact references make the winning decision auditable; a losing
+   concurrent decision returns `409` without overwriting it.
 
 The agent must not bypass approval by calling mutation tools directly.
 
@@ -88,8 +93,27 @@ Every agent run should preserve enough trace context for audit and eval:
 - approval references.
 - error state when a tool fails.
 - final recommendation and draft outputs.
+- Workflow identifier/version and transition reason for finalization, retry, cancellation, rejection,
+  and mock execution.
 
 Trace records should make it possible to explain what the agent saw, what it did, what it proposed, and what the human approved.
+
+## Workflow State Consistency
+
+`CaseWorkflow` is the state authority for one ticket-processing cycle. Its statuses are
+`investigating`, `needs_retry`, `awaiting_approval`, `completed_no_action`, `rejected`,
+`mock_executed`, `failed`, and `cancelled`. `AgentRun` is an attempt, not a second state machine.
+Provider/planner/verifier/evidence failures default to `needs_retry`; valid no-action conclusions
+remain `completed_no_action`; `failed` is reserved for unrecoverable or exhausted cases. Terminal
+workflows cannot be reopened. A later cycle points to its predecessor and may propose a previously
+rejected/withdrawn fingerprint only after a new approval; an executed fingerprint is permanently
+blocked.
+
+The repository uses narrow atomic commands with lock order Workflow -> Approval. Finalization commits
+run output, final traces, approval, approval trace, and Workflow transition together. Approval
+execution commits approval, mock mutation, mutation trace, and Workflow transition together. No
+outbox, generic Unit of Work, queue, lease, checkpoint, or automatic stale detection is part of this
+workstream; asynchronous recovery is P0-04.
 
 ## Mock Mutation Constraints
 
@@ -98,7 +122,7 @@ Mock refund and credit mutations must:
 - require an approved approval request.
 - record the approved amount and reason.
 - link back to the ticket, agent run, evidence, and approval request.
-- avoid duplicate execution for the same approval.
+- avoid duplicate execution for the same approval or executed action fingerprint.
 - be visibly mock-only in UI and data.
 
 Mock mutations are product evidence for governance behavior. They are not a path toward real payment processing in v1.
