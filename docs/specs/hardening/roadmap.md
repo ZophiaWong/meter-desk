@@ -5,8 +5,7 @@
 - Program status: approved next phase.
 - Active workstream: P0-04 Async Agent Runtime. P0-03 Workflow State Consistency is Verified on the
   candidate branch: the focused and canonical real-Postgres evidence, complete local gate, and
-  implementation-head CI all succeeded. The final documentation head must repeat the CI gate before
-  merge.
+  implementation-head and final documentation-head CI all succeeded.
 - Product scope change: none.
 - Interview and demo collateral refresh: deferred until the hardening program is complete; this
   collateral is not authoritative for current workstream sequencing.
@@ -146,7 +145,9 @@ ordering. Finalization and approve-and-execute close their previous partial-comm
 Postgres transaction. Migration `20260806_0009` backfills legacy data fail-closed. The evidence
 closure recorded 12 injected rollback points and 12 real migration databases; implementation-head
 CI run [31188218525](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525) passed all
-four jobs. P0-04 now owns queues, workers, leases, checkpoints, and crash recovery.
+four jobs, followed by final documentation-head CI run
+[31190062283](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283), which also passed
+all four jobs. P0-04 now owns queues, workers, leases, checkpoints, and crash recovery.
 
 ### P0-04 — Async Agent Runtime
 
@@ -229,8 +230,8 @@ Status: Verified. P0-03 defines ownership of workflow state, valid transitions, 
 approval-write failure semantics, migrations, and retry/replay idempotency before the orchestrator
 moves to a worker. The focused and canonical database gates, 12 rollback injections, 12 migration
 fixtures, complete local gate, and implementation-head CI run [31188218525](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525)
-are successful. The final documentation head must repeat the CI gate before merge. P0-04 owns the
-post-commit acknowledgement and crash-recovery boundary.
+are successful; final documentation-head CI run [31190062283](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283)
+also passed all four jobs. P0-04 owns the post-commit acknowledgement and crash-recovery boundary.
 
 ### Gate E — Recoverable Runtime
 

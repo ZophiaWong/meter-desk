@@ -6,10 +6,9 @@
 - Design status: approved for implementation.
 - Implementation status: implemented on the P0-03 evidence-closure branch; no production behavior
   or Alembic `20260806_0009` changes are part of the closure work.
-- Verification status: Verified on the implementation head. The evidence-finalization head records
-  the complete local gate, 12 injected rollback points, 12 real migration databases, and the
-  successful four-job implementation-head CI run; the final documentation head must still pass the
-  same CI gate before merge.
+- Verification status: Verified. The evidence-finalization head records the complete local gate,
+  12 injected rollback points, 12 real migration databases, and successful four-job CI runs for
+  both the implementation head and the final documentation head.
 - Depends on: P1-04 Persistence Foundation, Alembic head `20260802_0008`.
 - Blocks: P0-04 Async Agent Runtime.
 - Product scope change: none. Mutations remain mock-only, approval-gated, and never customer-facing.
@@ -141,8 +140,13 @@ The implementation-head CI evidence is [run 31188218525](https://github.com/Zoph
 [frontend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091323),
 [database-integration](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091292),
 and [container-smoke](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92899098973),
-all successful. `make test-p0-03-evidence` remains a focused rerun convenience; `make test-db`
-remains the canonical database gate. The complete verification set remains:
+all successful. The final documentation head then passed [run 31190062283](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283):
+[backend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904316323),
+[frontend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904316422),
+[database-integration](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904316251),
+and [container-smoke](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904641620).
+`make test-p0-03-evidence` remains a focused rerun convenience; `make test-db` remains the canonical
+database gate. The complete verification set remains:
 
 ```text
 make lint
