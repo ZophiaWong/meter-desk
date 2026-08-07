@@ -18,7 +18,7 @@ CONTAINER_WAIT_TIMEOUT ?= 180
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down db-migrate test test-api test-web test-db lint lint-api lint-web build-web seed demo-reset-live health container-build container-up container-seed container-smoke container-down
+.PHONY: help install install-api install-web dev dev-api dev-web db-up db-down db-migrate test test-api test-web test-db test-p0-03-evidence lint lint-api lint-web build-web seed demo-reset-live health container-build container-up container-seed container-smoke container-down
 
 help:
 	@printf "MeterDesk commands:\n"
@@ -28,6 +28,7 @@ help:
 	@printf "  make health    Check API and database health endpoints\n"
 	@printf "  make test      Run API and Web tests\n"
 	@printf "  make test-db   Run the marked real-Postgres pytest suite\n"
+	@printf "  make test-p0-03-evidence Run the focused P0-03 PostgreSQL evidence subset\n"
 	@printf "  make lint      Run API and Web lint/type checks\n"
 	@printf "  make build-web Build the optimized Next.js application\n"
 	@printf "  make seed      Reset and load M5 portfolio baseline data\n"
@@ -80,6 +81,9 @@ test-web:
 
 test-db: db-up seed
 	cd $(API_DIR) && METERDESK_RUN_DB_TESTS=1 uv --cache-dir $(UV_CACHE_DIR) run --frozen pytest -m postgres
+
+test-p0-03-evidence: db-up seed
+	cd $(API_DIR) && METERDESK_RUN_DB_TESTS=1 uv --cache-dir $(UV_CACHE_DIR) run --frozen pytest -m "postgres and p0_03_evidence" -vv
 
 lint: lint-api lint-web
 

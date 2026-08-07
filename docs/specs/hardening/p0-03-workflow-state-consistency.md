@@ -4,7 +4,11 @@
 
 - Priority: P0.
 - Design status: approved for implementation.
-- Implementation status: implemented on the P0-03 candidate branch.
+- Implementation status: implemented on the P0-03 evidence-closure branch; no production behavior
+  or Alembic `20260806_0009` changes are part of the closure work.
+- Verification status: evidence closure in progress. Focused PostgreSQL atomicity, concurrency, and
+  migration tests are present; Gate D remains unpromoted until the complete local gate and final CI
+  head are recorded.
 - Depends on: P1-04 Persistence Foundation, Alembic head `20260802_0008`.
 - Blocks: P0-04 Async Agent Runtime.
 - Product scope change: none. Mutations remain mock-only, approval-gated, and never customer-facing.
@@ -65,8 +69,10 @@ sourcing layer:
   approval audit, mock mutation, mutation trace, and `mock_executed`.
 - `reject_approval`: locks Workflow then Approval, records trusted rejection and `rejected`.
 
-The first transaction to commit wins. Losing approve/reject/cancel/finalize commands return `409`
-and cannot overwrite the winning audit. A globally unique executed action fingerprint continues to
+Competing commands are linearized by the locked Workflow row and must be equivalent to one legal
+serial order. Where both commands are terminal, the first committed command wins and the loser
+returns `409`; a successful `awaiting_approval` finalization may be followed by a valid cancellation,
+which withdraws its pending approval. A globally unique executed action fingerprint continues to
 forbid repeated mutations. A rejected or withdrawn fingerprint may be proposed again in a new
 workflow, but it must receive a fresh approval.
 
@@ -117,7 +123,11 @@ execution and recovery on top of these state and command contracts.
 
 The implementation includes transition-matrix tests, command tests for replay/retry/finalization,
 approval/rejection/cancellation, frontend workflow mapping/timeline coverage, and migration SQL
-generation from `20260802_0008` to `20260806_0009`. The complete verification set remains:
+generation from `20260802_0008` to `20260806_0009`. Evidence closure adds
+`tests/p0_03_evidence_helpers.py`, `tests/test_p0_03_postgres_atomicity.py`,
+`tests/test_p0_03_postgres_concurrency.py`, and `tests/test_p0_03_migration_evidence.py`.
+`make test-p0-03-evidence` is a focused rerun convenience; `make test-db` remains the canonical
+database gate. The complete verification set remains:
 
 ```text
 make lint
@@ -129,7 +139,8 @@ make container-smoke
 ```
 
 Real-Postgres lock-wait and failure-injection evidence must be recorded before promoting those rows
-to Verified in the engineering evidence matrix.
+to Verified in the engineering evidence matrix. The acknowledged-result boundary after a successful
+commit remains explicitly deferred to P0-04.
 
 ## References
 

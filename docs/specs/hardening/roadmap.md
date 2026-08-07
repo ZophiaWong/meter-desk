@@ -3,9 +3,9 @@
 ## Status
 
 - Program status: approved next phase.
-- Active workstream: P0-03 Workflow State Consistency; implementation is complete on the candidate
-  branch, with real-Postgres/failure-injection verification still to be rerun before evidence is
-  promoted to Verified.
+- Active workstream: P0-03 Workflow State Consistency evidence closure; implementation is complete
+  on the candidate branch and the focused real-Postgres evidence is being recorded. Gate D and the
+  evidence matrix remain unpromoted until the complete local gate and final CI head succeed.
 - Product scope change: none.
 - Interview and demo collateral refresh: deferred until the hardening program is complete; this
   collateral is not authoritative for current workstream sequencing.
@@ -54,9 +54,9 @@ persistence. P1-04 adds application-lifetime async database resources, database-
 readiness, bounded pool configuration, row-locked approval terminal writes, and one marked pytest
 entrypoint for real-Postgres API and concurrency checks. P0-03 now adds explicit Workflow state,
 retry/replay/cancel semantics, fail-closed migration backfill, and atomic finalization/approval
-commands. The baseline still lacks background execution, provider resilience, operational telemetry,
-typed networked tool execution, structured context snapshots, and broad security/failure regression
-coverage.
+commands, and a test-only PostgreSQL evidence harness. The baseline still lacks background
+execution, provider resilience, operational telemetry, typed networked tool execution, structured
+context snapshots, and broad security/failure regression coverage.
 
 ## Workstream Sequence
 
@@ -224,8 +224,9 @@ the isolated container smoke are verified locally on the candidate branch.
 
 P0-03 defines ownership of workflow state, valid transitions, terminal states, approval-write failure
 semantics, migrations, and retry/replay idempotency before the orchestrator moves to a worker. The
-focused spec and implementation are present; real-Postgres lock waits, failure injection, and
-migration fixtures remain required evidence before this gate is marked Verified.
+focused spec, implementation, and evidence harness are present; Gate D remains in closure until the
+complete local gate and final CI head are recorded. P0-04 owns the post-commit acknowledgement and
+crash-recovery boundary.
 
 ### Gate E — Recoverable Runtime
 
