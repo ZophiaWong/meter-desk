@@ -38,15 +38,13 @@ engineering evidence without broadening MeterDesk into a generic platform or rea
 workflow, non-root images, five-service Compose runtime, smoke harness, Make targets, runbook, and
 link checker.
 
-The active workstream is
-[P0-03 Workflow State Consistency](hardening/p0-03-workflow-state-consistency.md), currently in
-evidence closure after implementation. P1-04's application-lifetime async runtime, real async
-readiness, bounded pool, and Postgres approval-lock foundation remain verified prerequisites. The
-P0-03 closure must finish the focused and canonical database evidence plus the full local/CI gate
-before the active workstream advances to P0-04 Async Agent Runtime. P0-02's local demo identity and
-trusted actor boundary remain intact. Later workstreams cover recoverable execution, provider
-resilience, operational evidence, a repository-local networked mock tool boundary, auditable context,
-and focused security and failure regression checks.
+[P0-03 Workflow State Consistency](hardening/p0-03-workflow-state-consistency.md) is Verified after
+the focused and canonical database evidence, complete local gate, and implementation-head CI
+passed. The active workstream is now P0-04 Async Agent Runtime. P1-04's application-lifetime async
+runtime, real async readiness, bounded pool, and Postgres approval-lock foundation remain verified
+prerequisites. P0-02's local demo identity and trusted actor boundary remain intact. Later workstreams
+cover provider resilience, operational evidence, a repository-local networked mock tool boundary,
+auditable context, and focused security/failure regression checks.
 
 The [Engineering Evidence Matrix](../evidence/engineering-evidence-matrix.md) records whether each
 capability is Existing, a Gap, Planned, Verified, or Deferred. It does not define requirements.

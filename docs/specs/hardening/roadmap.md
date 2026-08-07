@@ -3,9 +3,10 @@
 ## Status
 
 - Program status: approved next phase.
-- Active workstream: P0-03 Workflow State Consistency evidence closure; implementation is complete
-  on the candidate branch and the focused real-Postgres evidence is being recorded. Gate D and the
-  evidence matrix remain unpromoted until the complete local gate and final CI head succeed.
+- Active workstream: P0-04 Async Agent Runtime. P0-03 Workflow State Consistency is Verified on the
+  candidate branch: the focused and canonical real-Postgres evidence, complete local gate, and
+  implementation-head CI all succeeded. The final documentation head must repeat the CI gate before
+  merge.
 - Product scope change: none.
 - Interview and demo collateral refresh: deferred until the hardening program is complete; this
   collateral is not authoritative for current workstream sequencing.
@@ -137,13 +138,15 @@ Detailed requirements: [P1-04 Persistence Foundation](p1-04-persistence-foundati
 
 ### P0-03 — Workflow State Consistency
 
-Implemented in [P0-03 Workflow State Consistency](p0-03-workflow-state-consistency.md). `CaseWorkflow`
+Verified in [P0-03 Workflow State Consistency](p0-03-workflow-state-consistency.md). `CaseWorkflow`
 owns one ticket cycle and `AgentRun` is an attempt. The implementation defines the eight-state
 transition matrix, `needs_retry` versus `failed` semantics, idempotent start/replay, append-only
 transitions, Support/Admin cancellation with withdrawn approvals, and Workflow -> Approval lock
 ordering. Finalization and approve-and-execute close their previous partial-commit windows in one
-Postgres transaction. Migration `20260806_0009` backfills legacy data fail-closed. P0-04 remains the
-owner of queues, workers, leases, checkpoints, and crash recovery.
+Postgres transaction. Migration `20260806_0009` backfills legacy data fail-closed. The evidence
+closure recorded 12 injected rollback points and 12 real migration databases; implementation-head
+CI run [31188218525](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525) passed all
+four jobs. P0-04 now owns queues, workers, leases, checkpoints, and crash recovery.
 
 ### P0-04 — Async Agent Runtime
 
@@ -222,11 +225,12 @@ the isolated container smoke are verified locally on the candidate branch.
 
 ### Gate D — Explicit Workflow Semantics
 
-P0-03 defines ownership of workflow state, valid transitions, terminal states, approval-write failure
-semantics, migrations, and retry/replay idempotency before the orchestrator moves to a worker. The
-focused spec, implementation, and evidence harness are present; Gate D remains in closure until the
-complete local gate and final CI head are recorded. P0-04 owns the post-commit acknowledgement and
-crash-recovery boundary.
+Status: Verified. P0-03 defines ownership of workflow state, valid transitions, terminal states,
+approval-write failure semantics, migrations, and retry/replay idempotency before the orchestrator
+moves to a worker. The focused and canonical database gates, 12 rollback injections, 12 migration
+fixtures, complete local gate, and implementation-head CI run [31188218525](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525)
+are successful. The final documentation head must repeat the CI gate before merge. P0-04 owns the
+post-commit acknowledgement and crash-recovery boundary.
 
 ### Gate E — Recoverable Runtime
 

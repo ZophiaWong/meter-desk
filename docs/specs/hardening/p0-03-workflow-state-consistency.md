@@ -6,9 +6,10 @@
 - Design status: approved for implementation.
 - Implementation status: implemented on the P0-03 evidence-closure branch; no production behavior
   or Alembic `20260806_0009` changes are part of the closure work.
-- Verification status: evidence closure in progress. Focused PostgreSQL atomicity, concurrency, and
-  migration tests are present; Gate D remains unpromoted until the complete local gate and final CI
-  head are recorded.
+- Verification status: Verified on the implementation head. The evidence-finalization head records
+  the complete local gate, 12 injected rollback points, 12 real migration databases, and the
+  successful four-job implementation-head CI run; the final documentation head must still pass the
+  same CI gate before merge.
 - Depends on: P1-04 Persistence Foundation, Alembic head `20260802_0008`.
 - Blocks: P0-04 Async Agent Runtime.
 - Product scope change: none. Mutations remain mock-only, approval-gated, and never customer-facing.
@@ -125,9 +126,23 @@ The implementation includes transition-matrix tests, command tests for replay/re
 approval/rejection/cancellation, frontend workflow mapping/timeline coverage, and migration SQL
 generation from `20260802_0008` to `20260806_0009`. Evidence closure adds
 `tests/p0_03_evidence_helpers.py`, `tests/test_p0_03_postgres_atomicity.py`,
-`tests/test_p0_03_postgres_concurrency.py`, and `tests/test_p0_03_migration_evidence.py`.
-`make test-p0-03-evidence` is a focused rerun convenience; `make test-db` remains the canonical
-database gate. The complete verification set remains:
+`tests/test_p0_03_postgres_concurrency.py`, and `tests/test_p0_03_migration_evidence.py`. The
+control transactions observed five DML statements for `finalize_run` and five for
+`approve_and_execute`; each command was replayed with an exception before every ordinal and once
+from `after_flush_postexec` (10 ordinal points plus 2 post-flush points, 12 injected rollback
+points total). The migration matrix used twelve unique temporary Postgres databases: one successful
+backfill fixture and eleven independent fail-closed contradiction fixtures. The focused target
+passed 29 tests and the canonical `make test-db` passed 36 tests; the full local gate also passed
+lint, the 138-pass/36-skip API suite, the 61-pass Web suite, the optimized Web build, Markdown
+link checking (18 files/71 local links), container smoke, and `git diff --check`.
+
+The implementation-head CI evidence is [run 31188218525](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525):
+[backend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091631),
+[frontend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091323),
+[database-integration](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091292),
+and [container-smoke](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92899098973),
+all successful. `make test-p0-03-evidence` remains a focused rerun convenience; `make test-db`
+remains the canonical database gate. The complete verification set remains:
 
 ```text
 make lint
@@ -138,9 +153,9 @@ python scripts/check_markdown_links.py
 make container-smoke
 ```
 
-Real-Postgres lock-wait and failure-injection evidence must be recorded before promoting those rows
-to Verified in the engineering evidence matrix. The acknowledged-result boundary after a successful
-commit remains explicitly deferred to P0-04.
+Real-Postgres lock-wait and failure-injection evidence promoted the six P0-03 rows to Verified in
+the engineering evidence matrix. The acknowledged-result boundary after a successful commit
+remains explicitly deferred to P0-04.
 
 ## References
 
