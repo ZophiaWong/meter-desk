@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
 from meterdesk_api.agent.approvals import ApprovalDecisionError, ApprovalDecisionService
 from meterdesk_api.agent.compliance import RunComplianceChecker
@@ -18,6 +18,7 @@ from meterdesk_api.auth import (
     require_agent_run,
     require_approval_decision,
     require_eval_run,
+    require_workflow_cancel,
 )
 from meterdesk_api.decision_summary import build_agent_decision_summary
 from meterdesk_api.eval.judge import EvalDraftJudge
@@ -32,6 +33,8 @@ from meterdesk_api.schemas import (
     ApprovalDecisionResponse,
     ApprovalSummary,
     BillingEvidence,
+    CaseWorkflowSummary,
+    CaseWorkflowTransitionSummary,
     EvalCaseSummary,
     EvalRegressionSummary,
     EvalResultSnapshotSummary,
@@ -42,6 +45,7 @@ from meterdesk_api.schemas import (
     TicketDetail,
     TicketSummary,
     ToolTraceSummary,
+    WorkflowCancelRequest,
 )
 
 router = APIRouter(
@@ -53,6 +57,7 @@ PROVIDER_DEPENDENCY = Depends(get_agent_provider)
 OPTIONAL_PROVIDER_DEPENDENCY = Depends(get_optional_agent_provider)
 OPTIONAL_JUDGE_DEPENDENCY = Depends(get_optional_eval_judge)
 APPROVAL_PRINCIPAL = Annotated[DemoPrincipal, Depends(require_approval_decision)]
+CANCEL_PRINCIPAL = Annotated[DemoPrincipal, Depends(require_workflow_cancel)]
 
 
 def _demo_session_actor(principal: DemoPrincipal) -> ApprovalDecisionActor:
@@ -115,6 +120,67 @@ async def list_agent_runs(
     return runs
 
 
+@router.get("/tickets/{ticket_id}/workflows", response_model=list[CaseWorkflowSummary])
+async def list_ticket_workflows(
+    ticket_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+) -> list[CaseWorkflowSummary]:
+    workflows = await repository.list_workflows(ticket_id)
+    if workflows is None:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return workflows
+
+
+@router.get("/workflows/{workflow_id}", response_model=CaseWorkflowSummary)
+async def get_workflow(
+    workflow_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+) -> CaseWorkflowSummary:
+    workflow = await repository.get_workflow(workflow_id)
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return workflow
+
+
+@router.get(
+    "/workflows/{workflow_id}/transitions",
+    response_model=list[CaseWorkflowTransitionSummary],
+)
+async def list_workflow_transitions(
+    workflow_id: str,
+    repository=REPOSITORY_DEPENDENCY,
+) -> list[CaseWorkflowTransitionSummary]:
+    transitions = await repository.list_workflow_transitions(workflow_id)
+    if transitions is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return transitions
+
+
+@router.post("/workflows/{workflow_id}/cancel", response_model=CaseWorkflowSummary)
+async def cancel_workflow(
+    workflow_id: str,
+    command: WorkflowCancelRequest,
+    request: Request,
+    principal: CANCEL_PRINCIPAL,
+    repository=REPOSITORY_DEPENDENCY,
+) -> CaseWorkflowSummary:
+    reason = command.reason.strip()
+    if not reason:
+        from meterdesk_api.errors import MeterDeskAPIError
+
+        raise MeterDeskAPIError(
+            status_code=422,
+            code="workflow.cancel_reason_required",
+            message="A cancellation reason is required.",
+        )
+    return await repository.cancel_workflow(
+        workflow_id=workflow_id,
+        actor=_demo_session_actor(principal),
+        request_id=request.state.request_id,
+        reason=reason,
+    )
+
+
 @router.post(
     "/tickets/{ticket_id}/agent-runs",
     response_model=AgentRunSummary,
@@ -123,16 +189,34 @@ async def list_agent_runs(
 )
 async def start_agent_run(
     ticket_id: str,
+    request: Request,
+    response: Response,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     repository=REPOSITORY_DEPENDENCY,
     provider: AgentResolutionProvider = PROVIDER_DEPENDENCY,
 ) -> AgentRunSummary:
+    if not idempotency_key or not idempotency_key.strip():
+        from meterdesk_api.errors import MeterDeskAPIError
+
+        raise MeterDeskAPIError(
+            status_code=400,
+            code="idempotency.required",
+            message="Idempotency-Key is required to start an agent run.",
+        )
     orchestrator = AgentRunOrchestrator(repository=repository, provider=provider)
     try:
-        run = await orchestrator.run_ticket(ticket_id)
+        run = await orchestrator.run_ticket(
+            ticket_id,
+            idempotency_key=idempotency_key.strip(),
+            request_id=request.state.request_id,
+        )
     except AgentLoopError as error:
         raise error
     if run is None:
         raise HTTPException(status_code=404, detail="Ticket not found")
+    if orchestrator.last_start_replayed:
+        response.status_code = status.HTTP_200_OK
+        response.headers["Idempotency-Replayed"] = "true"
     return run
 
 
@@ -160,7 +244,7 @@ async def get_run_compliance(
 
 @router.get("/approvals", response_model=list[ApprovalSummary])
 async def list_approvals(
-    status: Literal["pending", "approved", "rejected", "all"] = "pending",
+    status: Literal["pending", "approved", "rejected", "withdrawn", "all"] = "pending",
     ticket_id: str | None = None,
     repository=REPOSITORY_DEPENDENCY,
 ) -> list[ApprovalSummary]:

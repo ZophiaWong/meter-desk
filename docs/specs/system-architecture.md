@@ -83,10 +83,31 @@ Web.
 Approval approve/reject writes acquire `SELECT ... FOR UPDATE` and refresh cached ORM state before
 choosing a terminal transition. The first lock holder that commits wins; a same-direction approve is
 idempotent, an opposite terminal decision returns `409`, and the original actor/request audit remains
-unchanged. Only the transaction that creates a mock mutation writes the executed governance trace.
-Postgres remains at `READ COMMITTED`, existing indexes and constraints remain in place, and no
-migration or external API contract changes in P1-04. The existing mutation-to-trace cross-transaction
-failure window remains assigned to P0-03.
+unchanged. P0-03 extends this lock discipline to a `CaseWorkflow` aggregate and closes the
+mutation-to-trace window: finalization and approve-and-execute persist their run/workflow, approval,
+mutation, and governance-trace writes in one transaction. Postgres remains at `READ COMMITTED`,
+with narrow repository commands and no outbox or general Unit of Work.
+
+## P0-03 Workflow State Consistency (Implemented on Candidate Branch)
+
+`CaseWorkflow` owns the durable state of one ticket-processing cycle; `AgentRun` records one
+investigation attempt inside that cycle. The authoritative state vocabulary is `investigating`,
+`needs_retry`, `awaiting_approval`, `completed_no_action`, `rejected`, `mock_executed`, `failed`,
+and `cancelled`. A partial unique index permits one active cycle per ticket, while a self-reference
+links a terminal cycle to the next cycle. `CaseWorkflowTransition` is append-only and records every
+legal change with reason code, request/actor provenance, and artifact references.
+
+The transition rules and atomic commands are centralized in
+`apps/api/src/meterdesk_api/workflows.py` and the repository boundary. Start requires an
+`Idempotency-Key`; same-key requests replay, `needs_retry` retries reuse the cycle, and different
+keys conflict with running or awaiting work. Finalization commits the run output, final traces,
+approval (when required), approval trace, and Workflow transition together. Approve-and-execute
+locks Workflow then Approval and commits trusted approval audit, mock mutation, mutation trace, and
+`mock_executed` together. Cancellation withdraws pending approval and is limited to Support/Admin.
+Migration `20260806_0009` backfills legacy rows fail-closed and refuses unprovable combinations.
+
+P0-03 is still synchronous. Queue/worker execution, leases, checkpoints, stale detection, and crash
+recovery remain P0-04 responsibilities.
 
 ## Boundary Rules
 
@@ -105,15 +126,18 @@ The Duplicate Charge golden path should follow this flow:
 
 1. The frontend opens a ticket and requests current ticket context from FastAPI.
 2. FastAPI reads ticket, account, invoice, charge, credit, and policy data from Postgres-backed mock systems.
-3. An authenticated support operator or admin starts an agent run.
+3. An authenticated support operator or admin starts an idempotent Agent run inside a new or
+   retryable Case Workflow.
 4. The agent uses permission-scoped backend tools.
 5. Each tool call writes a trace envelope with input summary, output summary, permission metadata, and evidence references.
 6. The agent returns a recommendation, internal resolution draft, and customer reply draft.
-7. If the recommendation includes a refund or credit, FastAPI creates an approval request.
+7. If the recommendation includes a refund or credit, one transaction finalizes the run, final
+   traces, approval request, and Workflow `awaiting_approval` transition.
 8. An authenticated approver or admin records a decision; FastAPI persists the verified actor and
-   request ID with approval state.
-9. Approved actions create mock mutations and audit records.
-10. Eval runs reuse stored cases and inspect both final outcome and trace behavior.
+   request ID, mock mutation, mutation trace, and `mock_executed` transition atomically.
+9. Support/Admin can cancel an active cycle; pending approval is withdrawn and late decisions lose
+   with `409`.
+10. Eval runs reuse stored cases and inspect both Workflow terminal state and trace behavior.
 
 ## Minimal Domain Glossary
 
@@ -124,7 +148,11 @@ The Duplicate Charge golden path should follow this flow:
 - **Usage Record**: metered usage data used to explain billed amounts.
 - **Credit Ledger Entry**: granted credits, consumed credits, remaining balances, and prior adjustments.
 - **Policy Rule**: a versioned refund, credit, cancellation, or usage policy used to justify a recommendation.
-- **Agent Run**: one investigation attempt by the agent for a ticket.
+- **Case Workflow**: the durable state aggregate for one ticket-processing cycle; terminal cycles
+  cannot be reopened and a later cycle points to its predecessor.
+- **Agent Run**: one investigation attempt by the agent inside a Case Workflow.
+- **Workflow Transition**: an append-only, actor/request-correlated status change for a Case
+  Workflow.
 - **Tool Trace**: a structured record of a tool call, permission level, inputs, outputs, evidence, and errors.
 - **Approval Request**: a human decision gate for high-risk refund or credit actions.
 - **Mock Mutation**: a simulated refund or credit action created only after approval.
@@ -136,7 +164,8 @@ The Duplicate Charge golden path should follow this flow:
 V1 APIs should be resource-oriented and boring:
 
 - ticket list and detail APIs for the workbench.
-- agent run APIs for starting and inspecting investigations.
+- agent run APIs for starting and inspecting investigations with idempotent replay semantics.
+- workflow APIs for cycle state, transition history, and Support/Admin cancellation.
 - approval APIs for queue, approve, and reject actions.
 - eval APIs for listing cases, running cases, and reading results.
 - mock data APIs only where the UI needs direct read access.
@@ -159,13 +188,14 @@ Mock systems must not call real Stripe, payment, support, messaging, or accounti
 
 ## Post-M10 Hardening Direction
 
-P0-01 implemented the runtime packaging described above, P0-02 implements the local demo
-authentication boundary on its candidate branch, and P1-04 implements the persistence foundation
-described above. The remaining active hardening roadmap proposes these later architecture changes;
-they are target directions, not claims about the current implementation:
+P0-01 implemented the runtime packaging described above, P0-02 implemented the local demo
+authentication boundary, P1-04 implemented the persistence foundation, and P0-03 implemented the
+explicit workflow state contract described above. The remaining active hardening roadmap proposes
+these later architecture changes; they are target directions, not claims about the current
+implementation:
 
-- separate case workflow state from HTTP request lifetime with explicit transitions, retries,
-  cancellation, checkpoints, and idempotency.
+- move synchronous workflow commands behind an async queue/worker boundary with checkpoints,
+  leases, stale detection, and crash recovery (P0-04).
 - replace blocking provider I/O with an async resilience contract and structured usage metadata.
 - correlate domain audit identifiers with operational logs, traces, metrics, latency, and cost.
 - prove typed tool execution through one repository-local, read-only mock billing HTTP service with

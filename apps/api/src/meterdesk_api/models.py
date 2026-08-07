@@ -3,7 +3,18 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -148,17 +159,114 @@ class TicketPolicyLink(SeededRow, Base):
     policy_rule_id: Mapped[str] = mapped_column(ForeignKey("policy_rules.id"), primary_key=True)
 
 
-class AgentRun(SeededRow, Base):
-    __tablename__ = "agent_runs"
+class CaseWorkflow(SeededRow, Base):
+    __tablename__ = "case_workflows"
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "cycle_number", name="uq_case_workflows_ticket_cycle"),
+        CheckConstraint(
+            "status IN ('investigating', 'needs_retry', 'awaiting_approval', "
+            "'completed_no_action', 'rejected', 'mock_executed', 'failed', 'cancelled')",
+            name="ck_case_workflows_status",
+        ),
+        CheckConstraint(
+            "origin IN ('runtime', 'legacy', 'seed_fixture')",
+            name="ck_case_workflows_origin",
+        ),
+        CheckConstraint("cycle_number >= 1", name="ck_case_workflows_cycle_number"),
+        CheckConstraint(
+            "version >= 1 AND transition_sequence >= 1",
+            name="ck_case_workflows_version",
+        ),
+        Index(
+            "uq_case_workflows_active_ticket",
+            "ticket_id",
+            unique=True,
+            postgresql_where=("status IN ('investigating', 'needs_retry', 'awaiting_approval')"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
+    cycle_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    status_reason_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    status_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    origin: Mapped[str] = mapped_column(String(40), nullable=False, default="runtime")
+    previous_workflow_id: Mapped[str | None] = mapped_column(
+        ForeignKey("case_workflows.id"), nullable=True, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    transition_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    terminal_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CaseWorkflowTransition(SeededRow, Base):
+    __tablename__ = "case_workflow_transitions"
+    __table_args__ = (
+        UniqueConstraint("workflow_id", "sequence", name="uq_workflow_transitions_sequence"),
+        CheckConstraint(
+            "to_status IN ('investigating', 'needs_retry', 'awaiting_approval', "
+            "'completed_no_action', 'rejected', 'mock_executed', 'failed', 'cancelled')",
+            name="ck_workflow_transitions_to_status",
+        ),
+        CheckConstraint(
+            "from_status IS NULL OR from_status IN ('investigating', 'needs_retry', "
+            "'awaiting_approval', 'completed_no_action', 'rejected', 'mock_executed', "
+            "'failed', 'cancelled')",
+            name="ck_workflow_transitions_from_status",
+        ),
+        CheckConstraint("sequence >= 1", name="ck_workflow_transitions_sequence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("case_workflows.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    from_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    to_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    reason_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    actor_subject: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    actor_display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    actor_role: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    actor_source: Mapped[str] = mapped_column(String(40), nullable=False)
+    request_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    agent_run_id: Mapped[str | None] = mapped_column(ForeignKey("agent_runs.id"), nullable=True)
+    approval_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("approval_requests.id"), nullable=True
+    )
+    mock_mutation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("mock_mutations.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class AgentRun(SeededRow, Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed', 'cancelled')",
+            name="ck_agent_runs_status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("case_workflows.id"), nullable=False, index=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False)
     source: Mapped[str] = mapped_column(String(80), nullable=False)
     final_outcome: Mapped[str | None] = mapped_column(String(120), nullable=True)
     internal_resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
     customer_reply: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(120), nullable=True)
     model: Mapped[str | None] = mapped_column(String(80), nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String(80), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -203,15 +311,23 @@ class ApprovalRequest(SeededRow, Base):
             "AND decision_actor_subject IS NULL AND decision_actor_display_name IS NULL "
             "AND decision_actor_role IS NULL AND decision_actor_source IS NULL "
             "AND decision_request_id IS NULL) OR "
-            "(status IN ('approved', 'rejected') AND decided_at IS NOT NULL "
+            "(status IN ('approved', 'rejected', 'withdrawn') AND decided_at IS NOT NULL "
             "AND decision = status AND decision_actor_source = 'legacy_unverified' "
-            "AND decision_actor_subject IS NULL AND decision_actor_role IS NULL "
+            "AND decision_actor_subject IS NULL AND decision_actor_display_name IS NULL "
+            "AND decision_actor_role IS NULL "
             "AND decision_request_id IS NULL) OR "
             "(status IN ('approved', 'rejected') AND decided_at IS NOT NULL "
             "AND decision = status AND decision_actor_source IN ('demo_session', 'seed_fixture') "
             "AND decision_actor_subject IS NOT NULL "
             "AND decision_actor_display_name IS NOT NULL "
             "AND decision_actor_role IN ('approver', 'admin') "
+            "AND decision_request_id IS NOT NULL) OR "
+            "(status = 'withdrawn' AND decided_at IS NOT NULL "
+            "AND decision = 'withdrawn' AND decision_actor_source IN "
+            "('demo_session', 'seed_fixture') "
+            "AND decision_actor_subject IS NOT NULL "
+            "AND decision_actor_display_name IS NOT NULL "
+            "AND decision_actor_role IN ('support_operator', 'admin') "
             "AND decision_request_id IS NOT NULL)",
             name="ck_approval_decision_audit_shape",
         ),
@@ -219,6 +335,9 @@ class ApprovalRequest(SeededRow, Base):
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("case_workflows.id"), nullable=False, index=True
+    )
     agent_run_id: Mapped[str | None] = mapped_column(ForeignKey("agent_runs.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
@@ -245,9 +364,13 @@ class ApprovalRequest(SeededRow, Base):
 
 class MockMutation(SeededRow, Base):
     __tablename__ = "mock_mutations"
+    __table_args__ = (CheckConstraint("status = 'mock_executed'", name="ck_mock_mutations_status"),)
 
     id: Mapped[str] = mapped_column(String(80), primary_key=True)
     ticket_id: Mapped[str] = mapped_column(ForeignKey("tickets.id"), nullable=False, index=True)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("case_workflows.id"), nullable=False, index=True
+    )
     approval_request_id: Mapped[str | None] = mapped_column(
         ForeignKey("approval_requests.id"), nullable=True
     )
@@ -262,6 +385,23 @@ class MockMutation(SeededRow, Base):
     action_fingerprint: Mapped[str] = mapped_column(String(260), nullable=False, index=True)
     executed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     executed_at_display: Mapped[str] = mapped_column(String(80), nullable=False)
+
+
+Index(
+    "uq_agent_runs_workflow_running",
+    AgentRun.workflow_id,
+    unique=True,
+    postgresql_where="status = 'running'",
+)
+Index("uq_agent_runs_ticket_idempotency", AgentRun.ticket_id, AgentRun.idempotency_key, unique=True)
+Index("uq_approval_requests_workflow", ApprovalRequest.workflow_id, unique=True)
+Index("uq_mock_mutations_workflow", MockMutation.workflow_id, unique=True)
+Index(
+    "uq_mock_mutations_executed_fingerprint",
+    MockMutation.action_fingerprint,
+    unique=True,
+    postgresql_where="status = 'mock_executed'",
+)
 
 
 class EvalCase(SeededRow, Base):

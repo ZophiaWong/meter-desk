@@ -1,16 +1,20 @@
 import {
   approveRequestAction,
+  cancelWorkflowAction,
   rejectRequestAction,
   startAgentRunAction,
 } from "@/lib/meterdesk-actions";
 import {
   AGENT_RUN_PERMISSION_EXPLANATION,
   APPROVAL_PERMISSION_EXPLANATION,
+  WORKFLOW_CANCEL_PERMISSION_EXPLANATION,
   canDecideApproval,
+  canCancelWorkflow,
   canStartAgentRun,
   type DemoPrincipal,
 } from "@/lib/demo-auth";
 import type { WorkbenchScenario } from "@/lib/meterdesk-view";
+import Link from "next/link";
 
 type SafetyRailProps = {
   currentPrincipal: DemoPrincipal;
@@ -125,6 +129,14 @@ function SafetySummaryCard({ currentPrincipal, scenario }: SafetyRailProps) {
           Decided by {scenario.approval.decisionActorSummary}
         </p>
       ) : null}
+      {scenario.decisionSummary.state === "awaiting_approval" ? (
+        <Link
+          className="mt-4 inline-flex text-sm font-semibold text-meter-blue underline"
+          href="/approvals"
+        >
+          Open Approval Queue
+        </Link>
+      ) : null}
       <div className="mt-4 grid grid-cols-2 gap-2">
         <form action={approveRequestAction}>
           <input name="approvalId" type="hidden" value={scenario.approval.id} />
@@ -157,6 +169,13 @@ function SafetySummaryCard({ currentPrincipal, scenario }: SafetyRailProps) {
 
 function RunStateCard({ currentPrincipal, scenario }: SafetyRailProps) {
   const failed = scenario.run?.status.toLowerCase() === "failed";
+  const canRetry = scenario.decisionSummary.state === "needs_retry";
+  const workflowStatus = scenario.workflow?.status.toLowerCase();
+  const activeWorkflow = ["investigating", "needs retry", "awaiting approval"].includes(
+    workflowStatus ?? "",
+  );
+  const canCancel =
+    activeWorkflow && canCancelWorkflow(currentPrincipal);
 
   return (
     <section
@@ -184,9 +203,10 @@ function RunStateCard({ currentPrincipal, scenario }: SafetyRailProps) {
       {scenario.run?.errorState ? (
         <p className="mt-3 text-sm font-medium text-meter-amber">{scenario.run.errorState}</p>
       ) : null}
-      {!scenario.run ? (
+      {!scenario.run || canRetry ? (
         <form action={startAgentRunAction} className="mt-4">
           <input name="ticketId" type="hidden" value={scenario.ticket.id} />
+          <input name="idempotencyKey" type="hidden" value={crypto.randomUUID()} />
           <button
             className="h-10 rounded-md bg-meter-blue px-4 text-sm font-semibold text-white disabled:cursor-not-allowed"
             disabled={!canStartAgentRun(currentPrincipal)}
@@ -195,7 +215,22 @@ function RunStateCard({ currentPrincipal, scenario }: SafetyRailProps) {
             }
             type="submit"
           >
-            Run investigation
+            {canRetry ? "Retry investigation" : "Run investigation"}
+          </button>
+        </form>
+      ) : null}
+      {scenario.workflow && activeWorkflow ? (
+        <form action={cancelWorkflowAction} className="mt-3">
+          <input name="workflowId" type="hidden" value={scenario.workflow.id} />
+          <input name="ticketId" type="hidden" value={scenario.ticket.id} />
+          <input name="reason" type="hidden" value="Cancelled by support operator." />
+          <button
+            className="h-9 rounded-md border border-meter-line bg-white px-3 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:text-slate-400"
+            disabled={!canCancel}
+            title={!canCancel ? WORKFLOW_CANCEL_PERMISSION_EXPLANATION : undefined}
+            type="submit"
+          >
+            Cancel workflow
           </button>
         </form>
       ) : null}

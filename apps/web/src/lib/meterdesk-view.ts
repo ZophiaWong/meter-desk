@@ -10,12 +10,16 @@ import {
   getMockMutations,
   getRunCompliance,
   getTicket,
+  getTicketWorkflows,
   getTickets,
   getToolTraces,
+  getWorkflowTransitions,
   type ApprovalResource,
   type AgentDecisionSummaryResource,
   type AgentRunResource,
   type BillingEvidenceResource,
+  type CaseWorkflowResource,
+  type CaseWorkflowTransitionResource,
   type EvalCaseResource,
   type EvalRegressionCaseResource,
   type MockMutationResource,
@@ -91,6 +95,10 @@ export type AgentDecisionSummary = {
   decisionLabel: string;
   rationale: string;
   runId: string | null;
+  workflowId?: string | null;
+  workflowVersion?: number | null;
+  workflowStatusReasonCode?: string | null;
+  workflowStatusReason?: string | null;
   approvalId: string | null;
   mutationId: string | null;
   policyCitation: string | null;
@@ -156,6 +164,28 @@ export type MockMutationView = {
 export type DraftOutputs = {
   internalResolution: string;
   customerReply: string;
+};
+
+export type WorkflowView = {
+  id: string;
+  cycleNumber: number;
+  status: string;
+  reasonCode: string;
+  reason: string | null;
+  version: number;
+  terminalAt: string | null;
+};
+
+export type WorkflowTransitionView = {
+  id: string;
+  sequence: number;
+  fromStatus: string | null;
+  toStatus: string;
+  reasonCode: string;
+  reasonDetail: string | null;
+  actor: string | null;
+  requestId: string;
+  createdAt: string;
 };
 
 export type DecisionGraphNodeId = "evidence" | "policy" | "decision" | "approval" | "mutation";
@@ -232,6 +262,8 @@ export type WorkbenchScenario = {
   };
   decisionSummary: AgentDecisionSummary;
   decisionGraph: DecisionGraph;
+  workflow?: WorkflowView | null;
+  workflowTransitions?: WorkflowTransitionView[];
   evidence: BillingEvidence;
   run: AgentRunView | null;
   compliance: RunComplianceView | null;
@@ -259,7 +291,7 @@ export type ApprovalQueueItem = {
   decisionRequestId: string | null;
 };
 
-export type ApprovalQueueStatus = "pending" | "approved" | "rejected" | "all";
+export type ApprovalQueueStatus = "pending" | "approved" | "rejected" | "withdrawn" | "all";
 
 export type EvalCaseView = {
   id: string;
@@ -319,22 +351,46 @@ export async function getWorkbenchScenario(
   ticketId = DEFAULT_TICKET_ID,
   accessToken?: string,
 ): Promise<WorkbenchScenario> {
-  const [tickets, ticket, evidence, decisionSummary, runs, approvals, mutations, toolPolicies] =
+  const [
+    tickets,
+    ticket,
+    evidence,
+    decisionSummary,
+    runs,
+    workflows,
+    approvals,
+    mutations,
+    toolPolicies,
+  ] =
     await Promise.all([
       getTickets(undefined, accessToken),
       getTicket(ticketId, undefined, accessToken),
       getBillingEvidence(ticketId, undefined, accessToken),
       getDecisionSummary(ticketId, undefined, accessToken),
       getAgentRuns(ticketId, undefined, accessToken),
+      getTicketWorkflows(ticketId, undefined, accessToken),
       getApprovalsByStatus("all", ticketId, undefined, accessToken),
       getMockMutations(ticketId, undefined, accessToken),
       getGovernanceToolPolicies(undefined, accessToken),
     ]);
-  const run = runs.at(-1) ?? null;
+  const workflow = workflows.at(-1) ?? null;
+  const workflowTransitions = workflow
+    ? await getWorkflowTransitions(workflow.id, undefined, accessToken)
+    : [];
+  const workflowRuns = workflow
+    ? runs.filter((item) => item.workflow_id === workflow.id)
+    : runs;
+  const workflowApprovals = workflow
+    ? approvals.filter((item) => item.workflow_id === workflow.id)
+    : approvals;
+  const workflowMutations = workflow
+    ? mutations.filter((item) => item.workflow_id === workflow.id)
+    : mutations;
+  const run = workflowRuns.at(-1) ?? null;
   const traces = run ? await getToolTraces(run.id, undefined, accessToken) : [];
   const compliance = run ? await getRunCompliance(run.id, undefined, accessToken) : null;
-  const approval = approvals.at(-1) ?? null;
-  const latestMutation = mutations.at(-1) ?? null;
+  const approval = workflowApprovals.at(-1) ?? null;
+  const latestMutation = workflowMutations.at(-1) ?? null;
   const drafts =
     run?.internal_resolution && run.customer_reply
       ? {
@@ -344,7 +400,7 @@ export async function getWorkbenchScenario(
       : null;
   const mappedDecisionSummary = mapDecisionSummary(decisionSummary);
   const mappedApproval = approval ? mapApproval(approval) : null;
-  const mappedMutations = mutations.map((mutation) => ({
+  const mappedMutations = workflowMutations.map((mutation) => ({
     id: mutation.id,
     amount: mutation.amount.display,
     status: titleCase(mutation.status.replace("_", " ")),
@@ -366,6 +422,8 @@ export async function getWorkbenchScenario(
       outcome: ticket.outcome,
     },
     decisionSummary: mappedDecisionSummary,
+    workflow: workflow ? mapWorkflow(workflow) : null,
+    workflowTransitions: workflowTransitions.map(mapWorkflowTransition),
     decisionGraph: buildDecisionGraph({
       approval,
       compliance,
@@ -556,6 +614,10 @@ function mapDecisionSummary(summary: AgentDecisionSummaryResource): AgentDecisio
     decisionLabel: summary.decision_label,
     rationale: summary.rationale,
     runId: summary.run_id,
+    workflowId: summary.workflow_id,
+    workflowVersion: summary.workflow_version,
+    workflowStatusReasonCode: summary.workflow_status_reason_code,
+    workflowStatusReason: summary.workflow_status_reason,
     approvalId: summary.approval_id,
     mutationId: summary.mutation_id,
     policyCitation: summary.policy_citation,
@@ -568,6 +630,36 @@ function mapDecisionSummary(summary: AgentDecisionSummaryResource): AgentDecisio
       tone: tile.tone,
       refs: tile.refs,
     })),
+  };
+}
+
+function mapWorkflow(workflow: CaseWorkflowResource): WorkflowView {
+  return {
+    id: workflow.id,
+    cycleNumber: workflow.cycle_number,
+    status: titleCase(workflow.status.replaceAll("_", " ")),
+    reasonCode: workflow.status_reason_code,
+    reason: workflow.status_reason,
+    version: workflow.version,
+    terminalAt: workflow.terminal_at,
+  };
+}
+
+function mapWorkflowTransition(
+  transition: CaseWorkflowTransitionResource,
+): WorkflowTransitionView {
+  return {
+    id: transition.id,
+    sequence: transition.sequence,
+    fromStatus: transition.from_status
+      ? titleCase(transition.from_status.replaceAll("_", " "))
+      : null,
+    toStatus: titleCase(transition.to_status.replaceAll("_", " ")),
+    reasonCode: transition.reason_code,
+    reasonDetail: transition.reason_detail,
+    actor: transition.actor_display_name ?? transition.actor_subject,
+    requestId: transition.request_id,
+    createdAt: transition.created_at,
   };
 }
 
@@ -790,14 +882,22 @@ function buildApprovalNode(context: GraphContext): DecisionGraphNode {
   }
 
   const status = context.approval.status.toLowerCase();
-  const tone = status === "approved" ? "success" : status === "rejected" ? "danger" : "warning";
+  const tone =
+    status === "approved" ? "success" : status === "rejected" ? "danger" : "warning";
   return {
     id: "approval",
     label: "Approval",
     title: context.approval.title,
     body: context.approval.blocker,
     tone,
-    status: status === "approved" ? "complete" : status === "rejected" ? "rejected" : "pending",
+    status:
+      status === "approved"
+        ? "complete"
+        : status === "rejected"
+          ? "rejected"
+          : status === "withdrawn"
+            ? "rejected"
+            : "pending",
     refs: [context.approval.id],
     traceIds: context.approvalTrace ? [context.approvalTrace.id] : [],
     inspectorTitle:
@@ -805,7 +905,9 @@ function buildApprovalNode(context: GraphContext): DecisionGraphNode {
         ? "Approval gate is active"
         : status === "approved"
           ? "Approval completed"
-          : "Approval rejected",
+          : status === "withdrawn"
+            ? "Approval withdrawn"
+            : "Approval rejected",
     inspectorBody: context.approval.reason,
     inspectorDetails: detailList([
       ["Approval", context.approval.id],
@@ -879,6 +981,26 @@ function buildMutationNode(context: GraphContext): DecisionGraphNode {
       inspectorDetails: detailList([
         ["Approval", context.approval.id],
         ["Decision", context.approval.decision ?? "rejected"],
+        ["Fingerprint", context.approval.action_fingerprint],
+      ]),
+    };
+  }
+
+  if (status === "withdrawn") {
+    return {
+      id: "mutation",
+      label: "Mutation",
+      title: "Mutation withdrawn",
+      body: "The workflow was cancelled and the approval was withdrawn; no mock mutation executed.",
+      tone: "warning",
+      status: "rejected",
+      refs: [context.approval.id, context.approval.action_fingerprint],
+      traceIds: context.approvalTrace ? [context.approvalTrace.id] : [],
+      inspectorTitle: "Mutation blocked by cancellation",
+      inspectorBody: context.approval.blocker,
+      inspectorDetails: detailList([
+        ["Approval", context.approval.id],
+        ["Decision", context.approval.decision ?? "withdrawn"],
         ["Fingerprint", context.approval.action_fingerprint],
       ]),
     };

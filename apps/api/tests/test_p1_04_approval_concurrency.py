@@ -4,12 +4,12 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import delete, select, text
+from sqlalchemy import select, text
 
 from meterdesk_api.agent.approvals import ApprovalDecisionService
 from meterdesk_api.db import DatabaseRuntime, create_database_runtime
 from meterdesk_api.errors import MeterDeskAPIError
-from meterdesk_api.models import AgentRun, ApprovalRequest, MockMutation, ToolTrace
+from meterdesk_api.models import CaseWorkflow, MockMutation
 from meterdesk_api.repositories import SqlAlchemyMeterDeskRepository
 from meterdesk_api.schemas import (
     ApprovalDecisionActor,
@@ -31,6 +31,7 @@ pytestmark = [
 @dataclass(frozen=True)
 class ApprovalRaceFixture:
     runtime: DatabaseRuntime
+    workflow_id: str
     run_id: str
     approval_id: str
     fingerprint: str
@@ -54,32 +55,42 @@ async def approval_race() -> ApprovalRaceFixture:
     try:
         async with runtime.session_factory() as session:
             repository = SqlAlchemyMeterDeskRepository(session)
+            await repository.reset_demo_live_state("TCK-1042")
             run = await repository.create_agent_run(
                 ticket_id="TCK-1042",
                 source="p1-04-postgres-test",
                 model="deterministic-test-model",
                 prompt_version="p1-04-concurrency-v1",
             )
+            assert run.workflow_id is not None
             run_id = run.id
-            approval = await repository.create_approval_request(
-                ticket_id="TCK-1042",
+            await repository.finalize_run(
                 agent_run_id=run.id,
-                title="P1-04 concurrent approval proof",
-                action_type=f"p1_04_refund_{unique}",
-                amount_cents=29000,
-                amount_display="$290.00",
-                currency="USD",
-                reason="Prove deterministic approval terminal-state concurrency.",
-                blocker="Mutation blocked until human approval",
-                policy_citation="DUP-CHARGE-001 v2026.04",
-                evidence_refs=["invoice INV-2026-0418", "charge ch_2026_0418_B"],
-                action_metadata={"target_charge_id": f"p1-04-charge-{unique}"},
-                action_fingerprint=fingerprint,
+                final_outcome="confirmed_duplicate_charge",
+                internal_resolution="Concurrent approval proof.",
+                customer_reply="Draft only.",
+                target_status="awaiting_approval",
+                reason_code="test.p1_04_approval_required",
+                approval={
+                    "title": "P1-04 concurrent approval proof",
+                    "action_type": f"p1_04_refund_{unique}",
+                    "amount_cents": 29000,
+                    "amount_display": "$290.00",
+                    "currency": "USD",
+                    "reason": "Prove deterministic approval terminal-state concurrency.",
+                    "blocker": "Mutation blocked until human approval",
+                    "policy_citation": "DUP-CHARGE-001 v2026.04",
+                    "evidence_refs": ["invoice INV-2026-0418", "charge ch_2026_0418_B"],
+                    "action_metadata": {"target_charge_id": f"p1-04-charge-{unique}"},
+                    "action_fingerprint": fingerprint,
+                },
             )
+            approval = (await repository.list_approvals(ticket_id="TCK-1042"))[-1]
             approval_id = approval.id
 
         yield ApprovalRaceFixture(
             runtime=runtime,
+            workflow_id=run.workflow_id,
             run_id=run_id,
             approval_id=approval_id,
             fingerprint=fingerprint,
@@ -87,18 +98,8 @@ async def approval_race() -> ApprovalRaceFixture:
     finally:
         if run_id is not None:
             async with runtime.session_factory() as session:
-                async with session.begin():
-                    await session.execute(delete(ToolTrace).where(ToolTrace.agent_run_id == run_id))
-                    if approval_id is not None:
-                        await session.execute(
-                            delete(MockMutation).where(
-                                MockMutation.approval_request_id == approval_id
-                            )
-                        )
-                        await session.execute(
-                            delete(ApprovalRequest).where(ApprovalRequest.id == approval_id)
-                        )
-                    await session.execute(delete(AgentRun).where(AgentRun.id == run_id))
+                repository = SqlAlchemyMeterDeskRepository(session)
+                await repository.reset_demo_live_state("TCK-1042")
         await runtime.dispose()
 
 
@@ -125,9 +126,11 @@ async def test_concurrent_approve_approve_is_idempotent(
     assert persisted.approval.decision_actor == winner_actor
     assert persisted.approval.decision_request_id == "req_p1_04_winner_approve"
     assert len(persisted.mutations) == 1
-    assert len(persisted.traces) == 1
-    assert persisted.traces[0].category == "mutation.mock_credit_or_refund"
-    assert persisted.traces[0].error_state is None
+    assert [trace.category for trace in persisted.traces] == [
+        "approval.create_request",
+        "mutation.mock_credit_or_refund",
+    ]
+    assert persisted.traces[-1].error_state is None
 
 
 @pytest.mark.asyncio
@@ -153,8 +156,11 @@ async def test_concurrent_approve_wins_and_reject_conflicts(
     assert persisted.approval.decision_actor == winner_actor
     assert persisted.approval.decision_request_id == "req_p1_04_winner_approve"
     assert len(persisted.mutations) == 1
-    assert len(persisted.traces) == 1
-    assert persisted.traces[0].error_state is None
+    assert [trace.category for trace in persisted.traces] == [
+        "approval.create_request",
+        "mutation.mock_credit_or_refund",
+    ]
+    assert persisted.traces[-1].error_state is None
 
 
 @pytest.mark.asyncio
@@ -180,10 +186,12 @@ async def test_concurrent_reject_wins_and_approve_records_blocked_trace(
     assert persisted.approval.decision_actor == winner_actor
     assert persisted.approval.decision_request_id == "req_p1_04_winner_reject"
     assert persisted.mutations == []
-    assert len(persisted.traces) == 1
-    assert persisted.traces[0].category == "mutation.mock_credit_or_refund"
-    assert persisted.traces[0].error_state == "approval.terminal_conflict"
-    assert persisted.traces[0].governance_metadata["gate_result"] == "blocked"
+    assert [trace.category for trace in persisted.traces] == [
+        "approval.create_request",
+        "mutation.mock_credit_or_refund",
+    ]
+    assert persisted.traces[-1].error_state == "approval.terminal_conflict"
+    assert persisted.traces[-1].governance_metadata["gate_result"] == "blocked"
 
 
 async def _run_locked_race(
@@ -197,45 +205,72 @@ async def _run_locked_race(
     ApprovalDecisionResponse | MeterDeskAPIError, ApprovalDecisionResponse | MeterDeskAPIError
 ]:
     async with (
+        race.runtime.session_factory() as blocker_session,
         race.runtime.session_factory() as winner_session,
         race.runtime.session_factory() as loser_session,
         race.runtime.session_factory() as monitor_session,
     ):
         locked = (
-            await winner_session.execute(
-                select(ApprovalRequest)
-                .where(ApprovalRequest.id == race.approval_id)
-                .with_for_update()
+            await blocker_session.execute(
+                select(CaseWorkflow).where(CaseWorkflow.id == race.workflow_id).with_for_update()
             )
         ).scalar_one()
-        assert locked.status == "pending"
+        assert locked.status == "awaiting_approval"
 
-        loser_pid = (await loser_session.execute(text("SELECT pg_backend_pid()"))).scalar_one()
-        loser_task = asyncio.create_task(
+        winner_task = asyncio.create_task(
             _capture_decision(
-                ApprovalDecisionService(SqlAlchemyMeterDeskRepository(loser_session)),
-                decision=loser_decision,
-                approval_id=race.approval_id,
-                actor=loser_actor,
-                request_id=f"req_p1_04_loser_{loser_decision}",
-            )
-        )
-        try:
-            await _wait_for_lock_wait(monitor_session, loser_pid)
-            winner = await _capture_decision(
                 ApprovalDecisionService(SqlAlchemyMeterDeskRepository(winner_session)),
                 decision=winner_decision,
                 approval_id=race.approval_id,
                 actor=winner_actor,
                 request_id=f"req_p1_04_winner_{winner_decision}",
             )
+        )
+        loser_task: asyncio.Task[ApprovalDecisionResponse | MeterDeskAPIError] | None = None
+        try:
+            await _wait_for_workflow_lock_waits(monitor_session, expected_count=1)
+            loser_task = asyncio.create_task(
+                _capture_decision(
+                    ApprovalDecisionService(SqlAlchemyMeterDeskRepository(loser_session)),
+                    decision=loser_decision,
+                    approval_id=race.approval_id,
+                    actor=loser_actor,
+                    request_id=f"req_p1_04_loser_{loser_decision}",
+                )
+            )
+            await _wait_for_workflow_lock_waits(monitor_session, expected_count=2)
+            await blocker_session.commit()
+            winner = await asyncio.wait_for(winner_task, timeout=5)
             loser = await asyncio.wait_for(loser_task, timeout=5)
         finally:
-            if not loser_task.done():
-                loser_task.cancel()
-                await asyncio.gather(loser_task, return_exceptions=True)
+            await blocker_session.rollback()
+            for task in (winner_task, loser_task):
+                if task is not None and not task.done():
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
 
     return winner, loser
+
+
+async def _wait_for_workflow_lock_waits(monitor_session, *, expected_count: int) -> None:
+    async with asyncio.timeout(5):
+        while True:
+            await monitor_session.execute(text("SELECT pg_stat_clear_snapshot()"))
+            waiting = (
+                await monitor_session.execute(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity "
+                        "WHERE pid <> pg_backend_pid() "
+                        "AND datname = current_database() "
+                        "AND wait_event_type = 'Lock' "
+                        "AND query LIKE '%case_workflows%' "
+                        "AND query LIKE '%FOR UPDATE%'"
+                    )
+                )
+            ).scalar_one()
+            if waiting >= expected_count:
+                return
+            await asyncio.sleep(0.01)
 
 
 async def _capture_decision(
@@ -262,20 +297,6 @@ async def _capture_decision(
         )
     except MeterDeskAPIError as error:
         return error
-
-
-async def _wait_for_lock_wait(monitor_session, backend_pid: int) -> None:
-    async with asyncio.timeout(5):
-        while True:
-            wait_event_type = (
-                await monitor_session.execute(
-                    text("SELECT wait_event_type FROM pg_stat_activity WHERE pid = :backend_pid"),
-                    {"backend_pid": backend_pid},
-                )
-            ).scalar_one()
-            if wait_event_type == "Lock":
-                return
-            await asyncio.sleep(0.01)
 
 
 async def _load_persisted_result(race: ApprovalRaceFixture) -> PersistedRaceResult:

@@ -106,6 +106,10 @@ class DraftOnlyProvider(AgentResolutionProvider):
         )
 
 
+def run_headers(key: str) -> dict[str, str]:
+    return {"Idempotency-Key": key}
+
+
 def duplicate_charge_plan() -> InvestigationPlan:
     return InvestigationPlan(
         scenario="duplicate_charge",
@@ -241,7 +245,10 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        start_response = await client.post("/tickets/TCK-1042/agent-runs")
+        start_response = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-duplicate-charge"),
+        )
         approvals_response = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         run = start_response.json()
         trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
@@ -319,7 +326,10 @@ async def test_start_agent_run_supports_credit_refund_goodwill_credit_workflow()
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        start_response = await client.post("/tickets/TCK-1137/agent-runs")
+        start_response = await client.post(
+            "/tickets/TCK-1137/agent-runs",
+            headers=run_headers("m3-credit-refund"),
+        )
         approvals_response = await client.get("/approvals?ticket_id=TCK-1137&status=all")
         run = start_response.json()
         trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
@@ -389,22 +399,24 @@ async def test_start_agent_run_is_blocked_while_approval_is_pending() -> None:
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        first = await client.post("/tickets/TCK-1042/agent-runs")
-        second = await client.post("/tickets/TCK-1042/agent-runs")
+        first = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-first-attempt"),
+        )
+        second = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-second-attempt"),
+        )
 
     assert first.status_code == 201
     assert second.status_code == 409
-    assert second.json() == {
-        "code": "approval.pending_duplicate",
-        "message": "A pending financial approval already exists for this action.",
-        "details": {
-            "action_fingerprint": (
-                "ticket:TCK-1042|action:original_refund|target:ch_2026_0418_B|"
-                "amount:124800|currency:USD"
-            )
-        },
-        "request_id": second.headers["X-Request-ID"],
-    }
+    assert second.json()["code"] == "workflow.active_conflict"
+    assert second.json()["message"] == (
+        "This workflow already has an active investigation or approval."
+    )
+    assert second.json()["details"]["status"] == "awaiting_approval"
+    assert second.json()["details"]["workflow_id"]
+    assert second.json()["request_id"] == second.headers["X-Request-ID"]
 
 
 @pytest.mark.asyncio
@@ -426,7 +438,10 @@ async def test_provider_validation_failure_retries_once_then_persists_failed_run
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        response = await client.post("/tickets/TCK-1042/agent-runs")
+        response = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-provider-failure"),
+        )
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
 
     assert response.status_code == 201
@@ -452,7 +467,10 @@ async def test_planner_verifier_retries_once_then_runs_accepted_plan() -> None:
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        response = await client.post("/tickets/TCK-1042/agent-runs")
+        response = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-planner-retry"),
+        )
         run = response.json()
         trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
 
@@ -522,7 +540,10 @@ async def test_planner_verifier_blocks_run_after_two_invalid_plans() -> None:
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        response = await client.post("/tickets/TCK-1042/agent-runs")
+        response = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-planner-blocked"),
+        )
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         run = response.json()
         trace_response = await client.get(f"/agent-runs/{run['id']}/traces")
@@ -557,7 +578,10 @@ async def test_missing_provider_config_returns_503_without_creating_run() -> Non
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        response = await client.post("/tickets/TCK-1042/agent-runs")
+        response = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-provider-missing"),
+        )
         runs = await client.get("/tickets/TCK-1042/agent-runs")
 
     assert response.status_code == 503
@@ -577,7 +601,10 @@ async def test_unsupported_scenario_has_no_side_effects() -> None:
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        response = await client.post("/tickets/TCK-1098/agent-runs")
+        response = await client.post(
+            "/tickets/TCK-1098/agent-runs",
+            headers=run_headers("m3-unsupported"),
+        )
         runs = await client.get("/tickets/TCK-1098/agent-runs")
 
     assert response.status_code == 422
@@ -592,7 +619,10 @@ async def test_reject_does_not_create_mutation_and_allows_rerun() -> None:
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        await client.post("/tickets/TCK-1042/agent-runs")
+        await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-reject-first"),
+        )
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         approval_id = approvals.json()[0]["id"]
 
@@ -601,7 +631,10 @@ async def test_reject_does_not_create_mutation_and_allows_rerun() -> None:
             json={"decision_note": "Needs finance review."},
         )
         mutations = await client.get("/mock-mutations?ticket_id=TCK-1042")
-        rerun = await client.post("/tickets/TCK-1042/agent-runs")
+        rerun = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-reject-rerun"),
+        )
 
     assert reject.status_code == 200
     assert reject.json()["approval"]["status"] == "rejected"
@@ -617,7 +650,10 @@ async def test_approve_executes_one_mock_mutation_and_is_idempotent() -> None:
         base_url="http://testserver",
     ) as client:
         await authenticate_demo_client(client)
-        run_response = await client.post("/tickets/TCK-1042/agent-runs")
+        run_response = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("m3-approve-first"),
+        )
         approvals = await client.get("/approvals?ticket_id=TCK-1042&status=all")
         approval_id = approvals.json()[0]["id"]
 

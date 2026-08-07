@@ -84,7 +84,7 @@ describe("meterdesk-api", () => {
       new Response(
         JSON.stringify({
           ticket_id: "TCK-1042",
-          state: "pending_approval",
+          state: "awaiting_approval",
           decision_label: "Duplicate captured charge confirmed",
           rationale:
             "Agent confirmed a duplicate captured charge on INV-2026-0418; mutation remains blocked until human approval.",
@@ -142,7 +142,7 @@ describe("meterdesk-api", () => {
       cache: "no-store",
       headers: { Authorization: "Bearer session-token" },
     });
-    expect(summary.state).toBe("pending_approval");
+    expect(summary.state).toBe("awaiting_approval");
     expect(summary.tiles.map((tile) => tile.kind)).toEqual([
       "decision",
       "evidence",

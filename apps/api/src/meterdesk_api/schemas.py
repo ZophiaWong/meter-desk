@@ -20,14 +20,25 @@ EvalRegressionLabel = Literal[
     "coverage_gap",
 ]
 DecisionSummaryState = Literal[
-    "not_run",
-    "running",
-    "completed",
-    "failed",
-    "pending_approval",
-    "approved",
+    "not_started",
+    "investigating",
+    "needs_retry",
+    "awaiting_approval",
+    "completed_no_action",
     "rejected",
     "mock_executed",
+    "failed",
+    "cancelled",
+]
+WorkflowStatusValue = Literal[
+    "investigating",
+    "needs_retry",
+    "awaiting_approval",
+    "completed_no_action",
+    "rejected",
+    "mock_executed",
+    "failed",
+    "cancelled",
 ]
 DecisionSummaryTileKind = Literal["decision", "evidence", "risk_gate", "draft"]
 DecisionSummaryTone = Literal["neutral", "info", "success", "warning", "danger"]
@@ -152,6 +163,10 @@ class AgentDecisionSummary(BaseModel):
     decision_label: str
     rationale: str
     run_id: str | None = None
+    workflow_id: str | None = None
+    workflow_version: int | None = None
+    workflow_status_reason_code: str | None = None
+    workflow_status_reason: str | None = None
     approval_id: str | None = None
     mutation_id: str | None = None
     policy_citation: str | None = None
@@ -162,12 +177,15 @@ class AgentDecisionSummary(BaseModel):
 class AgentRunSummary(BaseModel):
     id: str
     ticket_id: str
+    workflow_id: str | None = None
+    idempotency_key: str | None = None
     status: str
     source: str
     final_outcome: str | None = None
     internal_resolution: str | None = None
     customer_reply: str | None = None
     error_state: str | None = None
+    error_code: str | None = None
     model: str | None = None
     prompt_version: str | None = None
 
@@ -214,6 +232,7 @@ class ApprovalDecisionActor(BaseModel):
 class ApprovalSummary(BaseModel):
     id: str
     ticket_id: str
+    workflow_id: str | None = None
     agent_run_id: str | None = None
     title: str
     status: str
@@ -235,6 +254,7 @@ class ApprovalSummary(BaseModel):
 class MockMutationSummary(BaseModel):
     id: str
     ticket_id: str
+    workflow_id: str | None = None
     approval_request_id: str | None
     agent_run_id: str | None
     mutation_type: str
@@ -245,6 +265,46 @@ class MockMutationSummary(BaseModel):
     action_fingerprint: str
     executed_at: datetime
     executed_at_display: str
+
+
+class CaseWorkflowSummary(BaseModel):
+    id: str
+    ticket_id: str
+    cycle_number: int
+    status: WorkflowStatusValue
+    status_reason_code: str
+    status_reason: str | None = None
+    origin: str
+    previous_workflow_id: str | None = None
+    version: int
+    transition_sequence: int
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime
+    terminal_at: datetime | None = None
+
+
+class CaseWorkflowTransitionSummary(BaseModel):
+    id: str
+    workflow_id: str
+    sequence: int
+    from_status: WorkflowStatusValue | None = None
+    to_status: WorkflowStatusValue
+    reason_code: str
+    reason_detail: str | None = None
+    actor_subject: str | None = None
+    actor_display_name: str | None = None
+    actor_role: ApprovalActorRole | None = None
+    actor_source: str
+    request_id: str
+    agent_run_id: str | None = None
+    approval_request_id: str | None = None
+    mock_mutation_id: str | None = None
+    created_at: datetime
+
+
+class WorkflowCancelRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class EvalCaseSummary(BaseModel):

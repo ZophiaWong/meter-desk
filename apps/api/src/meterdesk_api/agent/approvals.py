@@ -66,7 +66,7 @@ class ApprovalDecisionService:
         if approval.status == "rejected":
             return ApprovalDecisionResponse(approval=approval, mock_mutation=None)
 
-        approval = await self._repository.reject_request(
+        approval = await self._repository.reject_approval(
             approval_id=approval_id,
             decision_actor=decision_actor,
             decision_request_id=decision_request_id,

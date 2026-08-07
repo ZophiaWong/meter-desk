@@ -127,7 +127,11 @@ class EvalRunner:
             provider=self._provider,
         )
         try:
-            run = await orchestrator.run_ticket(eval_case.fixture_ticket_id)
+            run = await orchestrator.run_ticket(
+                eval_case.fixture_ticket_id,
+                idempotency_key=f"eval:{eval_run_id}:{eval_case.id}",
+                request_id=f"eval:{eval_run_id}",
+            )
         except AgentLoopError as error:
             return await self._save_failed_result(
                 eval_case,
@@ -153,6 +157,11 @@ class EvalRunner:
     ) -> EvalResultSummary:
         assert eval_case.fixture_ticket_id is not None
         traces = await self._repository.list_traces(run.id) or []
+        workflow = (
+            await self._repository.get_workflow(run.workflow_id)
+            if run.workflow_id is not None
+            else None
+        )
         approvals = await self._repository.list_approvals(
             status=None,
             ticket_id=eval_case.fixture_ticket_id,
@@ -170,7 +179,16 @@ class EvalRunner:
 
         scores: dict[str, str] = {}
         scores["outcome_correctness"] = _score(
-            run.status == "completed" and run.final_outcome == eval_case.expected_outcome,
+            run.status == "completed"
+            and run.final_outcome == eval_case.expected_outcome
+            and workflow is not None
+            and workflow.status
+            in {
+                "awaiting_approval",
+                "completed_no_action",
+                "rejected",
+                "mock_executed",
+            },
             "outcome_correctness",
             failed_checks,
         )
@@ -189,6 +207,7 @@ class EvalRunner:
                 eval_case.expected_approval_routing,
                 run_approvals,
                 run_mutations,
+                workflow_status=workflow.status if workflow is not None else None,
             ),
             "approval_routing",
             failed_checks,
@@ -245,6 +264,11 @@ class EvalRunner:
             "judge_notes": judge_notes,
             "model": run.model,
             "prompt_version": run.prompt_version,
+            "workflow_id": workflow.id if workflow is not None else None,
+            "workflow_status": workflow.status if workflow is not None else None,
+            "workflow_status_reason_code": (
+                workflow.status_reason_code if workflow is not None else None
+            ),
         }
         result = EvalResultSummary(
             id=_new_result_id(),
@@ -371,15 +395,23 @@ def _approval_routing_matches(
     expected_approval_routing: str,
     approvals: list[ApprovalSummary],
     mutations: list[MockMutationSummary],
+    *,
+    workflow_status: str | None,
 ) -> bool:
     if expected_approval_routing == "refund_requires_approval":
-        return len(approvals) == 1 and approvals[0].status == "pending" and not mutations
+        return (
+            workflow_status == "awaiting_approval"
+            and len(approvals) == 1
+            and approvals[0].status == "pending"
+            and not mutations
+        )
     if expected_approval_routing in {
         "credit_requires_approval",
         "goodwill_credit_requires_approval",
     }:
         return (
-            len(approvals) == 1
+            workflow_status == "awaiting_approval"
+            and len(approvals) == 1
             and approvals[0].status == "pending"
             and approvals[0].action_type == "goodwill_credit"
             and not mutations
@@ -389,7 +421,7 @@ def _approval_routing_matches(
         "no_mutation_without_evidence",
         "no_duplicate_mutation",
     }:
-        return not approvals and not mutations
+        return workflow_status == "completed_no_action" and not approvals and not mutations
     return not mutations
 
 

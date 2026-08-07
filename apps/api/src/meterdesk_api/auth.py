@@ -29,6 +29,7 @@ class DemoRole(StrEnum):
 class Permission(StrEnum):
     READ = "business.read"
     AGENT_RUN = "agent.run"
+    WORKFLOW_CANCEL = "workflow.cancel"
     APPROVAL_DECIDE = "approval.decide"
     EVAL_RUN = "eval.run"
 
@@ -60,7 +61,9 @@ DEMO_PRINCIPALS = (
 )
 DEMO_PRINCIPAL_BY_SUBJECT = {principal.subject: principal for principal in DEMO_PRINCIPALS}
 ROLE_PERMISSIONS = {
-    DemoRole.SUPPORT_OPERATOR: frozenset({Permission.READ, Permission.AGENT_RUN}),
+    DemoRole.SUPPORT_OPERATOR: frozenset(
+        {Permission.READ, Permission.AGENT_RUN, Permission.WORKFLOW_CANCEL}
+    ),
     DemoRole.APPROVER: frozenset({Permission.READ, Permission.APPROVAL_DECIDE}),
     DemoRole.ADMIN: frozenset(Permission),
 }
@@ -156,6 +159,10 @@ async def require_agent_run(principal: AuthenticatedPrincipal) -> DemoPrincipal:
 
 async def require_approval_decision(principal: AuthenticatedPrincipal) -> DemoPrincipal:
     return enforce_permission(principal, Permission.APPROVAL_DECIDE)
+
+
+async def require_workflow_cancel(principal: AuthenticatedPrincipal) -> DemoPrincipal:
+    return enforce_permission(principal, Permission.WORKFLOW_CANCEL)
 
 
 async def require_eval_run(principal: AuthenticatedPrincipal) -> DemoPrincipal:

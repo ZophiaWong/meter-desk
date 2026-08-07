@@ -52,11 +52,17 @@ describe("meterdesk-actions", () => {
   it("starts an agent run for the selected Workbench ticket", async () => {
     const formData = new FormData();
     formData.set("ticketId", "TCK-1137");
+    formData.set("idempotencyKey", "retry-key-1137");
 
     await startAgentRunAction(formData);
 
     expect(requireDemoSession).toHaveBeenCalledWith("/?ticket=TCK-1137");
-    expect(startAgentRun).toHaveBeenCalledWith("TCK-1137", undefined, "admin-token");
+    expect(startAgentRun).toHaveBeenCalledWith(
+      "TCK-1137",
+      undefined,
+      "admin-token",
+      "retry-key-1137",
+    );
     expect(revalidatePath).toHaveBeenCalledWith("/");
     expect(revalidatePath).toHaveBeenCalledWith("/?ticket=TCK-1137");
     expect(revalidatePath).toHaveBeenCalledWith("/approvals");

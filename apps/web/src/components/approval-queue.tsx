@@ -8,7 +8,7 @@ import {
 import { handleProtectedApiError } from "@/lib/session";
 import Link from "next/link";
 
-const STATUSES: ApprovalQueueStatus[] = ["pending", "approved", "rejected", "all"];
+const STATUSES: ApprovalQueueStatus[] = ["pending", "approved", "rejected", "withdrawn", "all"];
 
 type ApprovalQueueProps = {
   accessToken: string;

@@ -138,7 +138,7 @@ const scenario: WorkbenchScenario = {
   },
   decisionSummary: {
     ticketId: "TCK-1042",
-    state: "not_run",
+    state: "not_started",
     decisionLabel: "Investigation pending",
     rationale:
       "Billing evidence is loaded for TCK-1042. Run the governed investigation to produce a trace-backed decision, approval gate, and customer draft.",
@@ -483,7 +483,7 @@ describe("MeterDeskShell", () => {
           },
           decisionSummary: {
             ticketId: "TCK-1042",
-            state: "pending_approval",
+            state: "awaiting_approval",
             decisionLabel: "Duplicate captured charge confirmed",
             rationale:
               "Agent confirmed a duplicate captured charge on INV-2026-0418 and prepared an original refund request. The $1,248.00 mutation remains blocked until human approval.",

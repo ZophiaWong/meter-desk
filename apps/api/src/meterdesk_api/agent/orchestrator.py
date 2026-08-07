@@ -6,7 +6,10 @@ from meterdesk_api.agent.decision import (
     DuplicateChargeDecisionInput,
     DuplicateChargeDecisionTool,
 )
-from meterdesk_api.agent.governance import GovernanceKernel
+from meterdesk_api.agent.governance import (
+    GovernanceKernel,
+    build_governance_metadata_for_trace,
+)
 from meterdesk_api.agent.planning import (
     InvestigationPlan,
     PlanContractVerifier,
@@ -68,52 +71,78 @@ class AgentRunOrchestrator:
         self._credit_refund_decision_tool = CreditRefundDecisionTool()
         self._governance = GovernanceKernel(repository)
         self._plan_verifier = PlanContractVerifier()
+        self.last_start_replayed = False
 
-    async def run_ticket(self, ticket_id: str) -> AgentRunSummary | None:
+    async def run_ticket(
+        self,
+        ticket_id: str,
+        *,
+        idempotency_key: str = "internal",
+        request_id: str = "system",
+    ) -> AgentRunSummary | None:
         ticket = await self._repository.get_ticket(ticket_id)
         if ticket is None:
             return None
         if ticket.scenario == "duplicate_charge":
-            return await self.run_duplicate_charge(ticket_id)
+            return await self.run_duplicate_charge(
+                ticket_id,
+                idempotency_key=idempotency_key,
+                request_id=request_id,
+            )
         if ticket.scenario == "credit_refund_dispute":
-            return await self.run_credit_refund(ticket_id)
+            return await self.run_credit_refund(
+                ticket_id,
+                idempotency_key=idempotency_key,
+                request_id=request_id,
+            )
         raise UnsupportedScenarioError("Agent loop does not support this scenario yet.")
 
-    async def run_duplicate_charge(self, ticket_id: str) -> AgentRunSummary | None:
+    async def run_duplicate_charge(
+        self,
+        ticket_id: str,
+        *,
+        idempotency_key: str = "internal",
+        request_id: str = "system",
+    ) -> AgentRunSummary | None:
         ticket = await self._repository.get_ticket(ticket_id)
         if ticket is None:
             return None
         if ticket.scenario != "duplicate_charge":
             raise UnsupportedScenarioError()
 
-        pending_approval = await self._repository.get_pending_financial_approval(
+        start_result = await self._repository.start_or_replay_run(
             ticket_id=ticket_id,
-            action_type="original_refund",
-        )
-        if pending_approval is not None:
-            raise PendingApprovalError(
-                details={"action_fingerprint": pending_approval.action_fingerprint}
-            )
-
-        run = await self._repository.create_agent_run(
-            ticket_id=ticket_id,
+            idempotency_key=idempotency_key,
             source="m3_governed_loop",
             model=self._provider.model,
             prompt_version=DUPLICATE_CHARGE_PROMPT_VERSION,
         )
+        self.last_start_replayed = start_result.replayed
+        if start_result.replayed:
+            return start_result.run
+        run = start_result.run
         verified_plan, planning_error = await self._create_verified_investigation_plan(
             ticket=ticket,
             agent_run_id=run.id,
         )
         if verified_plan is None:
-            return await self._repository.fail_agent_run(
-                run.id,
-                planning_error or PLAN_VERIFIER_BLOCKED_ERROR,
+            return await self._repository.fail_run(
+                agent_run_id=run.id,
+                error_code="plan.verifier_blocked",
+                error_state=planning_error or PLAN_VERIFIER_BLOCKED_ERROR,
+                recoverable=True,
+                request_id=request_id,
             )
 
         evidence = await self._repository.get_billing_evidence(ticket_id)
         if evidence is None:
-            return await self._repository.fail_agent_run(run.id, "Billing evidence was not found.")
+            return await self._repository.fail_run(
+                agent_run_id=run.id,
+                error_code="evidence.missing",
+                error_state="Billing evidence was not found.",
+                recoverable=True,
+                request_id=request_id,
+            )
 
         await self._governance.record_action(
             agent_run_id=run.id,
@@ -196,50 +225,33 @@ class AgentRunOrchestrator:
                 approval_refs=[],
                 error_state=provider_error,
             )
-            return await self._repository.fail_agent_run(run.id, provider_error)
-
-        assert provider_output is not None
-        # The decision tool owns the outcome; the provider only drafts text around it.
-        run = await self._repository.complete_agent_run(
-            agent_run_id=run.id,
-            final_outcome=decision.outcome,
-            internal_resolution=provider_output.internal_resolution,
-            customer_reply=provider_output.customer_reply,
-        )
-        await self._governance.record_action(
-            agent_run_id=run.id,
-            policy_id="draft.resolution",
-            label="Drafted governed resolution",
-            input_summary="Requested strict structured recommendation and drafts from provider.",
-            output_summary="Provider returned validated draft-only resolution output.",
-            evidence_refs=decision.evidence_refs,
-            policy_refs=decision.policy_refs,
-            approval_refs=[],
-        )
-
-        if decision.requires_approval:
-            await self._governance.create_approval_request(
-                ticket_id=ticket_id,
+            return await self._repository.fail_run(
                 agent_run_id=run.id,
-                title="Original refund pending approval",
-                action_type=decision.action_type or "original_refund",
-                amount_cents=decision.amount_cents or 0,
-                amount_display=decision.amount_display or "$0.00",
-                currency=decision.currency or evidence.invoice.total.currency,
-                reason=decision.reason,
-                blocker="Mutation blocked until human approval",
-                policy_citation=evidence.policy.citation,
-                evidence_refs=decision.evidence_refs,
-                policy_refs=decision.policy_refs,
-                action_metadata=decision.action_metadata,
-                label="Created approval request for financial action",
-                input_summary="Created human approval gate for proposed original refund.",
-                output_summary="Approval request is pending.",
+                error_code="provider.draft_failed",
+                error_state=provider_error,
+                recoverable=True,
+                request_id=request_id,
             )
 
-        return run
+        assert provider_output is not None
+        return await self._finalize_investigation(
+            run=run,
+            decision=decision,
+            provider_output=provider_output,
+            evidence=evidence,
+            ticket_id=ticket_id,
+            request_id=request_id,
+            approval_title="Original refund pending approval",
+            approval_input_summary="Created human approval gate for proposed original refund.",
+        )
 
-    async def run_credit_refund(self, ticket_id: str) -> AgentRunSummary | None:
+    async def run_credit_refund(
+        self,
+        ticket_id: str,
+        *,
+        idempotency_key: str = "internal",
+        request_id: str = "system",
+    ) -> AgentRunSummary | None:
         ticket = await self._repository.get_ticket(ticket_id)
         if ticket is None:
             return None
@@ -248,25 +260,39 @@ class AgentRunOrchestrator:
                 "Credit/Refund runner only supports Credit/Refund tickets."
             )
 
-        run = await self._repository.create_agent_run(
+        start_result = await self._repository.start_or_replay_run(
             ticket_id=ticket_id,
+            idempotency_key=idempotency_key,
             source="m8_credit_refund_loop",
             model=self._provider.model,
             prompt_version=CREDIT_REFUND_PROMPT_VERSION,
         )
+        self.last_start_replayed = start_result.replayed
+        if start_result.replayed:
+            return start_result.run
+        run = start_result.run
         verified_plan, planning_error = await self._create_verified_investigation_plan(
             ticket=ticket,
             agent_run_id=run.id,
         )
         if verified_plan is None:
-            return await self._repository.fail_agent_run(
-                run.id,
-                planning_error or PLAN_VERIFIER_BLOCKED_ERROR,
+            return await self._repository.fail_run(
+                agent_run_id=run.id,
+                error_code="plan.verifier_blocked",
+                error_state=planning_error or PLAN_VERIFIER_BLOCKED_ERROR,
+                recoverable=True,
+                request_id=request_id,
             )
 
         evidence = await self._repository.get_billing_evidence(ticket_id)
         if evidence is None:
-            return await self._repository.fail_agent_run(run.id, "Billing evidence was not found.")
+            return await self._repository.fail_run(
+                agent_run_id=run.id,
+                error_code="evidence.missing",
+                error_state="Billing evidence was not found.",
+                recoverable=True,
+                request_id=request_id,
+            )
 
         policy_refs = [policy.citation for policy in evidence.policies] or [
             evidence.policy.citation
@@ -362,51 +388,112 @@ class AgentRunOrchestrator:
                 approval_refs=[],
                 error_state=provider_error,
             )
-            return await self._repository.fail_agent_run(run.id, provider_error)
+            return await self._repository.fail_run(
+                agent_run_id=run.id,
+                error_code="provider.draft_failed",
+                error_state=provider_error,
+                recoverable=True,
+                request_id=request_id,
+            )
 
-        assert provider_output is not None
-        run = await self._repository.complete_agent_run(
-            agent_run_id=run.id,
-            final_outcome=decision.outcome,
-            internal_resolution=provider_output.internal_resolution,
-            customer_reply=provider_output.customer_reply,
+        return await self._finalize_investigation(
+            run=run,
+            decision=decision,
+            provider_output=provider_output,
+            evidence=evidence,
+            ticket_id=ticket_id,
+            request_id=request_id,
+            approval_title=(
+                "Goodwill credit pending approval"
+                if decision.action_type == "goodwill_credit"
+                else "Original refund pending approval"
+            ),
+            approval_input_summary="Created human approval gate for proposed credit/refund action.",
         )
-        await self._governance.record_action(
-            agent_run_id=run.id,
-            policy_id="draft.resolution",
-            label="Drafted governed resolution",
-            input_summary="Requested strict structured recommendation and drafts from provider.",
-            output_summary="Provider returned validated draft-only resolution output.",
+
+    async def _finalize_investigation(
+        self,
+        *,
+        run: AgentRunSummary,
+        decision,
+        provider_output: AgentDraftOutput,
+        evidence,
+        ticket_id: str,
+        request_id: str,
+        approval_title: str,
+        approval_input_summary: str,
+    ) -> AgentRunSummary:
+        """Commit final draft trace, approval (when needed), and workflow state once."""
+        draft_policy_id = "draft.resolution"
+        draft_metadata = build_governance_metadata_for_trace(
+            policy_id=draft_policy_id,
             evidence_refs=decision.evidence_refs,
             policy_refs=decision.policy_refs,
             approval_refs=[],
         )
-
+        final_trace = {
+            "category": draft_policy_id,
+            "risk": "Low",
+            "label": "Drafted governed resolution",
+            "input_summary": "Requested strict structured recommendation and drafts from provider.",
+            "output_summary": "Provider returned validated draft-only resolution output.",
+            "evidence_refs": decision.evidence_refs,
+            "policy_refs": decision.policy_refs,
+            "approval_refs": [],
+            "governance_metadata": draft_metadata,
+        }
+        approval_payload = None
+        approval_trace = None
+        target_status = "completed_no_action"
+        reason_code = "decision.completed_no_action"
+        reason_detail = decision.reason
         if decision.requires_approval:
-            await self._governance.create_approval_request(
-                ticket_id=ticket_id,
-                agent_run_id=run.id,
-                title=(
-                    "Goodwill credit pending approval"
-                    if decision.action_type == "goodwill_credit"
-                    else "Original refund pending approval"
-                ),
-                action_type=decision.action_type or "goodwill_credit",
-                amount_cents=decision.amount_cents or 0,
-                amount_display=decision.amount_display or "$0.00",
-                currency=decision.currency or evidence.invoice.total.currency,
-                reason=decision.reason,
-                blocker="Mutation blocked until human approval",
-                policy_citation=decision.policy_refs[0],
+            target_status = "awaiting_approval"
+            reason_code = "decision.approval_required"
+            reason_detail = decision.reason
+            approval_payload = {
+                "title": approval_title,
+                "action_type": decision.action_type or "goodwill_credit",
+                "amount_cents": decision.amount_cents or 0,
+                "amount_display": decision.amount_display or "$0.00",
+                "currency": decision.currency or evidence.invoice.total.currency,
+                "reason": decision.reason,
+                "blocker": "Mutation blocked until human approval",
+                "policy_citation": decision.policy_refs[0],
+                "evidence_refs": decision.evidence_refs,
+                "action_metadata": decision.action_metadata,
+            }
+            approval_id = "pending"
+            approval_metadata = build_governance_metadata_for_trace(
+                policy_id="approval.create_request",
                 evidence_refs=decision.evidence_refs,
                 policy_refs=decision.policy_refs,
-                action_metadata=decision.action_metadata,
-                label="Created approval request for financial action",
-                input_summary="Created human approval gate for proposed credit/refund action.",
-                output_summary="Approval request is pending.",
+                approval_refs=[approval_id],
             )
-
-        return run
+            approval_trace = {
+                "category": "approval.create_request",
+                "risk": "Medium",
+                "label": "Created approval request for financial action",
+                "input_summary": approval_input_summary,
+                "output_summary": "Approval request is pending.",
+                "evidence_refs": decision.evidence_refs,
+                "policy_refs": decision.policy_refs,
+                "approval_refs": [approval_id],
+                "governance_metadata": approval_metadata,
+            }
+        return await self._repository.finalize_run(
+            agent_run_id=run.id,
+            final_outcome=decision.outcome,
+            internal_resolution=provider_output.internal_resolution,
+            customer_reply=provider_output.customer_reply,
+            target_status=target_status,
+            reason_code=reason_code,
+            reason_detail=reason_detail,
+            request_id=request_id,
+            final_trace=final_trace,
+            approval=approval_payload,
+            approval_trace=approval_trace,
+        )
 
     async def _create_verified_investigation_plan(
         self,

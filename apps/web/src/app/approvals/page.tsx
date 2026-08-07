@@ -8,7 +8,7 @@ type ApprovalsPageProps = {
   searchParams?: Promise<{ status?: string }>;
 };
 
-const VALID_STATUSES = new Set(["pending", "approved", "rejected", "all"]);
+const VALID_STATUSES = new Set(["pending", "approved", "rejected", "withdrawn", "all"]);
 
 export default async function ApprovalsPage({ searchParams }: ApprovalsPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};

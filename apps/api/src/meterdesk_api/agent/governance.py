@@ -439,12 +439,31 @@ class GovernanceKernel:
             return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
 
         mutation_policy_id = _mutation_policy_id(approval.action_type)
+        mutation_evidence_refs = approval.evidence_refs
+        mutation_policy_refs = [approval.policy_citation]
+        mutation_trace = {
+            "category": mutation_policy_id,
+            "risk": "High",
+            "label": "Executed approved mock financial mutation",
+            "input_summary": f"Executed approved request {approval.id}.",
+            "output_summary": "Created the approved mock mutation atomically with its audit trace.",
+            "evidence_refs": mutation_evidence_refs,
+            "policy_refs": mutation_policy_refs,
+            "approval_refs": [approval.id],
+            "governance_metadata": build_governance_metadata_for_trace(
+                policy_id=mutation_policy_id,
+                evidence_refs=mutation_evidence_refs,
+                policy_refs=mutation_policy_refs,
+                approval_refs=[approval.id],
+            ),
+        }
         try:
-            result = await self._repository.approve_request(
+            result = await self._repository.approve_and_execute(
                 approval_id=approval_id,
                 decision_actor=decision_actor,
                 decision_request_id=decision_request_id,
                 decision_note=decision_note,
+                mutation_trace=mutation_trace,
             )
         except MeterDeskAPIError as error:
             if approval.agent_run_id is not None:
@@ -462,17 +481,6 @@ class GovernanceKernel:
             raise
         approval = result.approval
         mutation = result.mutation
-        if result.executed_now and approval.agent_run_id is not None:
-            await self.record_action(
-                agent_run_id=approval.agent_run_id,
-                policy_id=mutation_policy_id,
-                label="Executed approved mock financial mutation",
-                input_summary=f"Executed approved request {approval.id}.",
-                output_summary=f"Created mock mutation {mutation.id}.",
-                evidence_refs=approval.evidence_refs,
-                policy_refs=[approval.policy_citation],
-                approval_refs=[approval.id],
-            )
         return ApprovalDecisionResponse(approval=approval, mock_mutation=mutation)
 
     async def _record_financial_block(

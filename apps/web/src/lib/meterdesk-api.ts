@@ -110,14 +110,15 @@ export type BillingEvidenceResource = {
 };
 
 export type DecisionSummaryState =
-  | "not_run"
-  | "running"
-  | "completed"
-  | "failed"
-  | "pending_approval"
-  | "approved"
+  | "not_started"
+  | "investigating"
+  | "needs_retry"
+  | "awaiting_approval"
+  | "completed_no_action"
   | "rejected"
-  | "mock_executed";
+  | "mock_executed"
+  | "failed"
+  | "cancelled";
 
 export type DecisionSummaryTileKind = "decision" | "evidence" | "risk_gate" | "draft";
 
@@ -138,6 +139,10 @@ export type AgentDecisionSummaryResource = {
   decision_label: string;
   rationale: string;
   run_id: string | null;
+  workflow_id: string | null;
+  workflow_version: number | null;
+  workflow_status_reason_code: string | null;
+  workflow_status_reason: string | null;
   approval_id: string | null;
   mutation_id: string | null;
   policy_citation: string | null;
@@ -148,12 +153,15 @@ export type AgentDecisionSummaryResource = {
 export type AgentRunResource = {
   id: string;
   ticket_id: string;
+  workflow_id: string | null;
+  idempotency_key: string | null;
   status: string;
   source: string;
   final_outcome: string | null;
   internal_resolution: string | null;
   customer_reply: string | null;
   error_state: string | null;
+  error_code: string | null;
   model: string | null;
   prompt_version: string | null;
 };
@@ -207,6 +215,7 @@ export type ToolPolicyResource = {
 export type ApprovalResource = {
   id: string;
   ticket_id: string;
+  workflow_id: string | null;
   agent_run_id: string | null;
   title: string;
   status: string;
@@ -233,6 +242,7 @@ export type ApprovalResource = {
 export type MockMutationResource = {
   id: string;
   ticket_id: string;
+  workflow_id: string | null;
   approval_request_id: string | null;
   agent_run_id: string | null;
   mutation_type: string;
@@ -243,6 +253,42 @@ export type MockMutationResource = {
   action_fingerprint: string;
   executed_at: string;
   executed_at_display: string;
+};
+
+export type CaseWorkflowResource = {
+  id: string;
+  ticket_id: string;
+  cycle_number: number;
+  status: Exclude<DecisionSummaryState, "not_started">;
+  status_reason_code: string;
+  status_reason: string | null;
+  origin: string;
+  previous_workflow_id: string | null;
+  version: number;
+  transition_sequence: number;
+  created_at: string;
+  updated_at: string;
+  started_at: string;
+  terminal_at: string | null;
+};
+
+export type CaseWorkflowTransitionResource = {
+  id: string;
+  workflow_id: string;
+  sequence: number;
+  from_status: CaseWorkflowResource["status"] | null;
+  to_status: CaseWorkflowResource["status"];
+  reason_code: string;
+  reason_detail: string | null;
+  actor_subject: string | null;
+  actor_display_name: string | null;
+  actor_role: DemoPrincipal["role"] | null;
+  actor_source: string;
+  request_id: string;
+  agent_run_id: string | null;
+  approval_request_id: string | null;
+  mock_mutation_id: string | null;
+  created_at: string;
 };
 
 export type ApprovalDecisionResponseResource = {
@@ -436,13 +482,17 @@ export async function postApi<T>(
   body?: unknown,
   apiBaseUrl = process.env.API_BASE_URL ?? DEFAULT_API_BASE_URL,
   accessToken?: string,
+  extraHeaders?: Record<string, string>,
 ): Promise<T> {
   const normalizedBaseUrl = apiBaseUrl.replace(/\/$/, "");
-  const headers = authorizationHeaders(accessToken, body !== undefined);
+  const headers = {
+    ...(authorizationHeaders(accessToken, body !== undefined) ?? {}),
+    ...(extraHeaders ?? {}),
+  };
   const response = await fetch(`${normalizedBaseUrl}${path}`, {
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
-    ...(headers ? { headers } : {}),
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
     method: "POST",
   });
 
@@ -515,6 +565,56 @@ export async function getAgentRuns(ticketId: string, apiBaseUrl?: string, access
   return fetchApi<AgentRunResource[]>(`/tickets/${ticketId}/agent-runs`, apiBaseUrl, accessToken);
 }
 
+export async function getTicketWorkflows(
+  ticketId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<CaseWorkflowResource[]>(
+    `/tickets/${ticketId}/workflows`,
+    apiBaseUrl,
+    accessToken,
+  );
+}
+
+export async function getWorkflow(
+  workflowId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<CaseWorkflowResource>(
+    `/workflows/${workflowId}`,
+    apiBaseUrl,
+    accessToken,
+  );
+}
+
+export async function getWorkflowTransitions(
+  workflowId: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return fetchApi<CaseWorkflowTransitionResource[]>(
+    `/workflows/${workflowId}/transitions`,
+    apiBaseUrl,
+    accessToken,
+  );
+}
+
+export async function cancelWorkflow(
+  workflowId: string,
+  reason: string,
+  apiBaseUrl?: string,
+  accessToken?: string,
+) {
+  return postApi<CaseWorkflowResource>(
+    `/workflows/${workflowId}/cancel`,
+    { reason },
+    apiBaseUrl,
+    accessToken,
+  );
+}
+
 export async function getToolTraces(
   agentRunId: string,
   apiBaseUrl?: string,
@@ -548,7 +648,7 @@ export async function getApprovals(apiBaseUrl?: string, accessToken?: string) {
 }
 
 export async function getApprovalsByStatus(
-  status: "pending" | "approved" | "rejected" | "all" = "pending",
+  status: "pending" | "approved" | "rejected" | "withdrawn" | "all" = "pending",
   ticketId?: string,
   apiBaseUrl?: string,
   accessToken?: string,
@@ -568,12 +668,14 @@ export async function startAgentRun(
   ticketId: string,
   apiBaseUrl?: string,
   accessToken?: string,
+  idempotencyKey = crypto.randomUUID(),
 ) {
   return postApi<AgentRunResource>(
     `/tickets/${ticketId}/agent-runs`,
     undefined,
     apiBaseUrl,
     accessToken,
+    { "Idempotency-Key": idempotencyKey },
   );
 }
 
