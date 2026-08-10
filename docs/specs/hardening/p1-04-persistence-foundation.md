@@ -139,6 +139,10 @@ Postgres-dependent tests use a registered `postgres` pytest marker and remain sk
 3. establishes the seeded baseline through fixtures;
 4. runs `METERDESK_RUN_DB_TESTS=1 pytest -m postgres`.
 
+P0-03 adds `make test-p0-03-evidence` as a focused rerun convenience. It starts and seeds the same
+local Postgres service, then runs only `pytest -m "postgres and p0_03_evidence"`; it is a subset
+entrypoint and does not replace or redefine the canonical `make test-db` gate used by CI.
+
 The authentication, RBAC, approval actor, and idempotency assertions from the standalone
 `db_integration_check.py` move into pytest, and the standalone module is removed.
 

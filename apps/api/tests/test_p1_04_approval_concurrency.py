@@ -21,6 +21,7 @@ from meterdesk_api.schemas import (
 
 pytestmark = [
     pytest.mark.postgres,
+    pytest.mark.p0_03_evidence,
     pytest.mark.skipif(
         os.environ.get("METERDESK_RUN_DB_TESTS") != "1",
         reason="Set METERDESK_RUN_DB_TESTS=1 and run against local Postgres.",

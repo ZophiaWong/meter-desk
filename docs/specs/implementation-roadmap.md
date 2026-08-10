@@ -38,17 +38,13 @@ engineering evidence without broadening MeterDesk into a generic platform or rea
 workflow, non-root images, five-service Compose runtime, smoke harness, Make targets, runbook, and
 link checker.
 
-The active workstream is
-[P1-04 Persistence Foundation](hardening/p1-04-persistence-foundation.md). Its candidate
-implementation owns one async database runtime per FastAPI lifespan, uses real async readiness,
-bounds the per-process connection pool, serializes approval terminal writes with Postgres row locks,
-and consolidates database verification under marked pytest cases. Focused lifecycle/readiness tests
-and the full real-Postgres `make test-db` path are verified locally. Branch-wide lint/test/build,
-Markdown links, and the isolated five-service container smoke also pass and are recorded in the
-evidence matrix. P0-02's local demo identity and trusted actor boundary remain intact. Later
-workstreams cover workflow state, recoverable execution, provider resilience, operational evidence,
-a repository-local networked mock tool boundary, auditable context, and focused security and failure
-regression checks.
+[P0-03 Workflow State Consistency](hardening/p0-03-workflow-state-consistency.md) is Verified after
+the focused and canonical database evidence, complete local gate, and implementation-head CI
+passed. The active workstream is now P0-04 Async Agent Runtime. P1-04's application-lifetime async
+runtime, real async readiness, bounded pool, and Postgres approval-lock foundation remain verified
+prerequisites. P0-02's local demo identity and trusted actor boundary remain intact. Later workstreams
+cover provider resilience, operational evidence, a repository-local networked mock tool boundary,
+auditable context, and focused security/failure regression checks.
 
 The [Engineering Evidence Matrix](../evidence/engineering-evidence-matrix.md) records whether each
 capability is Existing, a Gap, Planned, Verified, or Deferred. It does not define requirements.

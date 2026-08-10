@@ -4,7 +4,11 @@
 
 - Priority: P0.
 - Design status: approved for implementation.
-- Implementation status: implemented on the P0-03 candidate branch.
+- Implementation status: implemented on the P0-03 evidence-closure branch; no production behavior
+  or Alembic `20260806_0009` changes are part of the closure work.
+- Verification status: Verified. The evidence-finalization head records the complete local gate,
+  12 injected rollback points, 12 real migration databases, and successful four-job CI runs for
+  both the implementation head and the final documentation head.
 - Depends on: P1-04 Persistence Foundation, Alembic head `20260802_0008`.
 - Blocks: P0-04 Async Agent Runtime.
 - Product scope change: none. Mutations remain mock-only, approval-gated, and never customer-facing.
@@ -65,8 +69,10 @@ sourcing layer:
   approval audit, mock mutation, mutation trace, and `mock_executed`.
 - `reject_approval`: locks Workflow then Approval, records trusted rejection and `rejected`.
 
-The first transaction to commit wins. Losing approve/reject/cancel/finalize commands return `409`
-and cannot overwrite the winning audit. A globally unique executed action fingerprint continues to
+Competing commands are linearized by the locked Workflow row and must be equivalent to one legal
+serial order. Where both commands are terminal, the first committed command wins and the loser
+returns `409`; a successful `awaiting_approval` finalization may be followed by a valid cancellation,
+which withdraws its pending approval. A globally unique executed action fingerprint continues to
 forbid repeated mutations. A rejected or withdrawn fingerprint may be proposed again in a new
 workflow, but it must receive a fresh approval.
 
@@ -117,7 +123,30 @@ execution and recovery on top of these state and command contracts.
 
 The implementation includes transition-matrix tests, command tests for replay/retry/finalization,
 approval/rejection/cancellation, frontend workflow mapping/timeline coverage, and migration SQL
-generation from `20260802_0008` to `20260806_0009`. The complete verification set remains:
+generation from `20260802_0008` to `20260806_0009`. Evidence closure adds
+`tests/p0_03_evidence_helpers.py`, `tests/test_p0_03_postgres_atomicity.py`,
+`tests/test_p0_03_postgres_concurrency.py`, and `tests/test_p0_03_migration_evidence.py`. The
+control transactions observed five DML statements for `finalize_run` and five for
+`approve_and_execute`; each command was replayed with an exception before every ordinal and once
+from `after_flush_postexec` (10 ordinal points plus 2 post-flush points, 12 injected rollback
+points total). The migration matrix used twelve unique temporary Postgres databases: one successful
+backfill fixture and eleven independent fail-closed contradiction fixtures. The focused target
+passed 29 tests and the canonical `make test-db` passed 36 tests; the full local gate also passed
+lint, the 138-pass/36-skip API suite, the 61-pass Web suite, the optimized Web build, Markdown
+link checking (18 files/71 local links), container smoke, and `git diff --check`.
+
+The implementation-head CI evidence is [run 31188218525](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525):
+[backend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091631),
+[frontend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091323),
+[database-integration](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92898091292),
+and [container-smoke](https://github.com/ZophiaWong/meter-desk/actions/runs/31188218525/job/92899098973),
+all successful. The final documentation head then passed [run 31190062283](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283):
+[backend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904316323),
+[frontend-quality](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904316422),
+[database-integration](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904316251),
+and [container-smoke](https://github.com/ZophiaWong/meter-desk/actions/runs/31190062283/job/92904641620).
+`make test-p0-03-evidence` remains a focused rerun convenience; `make test-db` remains the canonical
+database gate. The complete verification set remains:
 
 ```text
 make lint
@@ -128,8 +157,9 @@ python scripts/check_markdown_links.py
 make container-smoke
 ```
 
-Real-Postgres lock-wait and failure-injection evidence must be recorded before promoting those rows
-to Verified in the engineering evidence matrix.
+Real-Postgres lock-wait and failure-injection evidence promoted the six P0-03 rows to Verified in
+the engineering evidence matrix. The acknowledged-result boundary after a successful commit
+remains explicitly deferred to P0-04.
 
 ## References
 

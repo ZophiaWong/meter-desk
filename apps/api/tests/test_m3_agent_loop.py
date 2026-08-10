@@ -307,6 +307,34 @@ async def test_start_agent_run_creates_traces_provider_output_and_pending_approv
 
 
 @pytest.mark.asyncio
+async def test_start_agent_run_http_idempotency_replays_without_provider_call(
+    m3_dependency_overrides,
+) -> None:
+    _, provider = m3_dependency_overrides
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+    ) as client:
+        await authenticate_demo_client(client)
+        first = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("p0-03-http-idempotency"),
+        )
+        second = await client.post(
+            "/tickets/TCK-1042/agent-runs",
+            headers=run_headers("p0-03-http-idempotency"),
+        )
+
+    assert first.status_code == 201
+    assert second.status_code == 200
+    assert second.headers["Idempotency-Replayed"] == "true"
+    assert second.json()["id"] == first.json()["id"]
+    assert len(provider.calls) == 1
+    assert len(provider.plan_calls) == 1
+
+
+@pytest.mark.asyncio
 async def test_start_agent_run_supports_credit_refund_goodwill_credit_workflow() -> None:
     repository = build_seed_repository()
     await repository.reset_demo_live_state("TCK-1137")
