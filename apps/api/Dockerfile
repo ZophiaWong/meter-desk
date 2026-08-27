@@ -7,7 +7,6 @@ WORKDIR /workspace/apps/api
 COPY apps/api/pyproject.toml apps/api/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY README.md /workspace/README.md
 COPY apps/api/ ./
 RUN uv sync --frozen --no-dev --no-editable
 
